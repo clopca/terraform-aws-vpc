@@ -1,6 +1,4 @@
 
-data "aws_availability_zones" "current" {}
-
 # ---------- AWS TRANSIT GATEWAY ----------
 resource "aws_ec2_transit_gateway" "tgw" {
   description = "example"

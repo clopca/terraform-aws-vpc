@@ -15,6 +15,17 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_arn" {
+  description = "VPC ARN to use for the Cloud WAN VPC attachment when `create_vpc = false`. Bypasses the data source lookup whose `(known after apply)` propagation can force-replace the attachment on unrelated VPC changes. When null (default), the ARN is read from the data source (protected by lifecycle ignore_changes)."
+  default     = null
+  type        = string
+
+  validation {
+    condition     = var.vpc_arn == null || can(regex("^arn:aws[a-z-]*:ec2:[^:]*:[^:]*:vpc/vpc-", var.vpc_arn))
+    error_message = "var.vpc_arn must be a valid VPC ARN (e.g. arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0abcdef1234567890)."
+  }
+}
+
 variable "create_vpc" {
   description = "Determines whether to create the VPC or not; defaults to enabling the creation."
   default     = true
@@ -254,6 +265,57 @@ EOF
   validation {
     error_message = "Any subnet type `name_prefix` must not contain \"/\"."
     condition     = alltrue([for _, v in var.subnets : !can(regex("/", try(v.name_prefix, "")))])
+  }
+
+  # Validate that cidrs, when provided, is a non-empty list. (Matching the AZ
+  # count is enforced at plan time by the subnet resources themselves; it cannot
+  # be validated here because cross-variable validation requires Terraform >= 1.9.)
+  validation {
+    error_message = "When `cidrs` is specified for a subnet type, it must be a non-empty list of CIDR blocks (one per AZ)."
+    condition = alltrue([
+      for k, v in var.subnets :
+      !can(v.cidrs) || can(v.cidrs) && try(length(v.cidrs) > 0, true)
+    ])
+  }
+}
+
+variable "nat_gateway_eip_configuration" {
+  description = <<-EOF
+  Configuration for NAT Gateway Elastic IP allocation. Allows using BYOIP pools or
+  pre-existing EIP allocation IDs instead of the default Amazon pool.
+  Inspired by community PR#179 (credit: @hminaee-tc).
+
+  - `mode` = (Optional|string) How EIPs are sourced. Valid values:
+    - `"create"` (default) — allocate from Amazon's default pool (current behavior).
+    - `"byoip_pool"` — allocate from a customer-owned public IPv4 pool.
+    - `"existing"` — use pre-allocated EIP allocation IDs (one per NAT GW AZ).
+  - `public_ipv4_pool` = (Optional|string) The EC2 public IPv4 pool ID (e.g. "ipv4pool-ec2-xxx").
+    Required when mode = "byoip_pool".
+  - `allocation_ids` = (Optional|map(string)) Map of AZ name to existing EIP allocation ID.
+    Required when mode = "existing". Keys must match the AZs where NAT Gateways are deployed.
+EOF
+  type = object({
+    mode             = optional(string, "create")
+    public_ipv4_pool = optional(string)
+    allocation_ids   = optional(map(string), {})
+  })
+  default = {
+    mode = "create"
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.mode must be one of: \"create\", \"byoip_pool\", \"existing\"."
+    condition     = contains(["create", "byoip_pool", "existing"], var.nat_gateway_eip_configuration.mode)
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.public_ipv4_pool is required when mode = \"byoip_pool\"."
+    condition     = var.nat_gateway_eip_configuration.mode != "byoip_pool" || (var.nat_gateway_eip_configuration.public_ipv4_pool != null && var.nat_gateway_eip_configuration.public_ipv4_pool != "")
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.allocation_ids must be non-empty when mode = \"existing\"."
+    condition     = var.nat_gateway_eip_configuration.mode != "existing" || length(var.nat_gateway_eip_configuration.allocation_ids) > 0
   }
 }
 
