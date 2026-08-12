@@ -73,7 +73,7 @@ resource "aws_iam_role" "flow_logs" {
           "aws:SourceAccount" = data.aws_caller_identity.current[0].account_id
         }
         ArnLike = {
-          "aws:SourceArn" = "arn:${data.aws_partition.current[0].partition}:ec2:${data.aws_region.current[0].name}:${data.aws_caller_identity.current[0].account_id}:vpc-flow-log/*"
+          "aws:SourceArn" = "arn:${data.aws_partition.current[0].partition}:ec2:${data.aws_region.current[0].region}:${data.aws_caller_identity.current[0].account_id}:vpc-flow-log/*"
         }
       }
     }]

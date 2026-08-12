@@ -162,11 +162,12 @@ variable "availability_zones" {
 #
 # NETMASK STABILITY [R1-C2]:
 #   When using `ipv4.netmask`, CIDRs are calculated deterministically:
-#   - Sorted by netmask size DESC (larger blocks first), then alphabetically by key
-#   - Adding/removing a group ONLY affects groups that sort AFTER it
-#   - For PRODUCTION: use explicit `cidrs` or the `cidr_index` pinning field
-#   - `netmask` is a CONVENIENCE for dev/prototyping; it does NOT guarantee
-#     stability if you add subnet groups that sort before existing ones
+#   - Every group reserves six AZ slots, so appending AZs does not move CIDRs
+#   - Pinned groups use absolute `cidr_index` slots and never move
+#   - Unpinned groups pack largest-first, then alphabetically; adding/removing a
+#     group affects unpinned groups that sort after it
+#   - Overlapping pins across different netmasks fail at plan time
+#   - For PRODUCTION, explicit `cidrs` remain the strongest immutability contract
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "subnets" {
@@ -203,11 +204,9 @@ variable "subnets" {
       cidrs          = optional(list(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      # Explicit CIDR allocation index for pinning [R1-C2].
-      # When set, overrides the alphabetical sort position in netmask calculation.
-      # Groups with cidr_index are allocated first (sorted by index ASC), then
-      # remaining groups fill in alphabetically. This guarantees that your subnet's
-      # CIDR never shifts regardless of what other groups are added/removed.
+      # Absolute CIDR group slot for pinning [R1-C2]. Each slot reserves six
+      # AZ-sized CIDRs at this netmask. Pinned ranges never move when groups or AZs
+      # are added/removed; overlapping pins across netmasks are rejected.
       cidr_index = optional(number)
     }))
 

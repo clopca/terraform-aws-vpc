@@ -168,6 +168,18 @@ resource "terraform_data" "nat_gateway_az_validation" {
   }
 }
 
+# ─── Calculated CIDR pinning must not overlap across netmasks ─────────────
+resource "terraform_data" "cidr_pinning_validation" {
+  count = length(local.subnets_with_netmask) > 0 ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = length(local.pinned_group_overlap_pairs) == 0
+      error_message = "Pinned subnet CIDR ranges overlap across netmasks (${join(", ", local.pinned_group_overlap_pairs)}). Choose non-overlapping ipv4.cidr_index values or use explicit CIDRs."
+    }
+  }
+}
+
 # ─── NAT Gateway placement validation [R1-H2 Phase 2] ────────────────────
 # Only created NAT Gateways need a host subnet. Explicit subnet_group is
 # validated for existence and semantic compatibility; null uses the documented

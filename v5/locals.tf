@@ -10,47 +10,44 @@
 # DETERMINISTIC CIDR CALCULATION — STABILITY PROOF [R1-C2]
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Algorithm (two-tier with pinning):
+# Algorithm (two-tier with fixed six-AZ reservations):
 #
 #   TIER 1 — PINNED GROUPS (cidr_index set):
-#     Groups with explicit `cidr_index` are allocated FIRST, using their index
-#     as the network number within their netmask's address space.
-#     These are immune to any addition/removal of other groups.
+#     `cidr_index` selects an absolute group slot at that group's netmask. Each
+#     slot reserves six AZ-sized CIDRs. Pins are immune to additions/removals;
+#     overlapping absolute ranges across different netmasks are rejected.
 #
 #   TIER 2 — UNPINNED GROUPS (cidr_index = null):
-#     Remaining groups are allocated after all pinned slots, sorted by:
-#       1. Netmask size DESCENDING (larger blocks = smaller netmask number first)
-#       2. Alphabetically by key name within same netmask
-#     Sequential network numbers start AFTER the highest pinned index.
+#     Remaining groups are packed after all pinned ranges, sorted by:
+#       1. Netmask ascending (larger subnets first)
+#       2. Group key alphabetically within the same netmask
+#     Every group also reserves six AZ positions.
 #
 # STABILITY GUARANTEES:
 #
-#   Scenario 1: Add a new group "beta" (unpinned) to existing ["alpha", "gamma"]
-#     Before: alpha=netnum 0, gamma=netnum 1
-#     After:  alpha=netnum 0, beta=netnum 1, gamma=netnum 2
-#     ⚠️ gamma's CIDR SHIFTS. This is the documented trade-off of netmask mode.
+#   Scenario 1: Add unpinned "beta" to existing /24 ["alpha", "gamma"]
+#     Before: alpha=slots 0..5, gamma=slots 6..11
+#     After:  alpha=slots 0..5, beta=slots 6..11, gamma=slots 12..17
+#     ⚠️ gamma shifts because it sorts after the inserted unpinned group.
 #
-#   Scenario 2: Same setup but alpha has cidr_index=0, gamma has cidr_index=5
-#     Before: alpha=netnum 0 (pinned), gamma=netnum 5 (pinned)
-#     After:  alpha=netnum 0 (pinned), gamma=netnum 5 (pinned), beta=netnum 6 (unpinned, after max pin)
-#     ✅ Neither alpha nor gamma shifts. Beta gets the next available slot.
+#   Scenario 2: alpha has cidr_index=0, gamma has cidr_index=5
+#     Before: alpha=slots 0..5, gamma=slots 30..35
+#     After:  alpha=slots 0..5, gamma=slots 30..35, beta=slots 36..41
+#     ✅ Neither pinned group shifts; beta starts after all pinned ranges.
 #
-#   Scenario 3: Remove "beta" from ["alpha", "beta", "gamma"] (all unpinned)
-#     Before: alpha=netnum 0, beta=netnum 1, gamma=netnum 2
-#     After:  alpha=netnum 0, gamma=netnum 1
-#     ⚠️ gamma shifts. Use pinning or explicit cidrs for immutable allocations.
+#   Scenario 3: Remove "beta" from unpinned ["alpha", "beta", "gamma"]
+#     Before: alpha=slots 0..5, beta=slots 6..11, gamma=slots 12..17
+#     After:  alpha=slots 0..5, gamma=slots 6..11
+#     ⚠️ gamma shifts. Use pinning or explicit CIDRs for immutable allocations.
 #
-#   Scenario 4: Add AZ to existing 2-AZ deployment
-#     Only the NEW AZ slots are appended within each group. Existing AZ CIDRs
-#     are stable (network number = group_offset * az_count + az_index).
-#     ⚠️ If az_count changes, groups that used to fit may now overlap with the
-#     next group's space. Use explicit cidrs for production multi-AZ changes.
+#   Scenario 4: Add an AZ to an existing 2-AZ deployment
+#     Each group already reserves six AZ slots, so the new AZ consumes the next
+#     slot in that group. Existing AZ CIDRs remain unchanged.
 #
 # PRODUCTION RECOMMENDATION:
 #   Use explicit `cidrs` for any subnet group that must never shift.
-#   Use `cidr_index` for development/staging where you want auto-calculation
-#   with guaranteed slot reservation.
-#   Use bare `netmask` only for throwaway environments where destroy is acceptable.
+#   Use `cidr_index` when deterministic six-AZ reservations are appropriate.
+#   Use bare `netmask` only when shifts after group mutations are acceptable.
 #
 # State Key Format: "${subnet_group_name}/${az}" for ALL resources.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,7 +57,7 @@ locals {
   # When `names` is provided, use directly. When `count` is used, we rely on
   # the data source (defined in main.tf) to get region AZs.
   # [R1-H4]: count mode depends on data source ordering — development only.
-  azs      = coalesce(var.availability_zones.names, data.aws_availability_zones.current[0].names)
+  azs      = var.availability_zones.names != null ? var.availability_zones.names : data.aws_availability_zones.current[0].names
   az_count = length(local.azs)
 
   # ─── VPC Identity ───────────────────────────────────────────────────────
@@ -93,80 +90,83 @@ locals {
 
   vpc_prefix_length = tonumber(split("/", local.vpc_cidr)[1])
 
-  # Unique netmask values, sorted (smallest number = largest subnet first)
-  unique_netmasks = sort(distinct([
-    for name, cfg in local.subnets_with_netmask : cfg.ipv4.netmask
-  ]))
+  # Calculated groups reserve the contract maximum of six AZ slots. The fixed
+  # stride makes AZ expansion append-only instead of multiplying offsets by the
+  # current AZ count and shifting every later group.
+  cidr_az_stride = 6
 
-  # ── Per-netmask: separate pinned from unpinned groups ──
-
-  # Pinned groups per netmask (sorted by cidr_index)
-  pinned_by_netmask = {
-    for nm in local.unique_netmasks : nm => sort([
-      for name, cfg in local.subnets_with_netmask :
-      format("%06d|%s", cfg.ipv4.cidr_index, name)
-      if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
-    ])
+  # Normalize every allocation to /28 units. This lets differently sized
+  # netmasks share one non-overlapping address space while cidr_index remains an
+  # absolute group slot at the configured netmask.
+  cidr_units_per_group = {
+    for name, cfg in local.subnets_with_netmask :
+    name => local.cidr_az_stride * pow(2, 28 - cfg.ipv4.netmask)
   }
 
-  # Unpinned groups per netmask (sorted alphabetically)
-  unpinned_by_netmask = {
-    for nm in local.unique_netmasks : nm => sort([
-      for name, cfg in local.subnets_with_netmask : name
-      if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index == null
-    ])
+  pinned_group_start_unit = {
+    for name, cfg in local.subnets_with_netmask :
+    name => cfg.ipv4.cidr_index * local.cidr_units_per_group[name]
+    if cfg.ipv4.cidr_index != null
   }
 
-  # Highest pinned cidr_index per netmask (to start unpinned after it)
-  max_pinned_index_by_netmask = {
-    for nm in local.unique_netmasks : nm => (
-      length([
-        for name, cfg in local.subnets_with_netmask :
-        cfg.ipv4.cidr_index
-        if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
-      ]) > 0 ?
-      max([
-        for name, cfg in local.subnets_with_netmask :
-        cfg.ipv4.cidr_index
-        if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
-      ]...) : -1
+
+  pinned_group_names_sorted = sort(keys(local.pinned_group_start_unit))
+  pinned_group_overlap_pairs = flatten([
+    for name in local.pinned_group_names_sorted : [
+      for other in local.pinned_group_names_sorted : "${name}/${other}"
+      if index(local.pinned_group_names_sorted, name) < index(local.pinned_group_names_sorted, other) &&
+      local.pinned_group_start_unit[name] <= local.pinned_group_end_unit[other] &&
+      local.pinned_group_start_unit[other] <= local.pinned_group_end_unit[name]
+    ]
+  ])
+  pinned_group_end_unit = {
+    for name, start in local.pinned_group_start_unit :
+    name => start + local.cidr_units_per_group[name] - 1
+  }
+
+  # Pinned groups reserve absolute ranges first. All unpinned groups are packed
+  # after the highest pinned /28 unit, ordered by larger subnet first and then
+  # group name. Because sizes descend, one initial alignment is sufficient.
+  pinned_reserved_units = length(local.pinned_group_end_unit) == 0 ? 0 : max(values(local.pinned_group_end_unit)...) + 1
+
+  unpinned_group_order = sort([
+    for name, cfg in local.subnets_with_netmask :
+    format("%02d|%s", cfg.ipv4.netmask, name)
+    if cfg.ipv4.cidr_index == null
+  ])
+
+  first_unpinned_group = try(split("|", local.unpinned_group_order[0])[1], null)
+  unpinned_base_unit = local.first_unpinned_group == null ? local.pinned_reserved_units : (
+    ceil(local.pinned_reserved_units / local.cidr_units_per_group[local.first_unpinned_group]) *
+    local.cidr_units_per_group[local.first_unpinned_group]
+  )
+
+  unpinned_group_start_unit = {
+    for entry in local.unpinned_group_order : split("|", entry)[1] => (
+      local.unpinned_base_unit + sum(concat([0], [
+        for prior in local.unpinned_group_order :
+        local.cidr_units_per_group[split("|", prior)[1]]
+        if index(local.unpinned_group_order, prior) < index(local.unpinned_group_order, entry)
+      ]))
     )
   }
 
-  # ── Calculate CIDRs ──
-  # Pinned groups: use their cidr_index directly as the group offset
-  # Unpinned groups: start after (max_pinned_index + 1), sequential
-
-  calculated_cidrs = merge(
-    # Pinned CIDRs
-    merge([
-      for nm in local.unique_netmasks : {
-        for pair in flatten([
-          for entry in local.pinned_by_netmask[nm] : [
-            for ai, az in local.azs : {
-              key     = "${split("|", entry)[1]}/${az}"
-              netnum  = tonumber(split("|", entry)[0]) * local.az_count + ai
-              newbits = nm - local.vpc_prefix_length
-            }
-          ]
-        ]) : pair.key => cidrsubnet(local.vpc_cidr, pair.newbits, pair.netnum)
-      }
-    ]...),
-    # Unpinned CIDRs
-    merge([
-      for nm in local.unique_netmasks : {
-        for pair in flatten([
-          for gi, group_name in local.unpinned_by_netmask[nm] : [
-            for ai, az in local.azs : {
-              key     = "${group_name}/${az}"
-              netnum  = (local.max_pinned_index_by_netmask[nm] + 1 + gi) * local.az_count + ai
-              newbits = nm - local.vpc_prefix_length
-            }
-          ]
-        ]) : pair.key => cidrsubnet(local.vpc_cidr, pair.newbits, pair.netnum)
-      }
-    ]...)
+  calculated_group_start_unit = merge(
+    local.pinned_group_start_unit,
+    local.unpinned_group_start_unit,
   )
+
+  # Materialize one CIDR per configured AZ. Each group's remaining reserved AZ
+  # slots stay unused, preserving all existing CIDRs when a new AZ is appended.
+  calculated_cidrs = merge([
+    for name, cfg in local.subnets_with_netmask : {
+      for ai, az in local.azs : "${name}/${az}" => cidrsubnet(
+        local.vpc_cidr,
+        cfg.ipv4.netmask - local.vpc_prefix_length,
+        (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
+      )
+    }
+  ]...)
 
   # ─── IGW: create-or-inject [R1-H2] ─────────────────────────────────────
   # Determine if any subnet needs an IGW

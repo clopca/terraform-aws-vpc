@@ -44,7 +44,7 @@ locals {
   constructed_vpc_arn = local.core_network_group == null ? null : format(
     "arn:%s:ec2:%s:%s:vpc/%s",
     data.aws_partition.current[0].partition,
-    data.aws_region.current[0].name,
+    data.aws_region.current[0].region,
     data.aws_caller_identity.current[0].account_id,
     local.vpc_id
   )
