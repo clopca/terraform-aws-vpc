@@ -257,6 +257,46 @@ EOF
   }
 }
 
+variable "nat_gateway_eip_configuration" {
+  description = <<-EOF
+  Configuration for NAT Gateway Elastic IP allocation. Allows using BYOIP pools or
+  pre-existing EIP allocation IDs instead of the default Amazon pool.
+  Inspired by community PR#179 (credit: @hminaee-tc).
+
+  - `mode` = (Optional|string) How EIPs are sourced. Valid values:
+    - `"create"` (default) — allocate from Amazon's default pool (current behavior).
+    - `"byoip_pool"` — allocate from a customer-owned public IPv4 pool.
+    - `"existing"` — use pre-allocated EIP allocation IDs (one per NAT GW AZ).
+  - `public_ipv4_pool` = (Optional|string) The EC2 public IPv4 pool ID (e.g. "ipv4pool-ec2-xxx").
+    Required when mode = "byoip_pool".
+  - `allocation_ids` = (Optional|map(string)) Map of AZ name to existing EIP allocation ID.
+    Required when mode = "existing". Keys must match the AZs where NAT Gateways are deployed.
+EOF
+  type = object({
+    mode             = optional(string, "create")
+    public_ipv4_pool = optional(string)
+    allocation_ids   = optional(map(string), {})
+  })
+  default = {
+    mode = "create"
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.mode must be one of: \"create\", \"byoip_pool\", \"existing\"."
+    condition     = contains(["create", "byoip_pool", "existing"], var.nat_gateway_eip_configuration.mode)
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.public_ipv4_pool is required when mode = \"byoip_pool\"."
+    condition     = var.nat_gateway_eip_configuration.mode != "byoip_pool" || (var.nat_gateway_eip_configuration.public_ipv4_pool != null && var.nat_gateway_eip_configuration.public_ipv4_pool != "")
+  }
+
+  validation {
+    error_message = "nat_gateway_eip_configuration.allocation_ids must be non-empty when mode = \"existing\"."
+    condition     = var.nat_gateway_eip_configuration.mode != "existing" || length(var.nat_gateway_eip_configuration.allocation_ids) > 0
+  }
+}
+
 variable "optimize_subnet_cidr_ranges" {
   description = "Sort subnets to calculate by their netmask to efficiently use IP space."
   type        = bool

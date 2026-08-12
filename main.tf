@@ -95,9 +95,15 @@ resource "aws_route_table_association" "public" {
 }
 
 # Elastic IP - used in NAT gateways (if configured)
+# Supports BYOIP and pre-existing EIPs via var.nat_gateway_eip_configuration.
+# When mode = "create" (default), behaviour is unchanged from prior versions.
+# When mode = "existing", EIPs are not created; allocation_ids are used directly.
 resource "aws_eip" "nat" {
-  for_each = toset(local.nat_configuration)
+  for_each = var.nat_gateway_eip_configuration.mode != "existing" ? toset(local.nat_configuration) : toset([])
   domain   = "vpc"
+
+  # BYOIP: allocate from a customer-owned IPv4 pool when mode = "byoip_pool"
+  public_ipv4_pool = var.nat_gateway_eip_configuration.mode == "byoip_pool" ? var.nat_gateway_eip_configuration.public_ipv4_pool : null
 
   tags = merge(
     { Name = "nat-${local.subnet_names["public"]}-${each.key}" },
@@ -110,7 +116,7 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "main" {
   for_each = toset(local.nat_configuration)
 
-  allocation_id = aws_eip.nat[each.key].id
+  allocation_id = var.nat_gateway_eip_configuration.mode == "existing" ? var.nat_gateway_eip_configuration.allocation_ids[each.key] : aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.public[each.key].id
 
   tags = merge(

@@ -160,6 +160,36 @@ output "nat_gateway_attributes_by_az" {
 EOF
 }
 
+output "nat_gateway_ids" {
+  value       = try({ for az, gw in aws_nat_gateway.main : az => gw.id }, {})
+  description = "Map of AZ to NAT Gateway ID. Empty map when no NAT Gateways are configured."
+}
+
+output "nat_public_ips" {
+  value       = try({ for az, gw in aws_nat_gateway.main : az => gw.public_ip }, {})
+  description = "Map of AZ to NAT Gateway public IP address. Empty map when no NAT Gateways are configured."
+}
+
+output "nat_eip_attributes_by_az" {
+  value       = try(aws_eip.nat, null)
+  description = <<-EOF
+  Map of NAT Gateway Elastic IP resource attributes by AZ. Includes public_ip,
+  allocation_id, and public_ipv4_pool. Null when mode = "existing" (EIPs not managed by module).
+
+  Example:
+  ```
+  nat_eip_attributes_by_az = {
+    "us-east-1a" = {
+      "id"               = "eipalloc-0e8b20303eea88b13"
+      "public_ip"        = "52.1.2.3"
+      "public_ipv4_pool" = "amazon"
+      "domain"           = "vpc"
+    }
+  }
+  ```
+EOF
+}
+
 output "natgw_id_per_az" {
   value       = try(local.nat_per_az, null)
   description = <<-EOF
