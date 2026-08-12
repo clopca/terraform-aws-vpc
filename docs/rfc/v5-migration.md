@@ -1,6 +1,6 @@
 # terraform-aws-vpc migration guide: v4 to v5
 
-> Status: Phase 4 implementation. Always test against a copy of production state. The v5 module does not perform state moves automatically because `moved` addresses cannot contain variables, wildcards, or generated AZ/group keys.
+> Status: Phase 5 implementation. Always test against a copy of production state. The v5 module does not perform state moves automatically because `moved` addresses cannot contain variables, wildcards, or generated AZ/group keys. `v5/tests/migration.tftest.hcl` verifies representative moves against shared ephemeral state and plans the complete 63-block example with a mock provider; the CloudWatch remove/import cutover remains an explicit operator procedure because import blocks are root-module-only.
 
 ## Migration safety contract
 

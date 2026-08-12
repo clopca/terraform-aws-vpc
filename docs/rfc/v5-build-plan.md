@@ -41,7 +41,7 @@
   permanecen en la fase 5 según ADR del gate.
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
 | 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
-| 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | pendiente |
+| 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | ✅ `a5fb279` + `2db15d7` |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |
 
 ### Entrega fase 4
@@ -70,6 +70,28 @@
   la fixture stateful de moved/import, permanecen explícitamente en Fase 5
   (R1-M1/R2 recomendación de cobertura); no bloquean el gate documental de Fase 4.
 - Gate R1+R2 de fase 4 cerrado: 0 Critical/High abiertos.
+
+### Entrega fase 5
+
+- Suite nativa: **28 runs, 51 comprobaciones** — motor CIDR 9/18 asserts,
+  shapes Tier 1/Tier 2 2/11 asserts, validaciones negativas 11/11
+  `expect_failures`, ejemplos 3/6 asserts y migración 3/5 asserts.
+- Los 27 runs de módulo/ejemplos/migración son `plan` con `mock_provider`; el
+  único `apply` usa también el provider mock y sólo siembra el state efímero v4
+  para verificar que subnet, route table y association conservan ID tras sus
+  `moved` representativos. La suite completa pasa con las variables de
+  credenciales AWS eliminadas del entorno.
+- El ejemplo completo de migración, incluidos sus 63 `moved`, se parsea y
+  planifica. El remove/import del log group mantiene su gate operativo en
+  `v5-migration.md`; los imports declarativos no pueden cargarse como módulos
+  alternativos de `terraform test`, por lo que no se simula un import remoto.
+- El motor CIDR reserva seis posiciones AZ por grupo, empaqueta netmasks mixtas
+  sin solape, mantiene estables los CIDRs al añadir AZ y rechaza pins absolutos
+  solapados entre netmasks.
+- `v5/.terraform-docs.yaml`, `.header.md` y el `README.md` generado documentan
+  uso, ejemplos, garantías Tier 1/2/3, estabilidad de direcciones y migración.
+- `terraform test`: 28 passed, 0 failed; `fmt -check`, `validate` del módulo y
+  de los cuatro ejemplos: PASS. Gate R1+R2 de fase 5 queda pendiente.
 
 ## Reglas fijas del builder
 

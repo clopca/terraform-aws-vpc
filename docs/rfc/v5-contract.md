@@ -1,6 +1,21 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 4 Implemented (gate pending)
+> **Status:** Draft / Phase 5 Implemented (gate pending)
+>
+> **Phase 5 implementation (2026-08-12, `a5fb279`, `2db15d7`):**
+> - Native tests run without AWS credentials through Terraform mock providers:
+>   28 runs and 51 checks cover exact CIDR allocation, Tier 1/Tier 2 shapes,
+>   negative validations/preconditions, all three deployable examples, and the
+>   migration example.
+> - Calculated CIDRs reserve six AZ slots per group. Absolute `cidr_index` pins
+>   survive group/AZ changes, mixed netmasks pack largest-first without overlap,
+>   and overlapping pins across netmasks fail during plan.
+> - A mocked stateful fixture preserves representative subnet, route-table, and
+>   association IDs across v4-to-v5 moves; the full 63-block migration example
+>   also plans syntactically. The CloudWatch remove/import exception remains the
+>   explicit operational procedure in `v5-migration.md`.
+> - `terraform-docs` generates `v5/README.md` from an authored header covering
+>   usage, examples, tier guarantees, address stability, tests, and migration.
 >
 > **Phase 4 implementation (2026-08-12, `9a4bb9c`):**
 > - Tier 1 now exposes direct IDs/CIDRs by group, semantic role, and AZ; route
@@ -40,7 +55,7 @@
 > **Date:** 2026-08-12
 > **Authors:** aws-ia team
 > **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
-> **Reviews:** `reviews/fase-1.md`, `reviews/fase-2.md`, `reviews/fase-3.md` (R1 + R2 full audit results)
+> **Reviews:** `reviews/fase-1.md` through `reviews/fase-4.md` (R1 + R2 full audit results); Phase 5 gate pending
 
 ---
 
@@ -247,18 +262,25 @@ variable "nat_gateway" {
 
 **Deterministic allocation with two-tier pinning:**
 
-1. **Pinned groups** (`cidr_index` set): Allocated first using the index as
-   network-number offset. Immune to addition/removal of other groups.
-2. **Unpinned groups** (`cidr_index` null): Allocated sequentially after highest
-   pinned slot, sorted by netmask DESC then alphabetically.
+1. **Fixed AZ stride:** every calculated group reserves six subnet positions,
+   matching the contract's maximum AZ count. Adding an AZ consumes the next
+   reserved position and never changes existing AZ CIDRs.
+2. **Pinned groups** (`cidr_index` set): the index selects an absolute group slot
+   at that netmask. Pins are allocated first and never shift when other groups or
+   AZs are added/removed. Absolute pinned ranges that overlap across different
+   netmasks are rejected at plan time.
+3. **Unpinned groups** (`cidr_index` null): groups pack after all pinned ranges,
+   sorted by netmask ascending (largest subnet first) and then group key. Mixed
+   netmasks share one /28-normalized address space and cannot overlap.
 
 **Stability guarantees:**
-- Pinned groups: NEVER shift regardless of other group changes.
-- Unpinned groups: May shift if a group that sorts before them is added/removed.
-- AZ addition: Only new AZ slots are appended within each group.
+- Pinned groups: existing CIDRs never shift; conflicting absolute pins fail early.
+- Unpinned groups: may shift if a group that sorts before them is added/removed.
+- AZ addition: only the newly selected reserved slot is materialized per group.
 
-**Production recommendation:** Use explicit `cidrs` for immutable allocations,
-`cidr_index` for stable auto-calculation, bare `netmask` for disposable environments.
+**Production recommendation:** use explicit `cidrs` for the strongest immutable
+allocation contract, `cidr_index` for stable calculated six-AZ reservations, and
+bare `netmask` only where shifts after group mutations are acceptable.
 
 ### 3.6 Outputs — 3 Tiers
 
@@ -436,4 +458,5 @@ keys, route destinations, and optional resources.
 - **Phase 2**: DNS64/NAT64 support — ✅ DONE
 - **Phase 2**: Route tables co-located per group/az — ✅ DONE
 - **Phase 4**: Tiered outputs and v4 migration guide/example — ✅ DONE (`9a4bb9c`)
-- **Phase 5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]
+- **Phase 5**: Native plan-only contract tests, stateful moved fixture, examples, and generated docs — ✅ DONE (`a5fb279`, `2db15d7`)
+- **Post-v5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]
