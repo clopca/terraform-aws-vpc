@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Basic — Simple 3-AZ Web Application VPC
-# Demonstrates: single_az NAT, EIGW for IPv6, dns64, route tables
+# Demonstrates: single_az NAT, EIGW for IPv6, DNS64, route tables,
+# and native CloudWatch VPC Flow Logs with a created IAM role
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -70,6 +71,17 @@ module "vpc" {
     }
   }
 
+  # Native CloudWatch destination and VPC Flow Logs IAM role are created.
+  flow_logs = {
+    audit = {
+      destination_type = "cloudwatch"
+      traffic_type     = "ALL"
+      cloudwatch_options = {
+        retention_in_days = 30
+      }
+    }
+  }
+
   tags = {
     Environment = "development"
     Project     = "web-app"
@@ -102,4 +114,8 @@ output "route_tables" {
 
 output "eigw_id" {
   value = module.vpc.egress_only_igw_id
+}
+
+output "flow_log_ids" {
+  value = module.vpc.flow_log_ids
 }

@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 2: Enterprise — IPAM + Explicit CIDRs + Multiple Tiers
-# Demonstrates: all_azs NAT with BYOIP pool, EIGW, cidr_index pinning [R1-C2]
+# Demonstrates: all_azs NAT with BYOIP pool, EIGW, CIDR pinning [R1-C2],
+# native S3 VPC Flow Logs, and a typed VPC Lattice association
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -15,6 +16,15 @@ terraform {
 
 provider "aws" {
   region = "eu-west-1"
+}
+
+resource "aws_vpclattice_service_network" "enterprise" {
+  name      = "enterprise-service-network"
+  auth_type = "AWS_IAM"
+
+  tags = {
+    Environment = "production"
+  }
 }
 
 module "vpc" {
@@ -96,6 +106,25 @@ module "vpc" {
     }
   }
 
+  # Native S3 destination with parquet hourly partitions.
+  flow_logs = {
+    archive = {
+      destination_type = "s3"
+      traffic_type     = "ALL"
+      s3_options = {
+        file_format                = "parquet"
+        hive_compatible_partitions = true
+        per_hour_partition         = true
+      }
+    }
+  }
+
+  vpc_lattice = {
+    service_network_identifier = aws_vpclattice_service_network.enterprise.id
+    private_dns_enabled        = true
+    tags                       = { Tier = "service-network" }
+  }
+
   tags = {
     Environment = "production"
     ManagedBy   = "terraform"
@@ -132,4 +161,12 @@ output "route_tables" {
 
 output "eigw_id" {
   value = module.vpc.egress_only_igw_id
+}
+
+output "flow_log_ids" {
+  value = module.vpc.flow_log_ids
+}
+
+output "lattice_association_id" {
+  value = module.vpc.vpc_lattice_service_network_association_id
 }

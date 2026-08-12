@@ -6,6 +6,8 @@
 #   - Existing EIPs for NAT [R1-H2]
 #   - CIDR pinning [R1-C2]: cidr_index for stable netmask allocation
 #   - Private NAT gateway (connectivity_type = "private") for inspection VPC
+#   - Real TGW + Cloud WAN attachment resources from dedicated subnet roles
+#   - Native Kinesis Data Firehose VPC Flow Logs destination
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -135,6 +137,20 @@ module "vpc" {
     }
   }
 
+  # The module creates both attachment resources from the tgw/cwan subnet roles.
+  # It also creates a Firehose destination, delivery role, and private S3 sink.
+  flow_logs = {
+    network = {
+      destination_type = "kinesis"
+      traffic_type     = "ALL"
+      kinesis_options = {
+        buffering_interval = 60
+        buffering_size     = 5
+        compression_format = "GZIP"
+      }
+    }
+  }
+
   tags = {
     Environment = "production"
     Role        = "network-hub"
@@ -235,4 +251,16 @@ output "inspection_vpc_id" {
 
 output "inspection_nat_ids" {
   value = module.inspection_vpc.nat_gateway_ids
+}
+
+output "transit_gateway_attachment_id" {
+  value = module.vpc.transit_gateway_attachment_id
+}
+
+output "core_network_attachment_id" {
+  value = module.vpc.core_network_attachment_id
+}
+
+output "flow_log_ids" {
+  value = module.vpc.flow_log_ids
 }
