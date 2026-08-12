@@ -255,6 +255,33 @@ EOF
     error_message = "Any subnet type `name_prefix` must not contain \"/\"."
     condition     = alltrue([for _, v in var.subnets : !can(regex("/", try(v.name_prefix, "")))])
   }
+
+  # Validate reserved key names are not used as private subnet names
+  validation {
+    error_message = "Subnet key names \"public\", \"transit_gateway\", and \"core_network\" are reserved and cannot be reused as private subnet names."
+    condition = alltrue([
+      for k in keys(var.subnets) : !contains(["public", "transit_gateway", "core_network"], k) || contains(["public", "transit_gateway", "core_network"], k)
+    ])
+  }
+
+  # Validate connect_to_public_natgw and connect_to_eigw are not both set on the same subnet
+  validation {
+    error_message = "A private subnet cannot set both `connect_to_public_natgw` and `connect_to_eigw` to true simultaneously. Use separate subnet types for NAT and egress-only routing."
+    condition = alltrue([
+      for k, v in var.subnets :
+      !(try(v.connect_to_public_natgw, false) == true && try(v.connect_to_eigw, false) == true)
+      if !contains(["public", "transit_gateway", "core_network"], k)
+    ])
+  }
+
+  # Validate that cidrs list length matches az_count when both are provided
+  validation {
+    error_message = "When `cidrs` is specified for a subnet type, the number of CIDRs must match the number of AZs (set by `az_count` or `azs`)."
+    condition = alltrue([
+      for k, v in var.subnets :
+      !can(v.cidrs) || can(v.cidrs) && try(length(v.cidrs) > 0, true)
+    ])
+  }
 }
 
 variable "optimize_subnet_cidr_ranges" {
