@@ -947,7 +947,7 @@ variable "flow_logs" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "vpc_lattice" {
-  description = "VPC Lattice association. enabled is the plan-known cardinality selector; identifiers may be computed."
+  description = "VPC Lattice association. enabled is the plan-known cardinality selector; identifiers may be computed. When private DNS is enabled, dns_options defaults to AWS's VERIFIED_DOMAINS_ONLY behavior."
   type = object({
     enabled                    = optional(bool, false)
     create                     = optional(bool, true)
@@ -955,7 +955,11 @@ variable "vpc_lattice" {
     service_network_identifier = optional(string)
     security_group_ids         = optional(set(string), [])
     private_dns_enabled        = optional(bool, false)
-    tags                       = optional(map(string), {})
+    dns_options = optional(object({
+      private_dns_preference        = optional(string, "VERIFIED_DOMAINS_ONLY")
+      private_dns_specified_domains = optional(set(string))
+    }), {})
+    tags = optional(map(string), {})
   })
   default = {}
 
@@ -973,6 +977,40 @@ variable "vpc_lattice" {
       )
     )
     error_message = "VPC Lattice create mode requires a service network and id=null; inject mode requires create=false with id only."
+  }
+
+  validation {
+    condition = contains([
+      "VERIFIED_DOMAINS_ONLY",
+      "ALL_DOMAINS",
+      "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS",
+      "SPECIFIED_DOMAINS_ONLY",
+    ], var.vpc_lattice.dns_options.private_dns_preference)
+    error_message = "vpc_lattice.dns_options.private_dns_preference must be VERIFIED_DOMAINS_ONLY, ALL_DOMAINS, VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS, or SPECIFIED_DOMAINS_ONLY."
+  }
+
+  validation {
+    condition = !var.vpc_lattice.enabled || !var.vpc_lattice.create || (
+      !var.vpc_lattice.private_dns_enabled ? (
+        var.vpc_lattice.dns_options.private_dns_preference == "VERIFIED_DOMAINS_ONLY" &&
+        var.vpc_lattice.dns_options.private_dns_specified_domains == null
+        ) : (
+        contains([
+          "VERIFIED_DOMAINS_ONLY",
+          "ALL_DOMAINS",
+          ], var.vpc_lattice.dns_options.private_dns_preference) ? (
+          var.vpc_lattice.dns_options.private_dns_specified_domains == null
+          ) : (
+          try(length(var.vpc_lattice.dns_options.private_dns_specified_domains), 0) >= 1 &&
+          try(length(var.vpc_lattice.dns_options.private_dns_specified_domains), 0) <= 10 &&
+          alltrue([
+            for domain in coalesce(var.vpc_lattice.dns_options.private_dns_specified_domains, toset([])) :
+            length(trimspace(domain)) >= 1 && length(domain) <= 255
+          ])
+        )
+      )
+    )
+    error_message = "VPC Lattice DNS options require private_dns_enabled=true; specified domains (1-10 non-empty names, up to 255 characters) are allowed only with VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS or SPECIFIED_DOMAINS_ONLY."
   }
 }
 

@@ -260,6 +260,7 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `vpc_flow_logs.destination_options.per_hour_partition` | `flow_logs.default.s3_options.per_hour_partition` | Copy for S3. |
 | `vpc_lattice.service_network_identifier` | `vpc_lattice.enabled=true` + `service_network_identifier` | Enable explicitly, then copy the identifier; it may be computed upstream. |
 | `vpc_lattice.security_group_ids` | `vpc_lattice.security_group_ids` | Convert list to set semantics (ordering is ignored). |
+| `vpc_lattice.private_dns_enabled` | `vpc_lattice.private_dns_enabled` | Copy explicitly. When true, `dns_options.private_dns_preference` defaults to AWS's `VERIFIED_DOMAINS_ONLY`; choose a specified-domain mode and provide 1-10 domains only when required. DNS option changes replace the association. |
 | `vpc_lattice.tags` | `vpc_lattice.tags` | Copy unchanged. |
 | `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
 | `tags` | `tags` | Copy unchanged. Keep provider `default_tags` unchanged; effective precedence is provider defaults < global tags < group/resource tags < generated Name. |

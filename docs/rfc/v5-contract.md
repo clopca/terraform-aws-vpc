@@ -494,11 +494,18 @@ must match the configured ID.
 
 #### ADR-F3-3 — VPC Lattice DNS and security groups
 
-`private_dns_enabled` defaults to false to avoid an implicit ForceNew DNS choice.
-Changing it replaces the association by provider design. Security groups are a
-set, because ordering is meaningless, and the contract rejects more than the AWS
-quota of five. Additional DNS preference/domain fields remain future additive
-contract work after provider behavior and migration semantics are reviewed.
+`private_dns_enabled` defaults to false because changing private DNS replaces the
+association by provider design. When enabled, the typed `dns_options` contract
+defaults `private_dns_preference` to `VERIFIED_DOMAINS_ONLY`, matching the value
+returned by AWS. The resource always sends that preference: AWS also returns a
+computed `private_dns_specified_domains = ["*"]` sentinel, and provider 6.59 marks
+the whole block ForceNew, so omitting `dns_options` would plan a destructive
+replace after every successful apply. Specified domains are accepted only for
+`VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` and `SPECIFIED_DOMAINS_ONLY`, with the AWS
+1-10 item and 255-character limits. `ignore_changes` was rejected because it would
+hide deliberate DNS preference changes as well as service drift. Security groups
+are a set, because ordering is meaningless, and the contract rejects more than the
+AWS quota of five.
 
 #### ADR-F3-4 — Flow Logs validation boundary
 
