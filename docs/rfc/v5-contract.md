@@ -1,10 +1,10 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Gate 1 Closed (R1+R2 findings applied)
+> **Status:** Draft / Gate 2 Closed (R1+R2 findings applied)
 > **Date:** 2026-08-12
 > **Authors:** aws-ia team
 > **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
-> **Reviews:** `reviews/fase-1.md` (R1 + R2 full audit results)
+> **Reviews:** `reviews/fase-1.md`, `reviews/fase-2.md` (R1 + R2 full audit results)
 
 ---
 
