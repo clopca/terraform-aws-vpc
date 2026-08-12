@@ -258,3 +258,33 @@ run "private_nat_example" {
     error_message = "The private-NAT example must plan two private NAT Gateways, workload NAT routes, four translated TGW routes, and no Internet route."
   }
 }
+
+run "inspection_egress_example" {
+  command = plan
+
+  module {
+    source = "./examples/inspection_egress"
+  }
+
+  variables {
+    transit_gateway_id   = "tgw-0123456789abcdef0"
+    spoke_prefix_list_id = "pl-0123456789abcdef0"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.subnet_ids)) == toset(["firewall", "public", "tgw_attach"]) &&
+      length(output.nat_gateway_ids) == 3 &&
+      output.network_firewall_inputs.number_azs == 3 &&
+      toset(keys(output.network_firewall_inputs.vpc_subnets)) == toset(["us-east-1a", "us-east-1b", "us-east-1c"]) &&
+      toset(keys(output.network_firewall_inputs.routing_configuration.centralized_inspection_with_egress.connectivity_subnet_route_tables)) == toset(["us-east-1a", "us-east-1b", "us-east-1c"]) &&
+      output.route_evidence.internet_routes == 3 &&
+      output.route_evidence.nat_routes == 3 &&
+      output.route_evidence.tgw_routes == 3 &&
+      alltrue([for destination in values(output.route_evidence.tgw_destinations) :
+        destination.cidr_block == null && destination.prefix_list_id == "pl-0123456789abcdef0"
+      ])
+    )
+    error_message = "The inspection-egress example must plan three-AZ NAT egress, appliance-path TGW prefix-list routes, and complete Tier 1 Network Firewall inputs."
+  }
+}

@@ -59,7 +59,8 @@ Complete configurations are available in [`examples/basic`](examples/basic),
 [`examples/dual_stack`](examples/dual\_stack),
 [`examples/existing_vpc`](examples/existing\_vpc),
 [`examples/secure_isolated`](examples/secure\_isolated),
-[`examples/private_nat`](examples/private\_nat), and the state-oriented
+[`examples/private_nat`](examples/private\_nat),
+[`examples/inspection_egress`](examples/inspection\_egress), and the state-oriented
 [`examples/migration-from-v4`](examples/migration-from-v4) skeleton. The hub and
 dedicated feature examples document the external IDs/ARNs or IPAM pools that must
 exist before apply; validated variables keep synthetic placeholders out of

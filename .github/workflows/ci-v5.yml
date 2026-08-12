@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for example in basic enterprise hub migration-from-v4 nat_byoip ipam dual_stack existing_vpc secure_isolated private_nat; do
+          for example in basic enterprise hub migration-from-v4 nat_byoip ipam dual_stack existing_vpc secure_isolated private_nat inspection_egress; do
             terraform -chdir="v5/examples/${example}" init -backend=false -lockfile=readonly
             terraform -chdir="v5/examples/${example}" validate -no-color
           done
