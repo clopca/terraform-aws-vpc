@@ -229,7 +229,7 @@ output "flow_log_attributes" {
   value       = try(module.flow_logs[0].flow_log, null)
 }
 
-# ---------- ROLE-BASED CONVENIENCE OUTPUTS (v4.6+) ----------
+# ---------- ROLE-BASED CONVENIENCE OUTPUTS (v4.8+) ----------
 # These outputs address the confusion reported in #177 and #159:
 # private_subnet_attributes_by_az includes BOTH NAT-routed and isolated subnets,
 # causing users to accidentally deploy compute into non-routable networks.
