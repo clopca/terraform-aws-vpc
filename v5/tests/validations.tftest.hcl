@@ -271,3 +271,24 @@ run "public_can_disable_internet_gateway" {
     error_message = "internet_gateway=false on a public group must suppress both the IGW and default route."
   }
 }
+
+
+run "reject_invalid_flow_log_name_format" {
+  command = plan
+
+  variables {
+    vpc                = { name = "negative-test" }
+    addressing         = { ipv4 = { cidr_block = "10.9.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets            = {}
+    flow_logs = {
+      invalid = {
+        destination_type = "s3"
+        destination_arn  = "arn:aws:s3:::invalid-format-bucket"
+        name_format      = "{vpc}-{unknown}"
+      }
+    }
+  }
+
+  expect_failures = [var.flow_logs]
+}

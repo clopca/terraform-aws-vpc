@@ -84,12 +84,14 @@ module "vpc" {
     default = {
       destination_type = "cloudwatch"
       traffic_type     = "ALL"
+      name_format      = "{vpc}" # v4 Flow Log Name tag: var.name
 
       # Replace both values with the exact v4 state values before planning.
       # The log group uses the root declarative handoff below; the role uses a moved block.
       role_name_prefix = "migration-example-cw-access-role-"
       cloudwatch_options = {
-        name = var.v4_flow_log_group_name
+        name        = var.v4_flow_log_group_name
+        name_format = "" # v4 generated log group had no Name tag
       }
     }
   }

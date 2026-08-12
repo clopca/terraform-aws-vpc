@@ -78,13 +78,15 @@ run "plan_full_migration_example" {
 
   assert {
     condition = output.v4_name_compatibility == {
-      public_subnet    = "public-us-east-1a"
-      app_route_table  = "app-us-east-1a"
-      nat_eip          = "nat-public-us-east-1a"
-      nat_gateway      = "nat-public-us-east-1a"
-      internet_gateway = "migration-example-igw"
-      egress_only_igw  = "migration-example"
+      public_subnet      = "public-us-east-1a"
+      app_route_table    = "app-us-east-1a"
+      nat_eip            = "nat-public-us-east-1a"
+      nat_gateway        = "nat-public-us-east-1a"
+      internet_gateway   = "migration-example-igw"
+      egress_only_igw    = "migration-example"
+      flow_log           = "migration-example"
+      log_group_has_name = false
     }
-    error_message = "The migration example must reproduce the v4 subnet, route-table, NAT/EIP, IGW, and EIGW Name formulas exactly."
+    error_message = "The migration example must reproduce all v4 Name tags exactly, including the Flow Log Name and absent log-group Name."
   }
 }

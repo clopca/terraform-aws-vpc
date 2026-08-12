@@ -31,6 +31,24 @@ locals {
 
   resource_name_base = replace(var.vpc.name, "/[^A-Za-z0-9_.-]/", "-")
 
+  # Name tags are controlled exclusively by typed formats. An empty format
+  # removes caller-supplied Name keys; provider default_tags remain provider-owned.
+  flow_log_name_tags = {
+    for name, cfg in local.enabled_flow_logs : name => cfg.name_format == "" ? {} : {
+      Name = replace(replace(cfg.name_format, "{vpc}", var.vpc.name), "{key}", name)
+    }
+  }
+  cloudwatch_log_group_name_tags = {
+    for name, cfg in local.cloudwatch_destinations_to_create : name => (
+      cfg.cloudwatch_options.name_format == null ? cfg.name_format : cfg.cloudwatch_options.name_format
+      ) == "" ? {} : {
+      Name = replace(replace(
+        cfg.cloudwatch_options.name_format == null ? cfg.name_format : cfg.cloudwatch_options.name_format,
+        "{vpc}", var.vpc.name,
+      ), "{key}", name)
+    }
+  }
+
   flow_log_destination_arns = {
     for name, cfg in local.enabled_flow_logs : name => (
       !cfg.create ? cfg.destination_arn :
@@ -60,9 +78,10 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
   retention_in_days = each.value.cloudwatch_options.retention_in_days
   kms_key_id        = each.value.cloudwatch_options.kms_key_id
 
-  tags = merge(var.tags, each.value.tags, {
-    Name = "${var.vpc.name}-${each.key}-flow-logs"
-  })
+  tags = merge(
+    { for key, value in merge(var.tags, each.value.tags) : key => value if key != "Name" },
+    local.cloudwatch_log_group_name_tags[each.key],
+  )
 }
 
 resource "aws_iam_role" "flow_logs" {
@@ -150,9 +169,10 @@ resource "aws_flow_log" "this" {
     }
   }
 
-  tags = merge(var.tags, each.value.tags, {
-    Name = "${var.vpc.name}-${each.key}-flow-logs"
-  })
+  tags = merge(
+    { for key, value in merge(var.tags, each.value.tags) : key => value if key != "Name" },
+    local.flow_log_name_tags[each.key],
+  )
 
   lifecycle {
     precondition {

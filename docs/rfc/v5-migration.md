@@ -7,7 +7,7 @@
 - Work against a copy of production state first; never combine an unreviewed provider upgrade with the v4 -> v5 module cutover.
 - The migration gate is one saved, complete normal `terraform plan`; no partial or state-only plan is an acceptance substitute.
 - Preserve every durable physical ID. The default gate permits zero replacements and zero destroys. Expected creates are internal `terraform_data` precondition records plus the Flow Logs inline policy described below; `terraform_data` has no AWS API side effects. The legacy managed policy and attachment are forgotten without destroy and cleaned explicitly only after delivery verification.
-- Preserve v4 Name tags with the format mapping below. The remediation-3 fixture's 14 subnet/route-table/EIP/NAT updates disappear when those formats are configured.
+- Preserve v4 Name tags with the format mapping below. Besides eliminating the remediation-3 fixture's 14 subnet/route-table/EIP/NAT updates, set the Flow Log format to `{vpc}` and the log-group format to empty so neither logging resource changes `Name`.
 - Keep provider `default_tags` unchanged through the cutover. Duplicate keys resolve provider defaults < module globals < resource/group tags < generated Name.
 - Express the CloudWatch log-group ownership handoff declaratively so the old-address forget and the v5-address import are visible in the same normal plan.
 
@@ -60,7 +60,7 @@
 
 ### C. Translate configuration and state
 
-5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order. Configure the exact v4 Name formats before planning: subnet groups use `"{group}-{az}"`, NAT/EIP use `"nat-{group}-{az}"`, IGW uses `"{vpc}-igw"`, and EIGW uses `"{vpc}"`.
+5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order. Configure the exact v4 Name formats before planning: subnet groups use `"{group}-{az}"`, NAT/EIP use `"nat-{group}-{az}"`, IGW uses `"{vpc}-igw"`, EIGW uses `"{vpc}"`, the Flow Log uses `flow_logs.default.name_format = "{vpc}"`, and its generated log group uses `cloudwatch_options.name_format = ""`.
 6. Copy the active `v5/examples/migration-from-v4/moved.tf` into the caller root. Replace sample AZs, private groups, and destination-derived keys. Treat 63 as the union of demonstrated features, not a required count: compare against `terraform state list`, remove every block whose source is absent, and repeat the private six-block pattern for each actual private group. The remediation-3 fixture retained 26 and omitted 37. The example intentionally excludes the v4 CloudWatch log group.
 7. Change the module source/version and initialize v5 without changing the already-baselined provider selection:
 
@@ -213,6 +213,8 @@
 | NAT Gateway | `nat-${public.name_prefix || "public"}-${az}` | Same NAT format | Exact. |
 | Internet Gateway | `${var.name}-igw` | `vpc.igw_name_format = "{vpc}-igw"` | Exact; also the v5 default. |
 | Egress-only Internet Gateway | `var.name` | `vpc.eigw_name_format = "{vpc}"` | Exact; overrides the native v5 `"{vpc}-eigw"` default. |
+| VPC Flow Log | `var.name` | `flow_logs.default.name_format = "{vpc}"` | Exact. |
+| Generated CloudWatch log group | no `Name` tag | `flow_logs.default.cloudwatch_options.name_format = ""` | Exact; empty format removes caller `Name` keys. |
 
 The default migration path therefore removes the 14 cosmetic updates observed in
 the remediation-3 two-AZ fixture: six subnets, six route tables, one EIP, and one
@@ -276,6 +278,8 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `core_network_routes.<group>` | `subnets.<group>.routing.core_network` | Wrap the single destination in a list. |
 | `core_network_ipv6_routes.<group>` | `subnets.<group>.routing.core_network_ipv6` | Wrap the single destination in a list. |
 | `vpc_flow_logs` | `flow_logs.default` | Use stable key `default`; the remaining rows map every field. |
+| v4 Flow Log `Name = var.name` | `flow_logs.default.name_format` | Set `"{vpc}"`; the v5 default includes the map key and would update the tag. |
+| v4 generated log group without `Name` | `flow_logs.default.cloudwatch_options.name_format` | Set `""` to omit the tag independently from the Flow Log. |
 | `vpc_flow_logs.name_override` or v4 generated log-group name | `flow_logs.default.cloudwatch_options.name` + declarative import ID | Set the exact physical `name` reported by `terraform state show`, not merely the old prefix. Use the root `removed { destroy=false }` + `import` handoff shown above. |
 | v4 generated CloudWatch IAM role `name_prefix` | `flow_logs.default.role_name_prefix` | Copy the exact `name_prefix` reported by state (not the generated role `name`) before applying the IAM role moved block. |
 | `vpc_flow_logs.log_destination` | `flow_logs.default.create_destination=false` + `destination_arn` | CloudWatch injection sets the explicit flag; S3/Firehose remain externally managed and always require the ARN. |

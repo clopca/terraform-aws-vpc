@@ -37,6 +37,11 @@ The example has two AZs and a feature-union catalog. The catalog size is not a m
 
 v4 configured `name_prefix`; v5 configures the exact fixed `name`. AWS provider 6.59 marks both fields `Optional + Computed + ForceNew`. Its importer reads by physical name and then records both the observed `name` and a derived, provider-computed `name_prefix`; import does **not** clear the prefix. Because v5 configures the exact observed `name` and omits `name_prefix`, no naming replacement is required. The root handoff uses unindexed module addresses in three `removed { destroy = false }` blocks: log group, managed policy, and attachment. The log group is imported at its v5 address; the IAM role keeps a normal move and requires its exact v4 `name_prefix`. The two forgotten IAM objects remain temporarily in AWS and are detached/deleted only after the inline policy and continued delivery are verified.
 
+v4 gave the Flow Log `Name = var.name` but left the generated log group without a
+`Name` tag. The example therefore sets `flow_logs.default.name_format = "{vpc}"`
+and `cloudwatch_options.name_format = ""`; the two resources converge without the
+tag updates observed in rehearsal #3.
+
 The declarative handoff requires Terraform >= 1.7 because `removed { destroy = false }` is newer than import blocks. Terraform < 1.5 cannot run this v5 module. As an ownership plan B, set `create_destination = false` and inject the existing log-group ARN after a separate logging stack owns it; the VPC module then manages only the Flow Log.
 
 ## Validation-only commands

@@ -818,16 +818,21 @@ variable "flow_logs" {
     destination_type accepts cloudwatch, s3, or kinesis (Kinesis Data Firehose).
     CloudWatch supports create-or-inject for both the log group and the VPC Flow
     Logs IAM role. Set `create_destination=false` and/or `create_iam_role=false`
-    when injecting computed ARNs. `cloudwatch_options.name` is the fixed physical log-group name;
-    set it to the exact imported v4 name during migration. `role_name_prefix` is
+    when injecting computed ARNs. `name_format` controls the Flow Log `Name` tag
+    with `{vpc}`/`{key}` placeholders. `cloudwatch_options.name_format` controls
+    the log-group tag and inherits the parent format when null. Set either format
+    to the empty string to omit `Name` even when caller tag maps contain it.
+    `cloudwatch_options.name` is the fixed physical log-group name; set it to the
+    exact imported v4 name during migration. `role_name_prefix` is
     passed through exactly (maximum 38 characters) so a moved v4 IAM role keeps its
     original prefix and is not replaced. S3 buckets and Firehose delivery streams
     are external resources: destination_arn is required so their lifecycle, KMS,
     retention, and ownership policies remain outside this VPC module.
 
-    Migration note: use the exact v4 physical name with a root declarative
-    `removed { destroy=false }` plus `import` handoff. Provider import records the
-    observed name and a computed name_prefix; omitting name_prefix in v5 avoids drift.
+    Migration note: use the exact v4 physical name with three root declarative
+    `removed { destroy=false }` blocks (log group, managed policy, attachment)
+    plus the log-group `import` handoff. Provider import records the observed name
+    and a computed name_prefix; omitting name_prefix in v5 avoids drift.
   EOT
   type = map(object({
     enabled                        = optional(bool, true)
@@ -842,10 +847,12 @@ variable "flow_logs" {
     traffic_type                   = optional(string, "ALL")
     log_format                     = optional(string)
     max_aggregation_interval       = optional(number, 600)
+    name_format                    = optional(string, "{vpc}-{key}-flow-logs")
     role_name_prefix               = optional(string)
     role_permissions_boundary      = optional(string)
     cloudwatch_options = optional(object({
       name              = optional(string)
+      name_format       = optional(string)
       retention_in_days = optional(number, 30)
       kms_key_id        = optional(string)
     }), {})
@@ -936,6 +943,16 @@ variable "flow_logs" {
       for name, cfg in var.flow_logs : cfg.cloudwatch_options.name == null || length(trimspace(cfg.cloudwatch_options.name)) > 0
     ])
     error_message = "flow_logs[*].cloudwatch_options.name must be null or a non-empty fixed log-group name."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for name, cfg in var.flow_logs : [
+        for format in compact([cfg.name_format, cfg.cloudwatch_options.name_format]) :
+        length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(format, "{vpc}", ""), "{key}", "")))
+      ]
+    ]))
+    error_message = "Flow Log Name formats may be empty to omit Name; otherwise they must be non-blank and may use only {vpc} and {key}."
   }
 
   validation {

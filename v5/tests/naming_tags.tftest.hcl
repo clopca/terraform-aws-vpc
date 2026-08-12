@@ -85,3 +85,47 @@ run "name_formats_and_tag_precedence" {
     error_message = "Tag precedence must remain global < group/resource < generated Name across representative taggable resources."
   }
 }
+
+
+run "flow_log_name_formats_and_omission" {
+  command = plan
+
+  variables {
+    vpc                = { name = "legacy-flow" }
+    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets            = {}
+    tags               = { Name = "global-must-be-removed-or-overridden" }
+    flow_logs = {
+      default = {
+        destination_type = "cloudwatch"
+        name_format      = "{vpc}"
+        cloudwatch_options = {
+          name_format = ""
+        }
+        tags = { Fixture = "migration" }
+      }
+      unnamed = {
+        destination_type = "s3"
+        destination_arn  = "arn:aws:s3:::unnamed-flow-log-bucket"
+        name_format      = ""
+        tags             = { Name = "must-be-removed" }
+      }
+      native = {
+        destination_type = "s3"
+        destination_arn  = "arn:aws:s3:::native-flow-log-bucket"
+        tags             = { Name = "must-not-win" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      aws_flow_log.this["default"].tags.Name == "legacy-flow" &&
+      !contains(keys(aws_cloudwatch_log_group.flow_logs["default"].tags), "Name") &&
+      !contains(keys(aws_flow_log.this["unnamed"].tags), "Name") &&
+      aws_flow_log.this["native"].tags.Name == "legacy-flow-native-flow-logs"
+    )
+    error_message = "Flow Log and log-group Name formats must be independent, preserve the default formula, and support explicit omission."
+  }
+}

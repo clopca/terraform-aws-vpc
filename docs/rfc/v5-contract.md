@@ -322,13 +322,15 @@ variable "nat_gateway" {
 Display names are independent from state identity. Subnet groups accept a complete
 `name_format`; route tables inherit it unless `route_table_name_format` is set.
 NAT/EIP formats resolve against the selected host group, while IGW/EIGW formats
-resolve at the VPC boundary. Supported placeholders are `{vpc}`, `{group}`, and
-`{az}` where meaningful; a literal string is also valid. The generated `Name` tag
-always wins over user maps so a duplicate `Name` cannot silently defeat the naming
-contract.
+resolve at the VPC boundary. Flow Logs use `{vpc}`/`{key}`; the log-group format
+inherits the Flow Log format unless independently set. An empty Flow Log format
+omits `Name` and removes caller `Name` keys, which is required to reproduce v4's
+untagged generated log group. Other supported placeholders are `{vpc}`, `{group}`,
+and `{az}` where meaningful; literal strings are valid. A non-empty generated
+`Name` wins over user maps so a duplicate cannot defeat the naming contract.
 
 Every taggable resource uses an explicit `merge`. Effective precedence is AWS
-provider `default_tags` < `var.tags` < resource/group tags < generated `Name`.
+provider `default_tags` < `var.tags` < resource/group tags < non-empty generated `Name`.
 Provider `>= 6.29` is beyond the historical pre-5.0 `default_tags` identical-tag
 perpetual-diff defects. No `ignore_changes` is used: changing provider defaults is
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
@@ -525,7 +527,11 @@ AWS quota of five.
 #### ADR-F3-4 — Flow Logs validation boundary
 
 The contract validates supported CloudWatch retention periods, non-empty optional
-ARNs, and mandatory external destination ARNs for S3/Firehose. It does not infer
+ARNs, mandatory external destination ARNs for S3/Firehose, and Flow Log Name
+formats. `flow_logs[*].name_format` defaults to `{vpc}-{key}-flow-logs`;
+`cloudwatch_options.name_format = null` inherits it, while `""` explicitly omits
+`Name`. This independent override is necessary because v4 tagged the Flow Log with
+`vpc.name` but left its generated CloudWatch group without `Name`. It does not infer
 cross-account ownership from an ARN or attempt to prove IAM permissions at plan
 time; those are runtime/account-policy concerns. `deliver_cross_account_role_arn`
 is accepted as an explicit non-empty ARN and remains caller-owned.
