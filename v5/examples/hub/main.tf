@@ -3,9 +3,9 @@
 # Demonstrates:
 #   - Multiple public subnet groups [R1-C1]: "public" + "edge" both public role
 #   - Multiple TGW route destinations [R1-C3]: corporate + shared-services
-#   - IGW injection [R1-H2]: bring your own IGW
+#   - Existing EIPs for NAT [R1-H2]
 #   - CIDR pinning [R1-C2]: cidr_index for stable netmask allocation
-#   - Existing NAT GW injection [R1-H2]
+#   - Private NAT gateway (connectivity_type = "private") for inspection VPC
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -26,8 +26,8 @@ module "vpc" {
   source = "../.."
 
   vpc = {
-    name = "network-hub-vpc"
-    # igw_id = "igw-existing123"  # Uncomment to inject existing IGW [R1-H2]
+    name   = "network-hub-vpc"
+    igw_id = "igw-existing123" # Inject existing IGW [R1-H2]
   }
 
   addressing = {
@@ -76,8 +76,8 @@ module "vpc" {
       routing = {
         nat_gateway = true
         # Multiple TGW destinations [R1-C3]:
-        # Route corporate and shared-services CIDRs to TGW
-        transit_gateway = ["10.0.0.0/8", "172.16.0.0/12"]
+        # Route corporate + shared-services + partner CIDRs via TGW
+        transit_gateway = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
       }
       tags = { Purpose = "network-firewall-endpoints" }
     }
@@ -119,11 +119,6 @@ module "vpc" {
 
   nat_gateway = {
     mode = "all_azs"
-    # existing_ids = {  # Uncomment to inject existing NAT GWs [R1-H2]
-    #   "us-west-2a" = "nat-aaa111"
-    #   "us-west-2b" = "nat-bbb222"
-    #   "us-west-2c" = "nat-ccc333"
-    # }
     eip = {
       mode = "existing"
       allocation_ids = {
@@ -137,6 +132,61 @@ module "vpc" {
   tags = {
     Environment = "production"
     Role        = "network-hub"
+  }
+}
+
+# ─── Private NAT example (inspection VPC pattern) ─────────────────────────
+# Demonstrates connectivity_type = "private" — NAT without public EIP.
+
+module "inspection_vpc" {
+  source = "../.."
+
+  vpc = {
+    name = "inspection-vpc"
+  }
+
+  addressing = {
+    ipv4 = { cidr_block = "100.64.0.0/16" }
+  }
+
+  availability_zones = {
+    names = ["us-west-2a", "us-west-2b"]
+  }
+
+  subnets = {
+    firewall = {
+      role = "private"
+      ipv4 = { netmask = 24 }
+      routing = {
+        nat_gateway     = true
+        transit_gateway = ["10.0.0.0/8"]
+      }
+    }
+
+    tgw = {
+      role = "transit_gateway"
+      ipv4 = { netmask = 28 }
+      transit_gateway_options = {
+        id = "tgw-0123456789abcdef0"
+      }
+    }
+
+    # Private NAT needs a subnet to live in — but private NAT doesn't require
+    # a public subnet, it can be placed in any subnet. We use a dedicated one.
+    nat-host = {
+      role = "private"
+      ipv4 = { netmask = 28 }
+    }
+  }
+
+  nat_gateway = {
+    mode              = "all_azs"
+    connectivity_type = "private"
+  }
+
+  tags = {
+    Environment = "production"
+    Role        = "inspection"
   }
 }
 
@@ -156,10 +206,26 @@ output "igw_id" {
   value = module.vpc.internet_gateway_id
 }
 
-output "tgw_attachment_id" {
-  value = module.vpc.transit_gateway_attachment_id
+output "nat_gateway_ids" {
+  value = module.vpc.nat_gateway_ids
 }
 
-output "cwan_attachment_id" {
-  value = module.vpc.core_network_attachment_id
+output "nat_public_ips" {
+  value = module.vpc.nat_public_ips
+}
+
+output "route_tables" {
+  value = module.vpc.route_table_ids_by_group_by_az
+}
+
+output "route_tables_by_role" {
+  value = module.vpc.route_table_ids_by_semantic_role
+}
+
+output "inspection_vpc_id" {
+  value = module.inspection_vpc.vpc_id
+}
+
+output "inspection_nat_ids" {
+  value = module.inspection_vpc.nat_gateway_ids
 }

@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 2: Enterprise — IPAM + Explicit CIDRs + Multiple Tiers
-# Demonstrates cidr_index pinning [R1-C2] for production stability.
+# Demonstrates: all_azs NAT with BYOIP pool, EIGW, cidr_index pinning [R1-C2]
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -66,7 +66,8 @@ module "vpc" {
       }
       ipv6 = { auto_assign = true }
       routing = {
-        nat_gateway = true
+        nat_gateway     = true
+        egress_only_igw = true
       }
       tags = { Tier = "application" }
     }
@@ -89,7 +90,8 @@ module "vpc" {
   nat_gateway = {
     mode = "all_azs"
     eip = {
-      mode = "create"
+      mode             = "byoip_pool"
+      public_ipv4_pool = "ipv4pool-ec2-012345678"
     }
   }
 
@@ -113,4 +115,20 @@ output "subnet_cidrs" {
 
 output "subnets_by_role" {
   value = module.vpc.subnet_ids_by_semantic_role
+}
+
+output "nat_gateway_ids" {
+  value = module.vpc.nat_gateway_ids
+}
+
+output "nat_public_ips" {
+  value = module.vpc.nat_public_ips
+}
+
+output "route_tables" {
+  value = module.vpc.route_table_ids_by_group_by_az
+}
+
+output "eigw_id" {
+  value = module.vpc.egress_only_igw_id
 }
