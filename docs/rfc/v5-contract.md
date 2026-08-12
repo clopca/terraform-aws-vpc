@@ -1,6 +1,12 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 6 audited; remediation batch 1 implemented (gate remains pending for out-of-scope findings)
+> **Status:** Draft / Phase 6 audited; remediation batches 1, 2, and 4 implemented (live AWS migration revalidation remains pending)
+>
+> **Remediation batch 4 (2026-08-12, `f0db68e`, `dcaab57`):**
+> - Complete Name formats preserve v4 subnet, route-table, NAT/EIP, IGW, and EIGW tags without coupling display names to state keys.
+> - All 15 taggable resource types were schema-audited; IGW/EIGW gained boundary tag maps and NAT/EIP inherit host-group tags. Provider `default_tags` precedence and migration behavior are explicit.
+> - The migration gate now permits internal `terraform_data` state records, materializes moved addresses before the Flow Log import, and treats 63 moves as a feature union (26 applicable/37 absent in the real fixture).
+> - Native suite: 50 passed, 0 failed; the destroyed AWS fixture has not been recreated, so no post-apply claim is made.
 >
 > **Remediation batch 1 (2026-08-12, `db758f7`, `0a1f424`):**
 > - IPv6 is functional end-to-end: Amazon `/56`, IPv6 IPAM/exact CIDR, injected
@@ -590,13 +596,17 @@ into a `create=true` resource address during migration.
 ## 4. Migration Path v4 → v5
 
 The normative mapping and state procedure is [v5-migration.md](v5-migration.md).
-The validateable skeleton under `v5/examples/migration-from-v4` contains 63 exact
-representative `moved` blocks. The v4 CloudWatch log group is intentionally excluded:
-its `name_prefix` -> v5 `name` transition is ForceNew, so ADR-F4-1 preserves it by
-configuring the generated physical name and using state remove/import. Static moved
-addresses are otherwise intentional: Terraform does not permit variables or
-wildcards in moved addresses, so callers substitute their actual AZs, private group
-keys, route destinations, and optional resources.
+The validateable skeleton under `v5/examples/migration-from-v4` contains a
+63-block feature union, not a required per-deployment count: the remediation-3
+fixture selected 26 applicable sources and omitted 37 absent-feature blocks. The
+v4 CloudWatch log group is intentionally excluded: its `name_prefix` -> v5 `name`
+transition is ForceNew, so ADR-F4-1 preserves it by configuring the generated
+physical name, materializing applicable moved addresses with a saved refresh-only
+state plan, and only then using state remove/import. The subsequent complete normal
+plan remains the acceptance gate. Static moved addresses are otherwise intentional:
+Terraform does not permit variables or wildcards in moved addresses, so callers
+substitute their actual AZs, private group keys, route destinations, and optional
+resources.
 
 ## 5. Open Questions (Resolved)
 

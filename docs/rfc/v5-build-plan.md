@@ -42,7 +42,7 @@
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
 | 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
 | 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | ✅ `a5fb279` + `2db15d7` |
-| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🟡 auditada; remediaciones 1 y 2 cerradas, evidencia AWS/migración integral pendiente |
+| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🟡 auditada; remediaciones 1, 2 y 4 cerradas localmente; revalidación AWS stateful pendiente |
 
 ### Entrega fase 4
 
@@ -133,6 +133,28 @@ Commits locales: `3f96aba` (contrato/recursos/tests), `606fc47`
 El gate global conserva fuera de scope el apply AWS real y la demostración
 integral de migración v4→v5 sobre state real.
 
+## Remediación tanda 4 — naming/tags + guía stateful
+
+Commits locales: `f0db68e` (contrato Name/tagging/tests/ADRs) y `dcaab57`
+(guía, ejemplo, moved catalog y test de nombres de migración).
+
+- Naming: formatos completos desacoplados de state para subnet/RT/NAT/EIP/IGW/EIGW.
+  La ruta v4 reproduce `{group}-{az}`, `nat-{group}-{az}`, `{vpc}-igw` y `{vpc}`;
+  desaparecen los 14 updates cosméticos del fixture.
+- Tags: 15 tipos taggeables auditados contra el schema AWS. Ninguno carecía de
+  `tags`; IGW, EIP y NAT carecían de capa boundary/grupo. NAT/EIP heredan el grupo
+  host; gateways admiten tags boundary. Precedencia: provider defaults < global <
+  grupo/recurso < Name.
+- Migración: allowlist incluye los siete `terraform_data` state-only observados;
+  los moves se materializan con un plan refresh-only guardado antes del `state rm`
+  + import del log group. El gate sigue siendo un plan normal completo.
+- Moved catalog: 63 es la unión de features; el fixture real seleccionó 26 y
+  omitió 37 fuentes ausentes. El ejemplo anota qué secciones dependen de cada feature.
+- Gates locales: `terraform test` **50 passed, 0 failed** (12 ficheros, 63 asserts,
+  21 runs negativos), fmt/validate/TFLint en verde con workaround macOS xattr.
+- Evidencia pendiente: el fixture AWS de remediación 3 fue destruido; no se declara
+  un post-apply nuevo hasta que se recree y ejecute el runbook corregido.
+
 ## Reglas fijas del builder
 
 1. Todo `object()` + `optional()` + `validation` — prohibido `type = any`.
@@ -154,6 +176,7 @@ integral de migración v4→v5 sobre state real.
 - docs/rfc/reviews/fase-5.md … fase-6.md — pendientes.
 - [docs/rfc/reviews/remediacion-1.md](reviews/remediacion-1.md) — cierre de Criticals y Highs acoplados de la primera tanda post-auditoría.
 - [docs/rfc/reviews/remediacion-2.md](reviews/remediacion-2.md) — cierre de D6, IPAM secondary, fronteras y quality gates de la segunda tanda.
+- [docs/rfc/reviews/remediacion-4.md](reviews/remediacion-4.md) — cierre de naming/tags y fixes de la guía stateful de migración.
 
 ## Cambios del contrato introducidos en Gate 1
 
