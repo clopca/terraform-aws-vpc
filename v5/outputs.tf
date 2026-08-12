@@ -163,23 +163,66 @@ output "subnet_cidrs_by_role_by_az" {
 
 output "nat_gateway_ids" {
   description = <<-EOT
-    NAT Gateway IDs indexed by AZ. Empty map until Phase 2.
+    NAT Gateway IDs indexed by AZ. Empty map when mode = "none".
     Shape: map(az, nat_gateway_id)
   EOT
-  value       = {} # Phase 2
+  value       = var.nat_gateway.mode == "none" ? {} : local.nat_gateway_ids
 }
 
 output "nat_public_ips" {
   description = <<-EOT
-    NAT Gateway public IPs indexed by AZ. Empty map until Phase 2.
+    NAT Gateway public IPs indexed by AZ (Elastic IP addresses).
+    Empty when mode = "none" or connectivity_type = "private".
     Shape: map(az, public_ip)
   EOT
-  value       = {} # Phase 2
+  value = (
+    var.nat_gateway.mode == "none" || var.nat_gateway.connectivity_type == "private"
+    ? {}
+    : local.nat_inject_mode ? {} : {
+      for az in local.nat_az_set : az => (
+        try(var.nat_gateway.eip.mode, "create") == "existing"
+        ? aws_nat_gateway.main["nat/${az}"].public_ip
+        : aws_eip.nat["nat/${az}"].public_ip
+      )
+    }
+  )
 }
 
 output "internet_gateway_id" {
   description = "Internet Gateway ID (created or injected). Null if no IGW needed."
   value       = local.igw_id
+}
+
+output "egress_only_igw_id" {
+  description = "Egress-Only Internet Gateway ID. Null if not created."
+  value       = local.eigw_id
+}
+
+output "route_table_ids_by_group_by_az" {
+  description = <<-EOT
+    Route table IDs indexed by subnet group name and AZ.
+    Shape: map(group_name, map(az, route_table_id))
+  EOT
+  value = {
+    for name in keys(var.subnets) : name => {
+      for az in local.azs : az => aws_route_table.main["${name}/${az}"].id
+    }
+  }
+}
+
+output "route_table_ids_by_semantic_role" {
+  description = <<-EOT
+    Route table IDs grouped by semantic role.
+    Shape: map(role, list(route_table_id))
+  EOT
+  value = {
+    for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
+    role => flatten([
+      for name, cfg in var.subnets : [
+        for az in local.azs : aws_route_table.main["${name}/${az}"].id
+      ] if cfg.role == role
+    ])
+  }
 }
 
 output "transit_gateway_attachment_id" {
@@ -213,7 +256,30 @@ output "resources" {
         name       = local.subnet_map[key].name
       }
     }
-    internet_gateway = local.create_igw ? aws_internet_gateway.main[0] : null
+    internet_gateway             = local.create_igw ? aws_internet_gateway.main[0] : null
+    egress_only_internet_gateway = local.create_eigw ? aws_egress_only_internet_gateway.main[0] : null
+    nat_gateways = {
+      for key, nat in aws_nat_gateway.main : key => {
+        id                = nat.id
+        allocation_id     = nat.allocation_id
+        connectivity_type = nat.connectivity_type
+        subnet_id         = nat.subnet_id
+        public_ip         = nat.public_ip
+        private_ip        = nat.private_ip
+      }
+    }
+    eips = {
+      for key, eip in aws_eip.nat : key => {
+        id            = eip.id
+        allocation_id = eip.allocation_id
+        public_ip     = eip.public_ip
+      }
+    }
+    route_tables = {
+      for key, rt in aws_route_table.main : key => {
+        id = rt.id
+      }
+    }
     secondary_cidr_associations = {
       for key, assoc in aws_vpc_ipv4_cidr_block_association.secondary : key => {
         id         = assoc.id
