@@ -190,14 +190,14 @@ Mock providers require Terraform `>= 1.7` when running tests.
 ## Requirements
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.29 |
 
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.29 |
 | <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
@@ -208,7 +208,7 @@ No modules.
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [aws_cloudwatch_log_group.flow_logs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
 | [aws_ec2_transit_gateway_vpc_attachment.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_transit_gateway_vpc_attachment) | resource |
 | [aws_egress_only_internet_gateway.main](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/egress_only_internet_gateway) | resource |
@@ -269,7 +269,7 @@ No modules.
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_addressing"></a> [addressing](#input\_addressing) | IPv4 and/or IPv6 addressing for the VPC. Supports static CIDR, IPAM, or<br/>Amazon-assigned IPv6. At least one of ipv4 or ipv6 must be configured.<br/>For IPv6 IPAM, provide ipam\_pool\_id plus exactly one of cidr\_block or<br/>netmask\_length. An empty IPv6 object is valid only when injecting a VPC and<br/>discovering its existing IPv6 association. | <pre>object({<br/>    ipv4 = optional(object({<br/>      cidr_block     = optional(string)<br/>      ipam_pool_id   = optional(string)<br/>      netmask_length = optional(number)<br/>      secondary = optional(map(object({<br/>        create         = optional(bool, true)<br/>        association_id = optional(string)<br/>        cidr_block     = optional(string)<br/>        ipam_pool_id   = optional(string)<br/>        netmask_length = optional(number)<br/>      })), {})<br/>    }))<br/>    ipv6 = optional(object({<br/>      amazon_assigned = optional(bool, false)<br/>      cidr_block      = optional(string)<br/>      ipam_pool_id    = optional(string)<br/>      netmask_length  = optional(number)<br/>    }))<br/>  })</pre> | n/a | yes |
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | AZ selection. Provide either an explicit list of AZ names or a count<br/>(takes first N from the region alphabetically). Exactly one is required.<br/><br/>⚠️  `count` mode is for DEVELOPMENT ONLY. For production, always use explicit<br/>`names` to guarantee AZ stability. Because `count` resolves AZ names through an<br/>AWS data source, preconditions that depend on the resolved AZ set are unknown<br/>during the initial plan and are deferred by Terraform to apply time. | <pre>object({<br/>    names = optional(list(string))<br/>    count = optional(number)<br/>  })</pre> | n/a | yes |
 | <a name="input_vpc"></a> [vpc](#input\_vpc) | VPC configuration. Set `create = false` and `id` to reference an existing VPC.<br/>The explicit boolean decides resource cardinality, so `id` may be computed by an<br/>upstream resource or module without making count/for\_each unknown.<br/><br/>Set `igw_create = false` and `igw_id` to inject an existing Internet Gateway.<br/>Set `eigw_create = false` and `eigw_id` to inject an existing egress-only<br/>Internet Gateway. Gateway resources are created only when resolved routing<br/>requires them. Gateway Name tags accept a complete format with `{vpc}`;<br/>gateway-specific tags override global tags while the generated Name wins last. | <pre>object({<br/>    name             = string<br/>    create           = optional(bool, true)<br/>    id               = optional(string)<br/>    igw_create       = optional(bool, true)<br/>    igw_id           = optional(string)<br/>    igw_name_format  = optional(string, "{vpc}-igw")<br/>    igw_tags         = optional(map(string), {})<br/>    eigw_create      = optional(bool, true)<br/>    eigw_id          = optional(string)<br/>    eigw_name_format = optional(string, "{vpc}-eigw")<br/>    eigw_tags        = optional(map(string), {})<br/>    instance_tenancy = optional(string, "default")<br/>    dns = optional(object({<br/>      enable_hostnames = optional(bool, true)<br/>      enable_support   = optional(bool, true)<br/>    }), {})<br/>    tags = optional(map(string), {})<br/>  })</pre> | n/a | yes |
@@ -284,7 +284,7 @@ No modules.
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_azs"></a> [azs](#output\_azs) | List of Availability Zones where subnets were created. |
 | <a name="output_core_network_attachment"></a> [core\_network\_attachment](#output\_core\_network\_attachment) | DEPRECATED: v4-compatible full Cloud WAN attachment object. Use core\_network\_attachment\_id. Removed in v6. |
 | <a name="output_core_network_attachment_accepter_id"></a> [core\_network\_attachment\_accepter\_id](#output\_core\_network\_attachment\_accepter\_id) | Cloud WAN attachment accepter ID (created or injected), or null when acceptance is not managed. |
