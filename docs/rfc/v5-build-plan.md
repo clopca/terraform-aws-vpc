@@ -20,7 +20,7 @@
 | 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | ✅ 89eba29 |
 | 2-gate | Cierre R1+R2: claves CIDR estables, placement NAT explícito, RT injection, NAT64, coverage y docs de unknowns | ✅ 97c89ee |
 | 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | ✅ implementada |
-| 3-gate | Cierre R1+R2: dependencias attachment/accepter, floor 6.32, IAM hardened, destinos de datos externos y ADRs | ✅ cerrado |
+| 3-gate | Cierre R1+R2: dependencias attachment/accepter, floor 6.32, IAM hardened, destinos de datos externos y ADRs | ✅ `a9be661` |
 
 ### Entrega fase 3
 
