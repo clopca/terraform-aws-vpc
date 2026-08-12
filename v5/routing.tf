@@ -27,7 +27,7 @@ resource "aws_route_table" "main" {
 resource "aws_route_table_association" "main" {
   for_each = local.subnet_map
 
-  subnet_id      = aws_subnet.main[each.key].id
+  subnet_id      = local.subnet_ids[each.key]
   route_table_id = local.route_table_id_by_subnet[each.key]
 }
 

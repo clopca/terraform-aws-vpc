@@ -23,6 +23,12 @@ data "aws_vpc" "existing" {
   id    = var.vpc.id
 }
 
+data "aws_subnet" "existing" {
+  for_each = local.subnets_to_inject
+
+  id = each.value.existing_id
+}
+
 # Scalar account identity for constructed Cloud WAN/VPC ARNs. The attachment
 # never consumes the full existing-VPC data object, avoiding unknown propagation.
 data "aws_caller_identity" "current" {
@@ -70,19 +76,13 @@ resource "aws_vpc" "main" {
 # Supports multiple secondary CIDRs, each via static CIDR or IPAM.
 
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
-  for_each = local.secondary_cidrs
+  for_each = local.secondary_cidrs_to_create
 
   vpc_id              = local.vpc_id
   cidr_block          = each.value.cidr_block
   ipv4_ipam_pool_id   = each.value.ipam_pool_id
   ipv4_netmask_length = each.value.netmask_length
 
-  lifecycle {
-    precondition {
-      condition     = each.value.cidr_block != null || each.value.ipam_pool_id != null
-      error_message = "Each secondary CIDR must specify either cidr_block or ipam_pool_id."
-    }
-  }
 }
 
 # ─── Internet Gateway — create-or-inject [R1-H2] ─────────────────────────
@@ -114,7 +114,7 @@ resource "aws_internet_gateway" "main" {
 # Eliminates separate aws_subnet.public, .private, .tgw, .cwan resources.
 
 resource "aws_subnet" "main" {
-  for_each = local.subnet_map
+  for_each = local.subnets_to_create
 
   vpc_id            = local.vpc_id
   availability_zone = each.value.az
@@ -141,6 +141,8 @@ resource "aws_subnet" "main" {
     Name = "${var.vpc.name}-${each.value.name_prefix}-${each.value.az}"
   })
 
+  depends_on = [aws_vpc_ipv4_cidr_block_association.secondary]
+
   lifecycle {
     # Basic: must have some addressing
     precondition {
@@ -164,6 +166,36 @@ resource "aws_subnet" "main" {
         each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null
       )
       error_message = "Subnet '${each.key}': explicit cidrs list has fewer entries than configured AZs. Provide exactly one CIDR per AZ."
+    }
+  }
+}
+
+# ─── Injected subnet and secondary-CIDR selectors ────────────────────────
+resource "terraform_data" "subnet_existing_ids_validation" {
+  for_each = {
+    for name, cfg in var.subnets : name => cfg if !cfg.create
+  }
+
+  lifecycle {
+    precondition {
+      condition     = toset(keys(each.value.existing_ids)) == toset(local.azs)
+      error_message = "Injected subnet group '${each.key}' must provide existing_ids keyed exactly by the configured AZs."
+    }
+  }
+}
+
+resource "terraform_data" "subnet_secondary_cidr_validation" {
+  for_each = {
+    for key, subnet in local.subnet_map : key => subnet
+    if subnet.secondary_cidr_key != null
+  }
+
+  input = try(local.secondary_cidr_association_ids[each.value.secondary_cidr_key], null)
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.secondary_cidrs), each.value.secondary_cidr_key)
+      error_message = "Subnet '${each.key}' references unknown secondary CIDR key '${each.value.secondary_cidr_key}'."
     }
   }
 }
@@ -306,7 +338,18 @@ resource "terraform_data" "injected_route_table_all_az_nat_validation" {
   }
 }
 
-# ─── Precondition: routing.egress_only_igw requires IPv6 on VPC ───────────
+# ─── EIGW create-or-inject and IPv6 requirements ─────────────────────────
+resource "terraform_data" "eigw_injection_validation" {
+  count = local.needs_eigw && !var.vpc.eigw_create ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.vpc.eigw_id != null && length(trimspace(var.vpc.eigw_id)) > 0
+      error_message = "Egress-only routing requires either vpc.eigw_create=true or vpc.eigw_create=false with an injected eigw_id."
+    }
+  }
+}
+
 resource "terraform_data" "eigw_requires_ipv6" {
   count = local.needs_eigw && var.addressing.ipv6 == null ? 1 : 0
 

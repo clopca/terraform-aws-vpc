@@ -2,8 +2,16 @@
 # terraform-aws-vpc v5 — VPC Lattice Service Network association (Phase 3)
 # ─────────────────────────────────────────────────────────────────────────────
 
+locals {
+  vpc_lattice_association_id = !var.vpc_lattice.enabled ? null : (
+    var.vpc_lattice.create
+    ? try(aws_vpclattice_service_network_vpc_association.this["vpc"].id, null)
+    : var.vpc_lattice.id
+  )
+}
+
 resource "aws_vpclattice_service_network_vpc_association" "this" {
-  for_each = var.vpc_lattice.enabled ? { vpc = var.vpc_lattice } : {}
+  for_each = var.vpc_lattice.enabled && var.vpc_lattice.create ? { vpc = var.vpc_lattice } : {}
 
   vpc_identifier             = local.vpc_id
   service_network_identifier = each.value.service_network_identifier

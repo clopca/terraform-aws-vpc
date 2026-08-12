@@ -15,7 +15,7 @@ locals {
     for name, cfg in var.subnets : name if cfg.role == "core_network"
   ][0], null)
 
-  transit_gateway_attachment = local.transit_gateway_group == null ? {} : {
+  transit_gateway_attachment = local.transit_gateway_group == null || !var.subnets[local.transit_gateway_group].transit_gateway_options.create ? {} : {
     vpc = {
       group   = local.transit_gateway_group
       options = var.subnets[local.transit_gateway_group].transit_gateway_options
@@ -27,7 +27,7 @@ locals {
     }
   }
 
-  core_network_attachment = local.core_network_group == null ? {} : {
+  core_network_attachment = local.core_network_group == null || !var.subnets[local.core_network_group].core_network_options.create ? {} : {
     vpc = {
       group   = local.core_network_group
       options = var.subnets[local.core_network_group].core_network_options
@@ -54,6 +54,22 @@ locals {
     length(coalesce(try(cfg.routing.transit_gateway, null), [])) > 0 ||
     length(coalesce(try(cfg.routing.transit_gateway_ipv6, null), [])) > 0
   ])
+
+  transit_gateway_attachment_id = local.transit_gateway_group == null ? null : (
+    var.subnets[local.transit_gateway_group].transit_gateway_options.create
+    ? try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"].id, null)
+    : var.subnets[local.transit_gateway_group].transit_gateway_options.attachment_id
+  )
+  core_network_attachment_id = local.core_network_group == null ? null : (
+    var.subnets[local.core_network_group].core_network_options.create
+    ? try(aws_networkmanager_vpc_attachment.this["vpc"].id, null)
+    : var.subnets[local.core_network_group].core_network_options.attachment_id
+  )
+  core_network_accepter_id = local.core_network_group == null || !var.subnets[local.core_network_group].core_network_options.accept_attachment ? null : (
+    var.subnets[local.core_network_group].core_network_options.create_accepter
+    ? try(aws_networkmanager_attachment_accepter.this["vpc"].id, null)
+    : var.subnets[local.core_network_group].core_network_options.accepter_id
+  )
 
   any_core_network_routes = anytrue([
     for name, cfg in var.subnets :
@@ -124,7 +140,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   transit_gateway_id = each.value.options.id
   vpc_id             = local.vpc_id
   subnet_ids = [
-    for az in local.azs : aws_subnet.main["${each.value.group}/${az}"].id
+    for az in local.azs : local.subnet_ids["${each.value.group}/${az}"]
   ]
 
   transit_gateway_default_route_table_association = each.value.options.default_route_table_association
@@ -152,7 +168,7 @@ resource "aws_networkmanager_vpc_attachment" "this" {
   core_network_id = each.value.options.id
   vpc_arn         = local.constructed_vpc_arn
   subnet_arns = [
-    for az in local.azs : aws_subnet.main["${each.value.group}/${az}"].arn
+    for az in local.azs : local.subnet_arns["${each.value.group}/${az}"]
   ]
 
   options {
@@ -175,7 +191,7 @@ resource "aws_networkmanager_vpc_attachment" "this" {
 resource "aws_networkmanager_attachment_accepter" "this" {
   for_each = {
     for key, attachment in local.core_network_attachment : key => attachment
-    if attachment.options.require_acceptance && attachment.options.accept_attachment
+    if attachment.options.require_acceptance && attachment.options.accept_attachment && attachment.options.create_accepter
   }
 
   attachment_id   = aws_networkmanager_vpc_attachment.this[each.key].id

@@ -10,14 +10,22 @@ locals {
   enabled_flow_logs = {
     for name, cfg in var.flow_logs : name => cfg if cfg.enabled
   }
+  flow_logs_to_create = {
+    for name, cfg in local.enabled_flow_logs : name => cfg if cfg.create
+  }
+  flow_log_ids = {
+    for name, cfg in local.enabled_flow_logs : name => (
+      cfg.create ? aws_flow_log.this[name].id : cfg.id
+    )
+  }
 
   cloudwatch_destinations_to_create = {
-    for name, cfg in local.enabled_flow_logs : name => cfg
+    for name, cfg in local.flow_logs_to_create : name => cfg
     if cfg.destination_type == "cloudwatch" && cfg.create_destination
   }
 
   cloudwatch_roles_to_create = {
-    for name, cfg in local.enabled_flow_logs : name => cfg
+    for name, cfg in local.flow_logs_to_create : name => cfg
     if cfg.destination_type == "cloudwatch" && cfg.create_iam_role
   }
 
@@ -25,6 +33,7 @@ locals {
 
   flow_log_destination_arns = {
     for name, cfg in local.enabled_flow_logs : name => (
+      !cfg.create ? cfg.destination_arn :
       cfg.destination_type != "cloudwatch" ? cfg.destination_arn :
       cfg.create_destination
       ? aws_cloudwatch_log_group.flow_logs[name].arn
@@ -34,6 +43,7 @@ locals {
 
   flow_log_role_arns = {
     for name, cfg in local.enabled_flow_logs : name => (
+      !cfg.create ? cfg.iam_role_arn :
       cfg.destination_type != "cloudwatch" ? null :
       cfg.create_iam_role ? aws_iam_role.flow_logs[name].arn :
       cfg.iam_role_arn
@@ -115,7 +125,7 @@ resource "aws_iam_role_policy" "flow_logs" {
 # ─── VPC Flow Logs ────────────────────────────────────────────────────────
 
 resource "aws_flow_log" "this" {
-  for_each = local.enabled_flow_logs
+  for_each = local.flow_logs_to_create
 
   vpc_id          = local.vpc_id
   traffic_type    = each.value.traffic_type

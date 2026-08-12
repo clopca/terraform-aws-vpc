@@ -80,9 +80,6 @@ locals {
   )
 
   # ─── Subnet Group Classification ────────────────────────────────────────
-  # Sorted keys for deterministic processing
-  subnet_names_sorted = sort(keys(var.subnets))
-
   # Groups by addressing mode
   subnets_with_netmask = {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.netmask != null
@@ -255,6 +252,8 @@ locals {
         name               = name
         az                 = az
         role               = cfg.role
+        create             = cfg.create
+        existing_id        = try(cfg.existing_ids[az], null)
         name_prefix        = coalesce(cfg.name_prefix, name)
         tags               = cfg.tags
         manage_route_table = cfg.manage_route_table
@@ -268,8 +267,9 @@ locals {
         )
 
         # IPAM fields (null when not using IPAM for this subnet)
-        ipam_pool_id   = try(cfg.ipv4.ipam_pool_id, null)
-        netmask_length = try(cfg.ipv4.netmask_length, null)
+        ipam_pool_id       = try(cfg.ipv4.ipam_pool_id, null)
+        netmask_length     = try(cfg.ipv4.netmask_length, null)
+        secondary_cidr_key = try(cfg.ipv4.secondary_cidr_key, null)
 
         # IPv6: explicit > deterministic VPC /64 > subnet IPAM.
         ipv6_cidr = (
@@ -293,10 +293,39 @@ locals {
     }
   ]...)
 
-  # ─── Secondary CIDRs ────────────────────────────────────────────────────
-  secondary_cidrs = var.addressing.ipv4 != null ? {
-    for idx, sec in var.addressing.ipv4.secondary : tostring(idx) => sec
-  } : {}
+  # ─── Secondary CIDRs and subnet create-or-inject handles ────────────────
+  secondary_cidrs = var.addressing.ipv4 != null ? var.addressing.ipv4.secondary : {}
+  secondary_cidrs_to_create = {
+    for key, secondary in local.secondary_cidrs : key => secondary if secondary.create
+  }
+  secondary_cidr_association_ids = {
+    for key, secondary in local.secondary_cidrs : key => (
+      secondary.create ? aws_vpc_ipv4_cidr_block_association.secondary[key].id : secondary.association_id
+    )
+  }
+
+  subnets_to_create = {
+    for key, subnet in local.subnet_map : key => subnet if subnet.create
+  }
+  subnets_to_inject = {
+    for key, subnet in local.subnet_map : key => subnet if !subnet.create
+  }
+  subnet_ids = merge(
+    { for key, subnet in aws_subnet.main : key => subnet.id },
+    { for key, subnet in data.aws_subnet.existing : key => subnet.id },
+  )
+  subnet_arns = merge(
+    { for key, subnet in aws_subnet.main : key => subnet.arn },
+    { for key, subnet in data.aws_subnet.existing : key => subnet.arn },
+  )
+  subnet_ipv4_cidrs = merge(
+    { for key, subnet in aws_subnet.main : key => subnet.cidr_block },
+    { for key, subnet in data.aws_subnet.existing : key => subnet.cidr_block },
+  )
+  subnet_ipv6_cidrs = merge(
+    { for key, subnet in aws_subnet.main : key => subnet.ipv6_cidr_block },
+    { for key, subnet in data.aws_subnet.existing : key => subnet.ipv6_cidr_block },
+  )
 
   # ═══════════════════════════════════════════════════════════════════════════
   # PHASE 2 — NAT GATEWAYS, EIGW, ROUTING
@@ -360,7 +389,7 @@ locals {
     for az in local.nat_az_set : "nat/${az}" => {
       az                = az
       connectivity_type = var.nat_gateway.connectivity_type
-      subnet_id         = local.nat_host_group != null ? try(aws_subnet.main["${local.nat_host_group}/${az}"].id, null) : null
+      subnet_id         = local.nat_host_group != null ? try(local.subnet_ids["${local.nat_host_group}/${az}"], null) : null
       allocation_id = (
         var.nat_gateway.connectivity_type == "private" ? null :
         try(var.nat_gateway.eip.mode, "create") == "existing" ?
@@ -374,8 +403,10 @@ locals {
   needs_eigw = anytrue([
     for k, v in var.subnets : try(v.routing.egress_only_igw, false)
   ])
-  create_eigw = local.needs_eigw
-  eigw_id     = local.create_eigw ? aws_egress_only_internet_gateway.main[0].id : null
+  create_eigw = local.needs_eigw && var.vpc.eigw_create
+  eigw_id = !local.needs_eigw ? null : (
+    local.create_eigw ? aws_egress_only_internet_gateway.main[0].id : coalesce(var.vpc.eigw_id, "eigw-invalid")
+  )
 
   # ─── Route Tables: create-or-inject ────────────────────────────────────
   # Create one route table per group/AZ unless the subnet group injects one

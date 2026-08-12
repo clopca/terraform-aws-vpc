@@ -16,7 +16,9 @@ variable "vpc" {
     upstream resource or module without making count/for_each unknown.
 
     Set `igw_create = false` and `igw_id` to inject an existing Internet Gateway.
-    The IGW is created only when resolved routing or a created public NAT requires it.
+    Set `eigw_create = false` and `eigw_id` to inject an existing egress-only
+    Internet Gateway. Gateway resources are created only when resolved routing
+    requires them.
   EOT
   type = object({
     name             = string
@@ -24,6 +26,8 @@ variable "vpc" {
     id               = optional(string)
     igw_create       = optional(bool, true)
     igw_id           = optional(string)
+    eigw_create      = optional(bool, true)
+    eigw_id          = optional(string)
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -55,6 +59,13 @@ variable "vpc" {
     )
     error_message = "vpc.igw_create=true requires igw_id=null; injection uses igw_create=false with a non-empty igw_id."
   }
+
+  validation {
+    condition = var.vpc.eigw_create ? var.vpc.eigw_id == null : (
+      var.vpc.eigw_id == null || length(trimspace(var.vpc.eigw_id)) > 0
+    )
+    error_message = "vpc.eigw_create=true requires eigw_id=null; injection uses eigw_create=false with a non-empty eigw_id."
+  }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,11 +85,13 @@ variable "addressing" {
       cidr_block     = optional(string)
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      secondary = optional(list(object({
+      secondary = optional(map(object({
+        create         = optional(bool, true)
+        association_id = optional(string)
         cidr_block     = optional(string)
         ipam_pool_id   = optional(string)
         netmask_length = optional(number)
-      })), [])
+      })), {})
     }))
     ipv6 = optional(object({
       amazon_assigned = optional(bool, false)
@@ -106,6 +119,27 @@ variable "addressing" {
       var.addressing.ipv4.ipam_pool_id == null || var.addressing.ipv4.netmask_length != null
     )
     error_message = "addressing.ipv4: netmask_length is required when ipam_pool_id is set."
+  }
+
+  validation {
+    condition = var.addressing.ipv4 == null ? true : alltrue([
+      for key, secondary in var.addressing.ipv4.secondary : secondary.create ? (
+        secondary.association_id == null &&
+        (secondary.cidr_block != null ? 1 : 0) + (secondary.ipam_pool_id != null ? 1 : 0) == 1 &&
+        (secondary.ipam_pool_id == null ? secondary.netmask_length == null : secondary.netmask_length != null)
+        ) : (
+        secondary.association_id != null && length(trimspace(secondary.association_id)) > 0 &&
+        secondary.cidr_block == null && secondary.ipam_pool_id == null && secondary.netmask_length == null
+      )
+    ])
+    error_message = "Each secondary CIDR must select create mode with exactly one static/IPAM source (and IPAM netmask), or inject mode with association_id only."
+  }
+
+  validation {
+    condition = var.addressing.ipv4 == null ? true : alltrue([
+      for key in keys(var.addressing.ipv4.secondary) : can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/")
+    ])
+    error_message = "addressing.ipv4.secondary keys must be stable lowercase identifiers without '/'."
   }
 
   validation {
@@ -233,7 +267,9 @@ variable "subnets" {
     `nat_gateway.mode = "all_azs"` is rejected when that group requests NAT/NAT64.
   EOT
   type = map(object({
-    role = string
+    role         = string
+    create       = optional(bool, true)
+    existing_ids = optional(map(string))
 
     # ── IPv4 Addressing (one of netmask/cidrs/ipam required unless ipv6 native_only) ──
     ipv4 = optional(object({
@@ -244,7 +280,8 @@ variable "subnets" {
       # Absolute CIDR group slot for pinning [R1-C2]. Each slot reserves six
       # AZ-sized CIDRs at this netmask. Pinned ranges never move when groups or AZs
       # are added/removed; overlapping pins across netmasks are rejected.
-      cidr_index = optional(number)
+      cidr_index         = optional(number)
+      secondary_cidr_key = optional(string)
     }))
 
     # ── IPv6 Addressing ──
@@ -287,6 +324,8 @@ variable "subnets" {
     # ── Transit Gateway attachment options ──
     transit_gateway_options = optional(object({
       id                              = string
+      create                          = optional(bool, true)
+      attachment_id                   = optional(string)
       default_route_table_association = optional(bool, true)
       default_route_table_propagation = optional(bool, true)
       appliance_mode_support          = optional(bool, false)
@@ -298,15 +337,28 @@ variable "subnets" {
     core_network_options = optional(object({
       id                 = string
       arn                = optional(string) # Optional: auto-derived from id if omitted
+      create             = optional(bool, true)
+      attachment_id      = optional(string)
       appliance_mode     = optional(bool, false)
       require_acceptance = optional(bool, false)
       accept_attachment  = optional(bool, false)
+      create_accepter    = optional(bool, true)
+      accepter_id        = optional(string)
     }))
   }))
 
   default = {}
 
   # ── Validations ──
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.create ? v.existing_ids == null : (
+        v.existing_ids != null && alltrue([for id in values(v.existing_ids) : length(trimspace(id)) > 0])
+      )
+    ])
+    error_message = "Subnet create mode requires existing_ids=null; inject mode requires create=false and non-empty existing_ids keyed by AZ."
+  }
 
   validation {
     condition = alltrue([
@@ -532,6 +584,41 @@ variable "subnets" {
 
   validation {
     condition = alltrue([
+      for k, v in var.subnets : v.transit_gateway_options == null ? true : (
+        v.transit_gateway_options.create ? v.transit_gateway_options.attachment_id == null : (
+          v.transit_gateway_options.attachment_id != null && length(trimspace(v.transit_gateway_options.attachment_id)) > 0
+        )
+      )
+    ])
+    error_message = "Transit Gateway attachment create mode requires attachment_id=null; inject mode requires create=false and a non-empty attachment_id."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.core_network_options == null ? true : (
+        v.core_network_options.create ? v.core_network_options.attachment_id == null : (
+          v.core_network_options.attachment_id != null && length(trimspace(v.core_network_options.attachment_id)) > 0
+        )
+      )
+    ])
+    error_message = "Cloud WAN attachment create mode requires attachment_id=null; inject mode requires create=false and a non-empty attachment_id."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.core_network_options == null ? true : (
+        v.core_network_options.create_accepter ? v.core_network_options.accepter_id == null : (
+          !v.core_network_options.accept_attachment || (
+            v.core_network_options.accepter_id != null && length(trimspace(v.core_network_options.accepter_id)) > 0
+          )
+        )
+      )
+    ])
+    error_message = "Cloud WAN accepter creation requires accepter_id=null; injected acceptance uses create_accepter=false with a non-empty accepter_id."
+  }
+
+  validation {
+    condition = alltrue([
       for k, v in var.subnets : v.role == "transit_gateway" || v.transit_gateway_options == null
     ])
     error_message = "transit_gateway_options may be set only on subnet groups with role = 'transit_gateway'."
@@ -675,6 +762,8 @@ variable "flow_logs" {
   EOT
   type = map(object({
     enabled                        = optional(bool, true)
+    create                         = optional(bool, true)
+    id                             = optional(string)
     destination_type               = optional(string, "cloudwatch")
     create_destination             = optional(bool, true)
     destination_arn                = optional(string)
@@ -699,6 +788,15 @@ variable "flow_logs" {
     tags = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : !cfg.enabled ? (cfg.id == null) : (
+        cfg.create ? cfg.id == null : (cfg.id != null && length(trimspace(cfg.id)) > 0)
+      )
+    ])
+    error_message = "Enabled Flow Log create mode requires id=null; inject mode requires create=false and a non-empty id. Disabled Flow Logs must not set id."
+  }
 
   validation {
     condition = alltrue([
@@ -737,14 +835,14 @@ variable "flow_logs" {
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : cfg.destination_type == "cloudwatch" || cfg.iam_role_arn == null
+      for name, cfg in var.flow_logs : !cfg.enabled || !cfg.create || cfg.destination_type == "cloudwatch" || cfg.iam_role_arn == null
     ])
     error_message = "flow_logs[*].iam_role_arn is only valid for destination_type = cloudwatch."
   }
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : cfg.destination_type != "cloudwatch" ? (
+      for name, cfg in var.flow_logs : !cfg.enabled || !cfg.create ? true : cfg.destination_type != "cloudwatch" ? (
         cfg.destination_arn != null && length(trimspace(cfg.destination_arn)) > 0
         ) : cfg.create_destination ? cfg.destination_arn == null : (
         cfg.destination_arn != null && length(trimspace(cfg.destination_arn)) > 0
@@ -755,7 +853,7 @@ variable "flow_logs" {
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : cfg.destination_type != "cloudwatch" ? true : (
+      for name, cfg in var.flow_logs : !cfg.enabled || !cfg.create ? true : cfg.destination_type != "cloudwatch" ? true : (
         cfg.create_iam_role ? cfg.iam_role_arn == null : (
           cfg.iam_role_arn != null && length(trimspace(cfg.iam_role_arn)) > 0
         )
@@ -806,6 +904,8 @@ variable "vpc_lattice" {
   description = "VPC Lattice association. enabled is the plan-known cardinality selector; identifiers may be computed."
   type = object({
     enabled                    = optional(bool, false)
+    create                     = optional(bool, true)
+    id                         = optional(string)
     service_network_identifier = optional(string)
     security_group_ids         = optional(set(string), [])
     private_dns_enabled        = optional(bool, false)
@@ -814,13 +914,130 @@ variable "vpc_lattice" {
   default = {}
 
   validation {
-    condition = !var.vpc_lattice.enabled ? true : (
-      var.vpc_lattice.service_network_identifier != null &&
-      length(trimspace(var.vpc_lattice.service_network_identifier)) > 0 &&
-      alltrue([for id in var.vpc_lattice.security_group_ids : length(trimspace(id)) > 0]) &&
-      length(var.vpc_lattice.security_group_ids) <= 5
+    condition = !var.vpc_lattice.enabled ? var.vpc_lattice.id == null : (
+      var.vpc_lattice.create ? (
+        var.vpc_lattice.id == null &&
+        var.vpc_lattice.service_network_identifier != null &&
+        length(trimspace(var.vpc_lattice.service_network_identifier)) > 0 &&
+        alltrue([for id in var.vpc_lattice.security_group_ids : length(trimspace(id)) > 0]) &&
+        length(var.vpc_lattice.security_group_ids) <= 5
+        ) : (
+        var.vpc_lattice.id != null && length(trimspace(var.vpc_lattice.id)) > 0 &&
+        var.vpc_lattice.service_network_identifier == null && length(var.vpc_lattice.security_group_ids) == 0
+      )
     )
-    error_message = "Enabled vpc_lattice requires a non-empty service_network_identifier and at most five non-empty security_group_ids."
+    error_message = "VPC Lattice create mode requires a service network and id=null; inject mode requires create=false with id only."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VPC BLOCK PUBLIC ACCESS — regional options and typed exclusions
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "vpc_block_public_access" {
+  description = <<-EOT
+    Regional VPC Block Public Access options. This is an account/Region singleton;
+    enable it from exactly one module instance. create=false injects existing
+    options by ID. Exclusions are keyed by stable names and independently support
+    create-or-inject. A created exclusion targets this VPC or one subnet.
+  EOT
+  type = object({
+    enabled                     = optional(bool, false)
+    create                      = optional(bool, true)
+    id                          = optional(string)
+    internet_gateway_block_mode = optional(string, "block-ingress")
+    exclusions = optional(map(object({
+      create                          = optional(bool, true)
+      id                              = optional(string)
+      internet_gateway_exclusion_mode = optional(string, "allow-bidirectional")
+      target                          = optional(string, "vpc")
+      subnet_key                      = optional(string)
+      subnet_id                       = optional(string)
+      tags                            = optional(map(string), {})
+    })), {})
+  })
+  default = {}
+
+  validation {
+    condition = !var.vpc_block_public_access.enabled ? (
+      var.vpc_block_public_access.id == null && length(var.vpc_block_public_access.exclusions) == 0
+      ) : (
+      contains(["block-ingress", "block-bidirectional"], var.vpc_block_public_access.internet_gateway_block_mode) &&
+      (var.vpc_block_public_access.create ? var.vpc_block_public_access.id == null : (
+        var.vpc_block_public_access.id != null && length(trimspace(var.vpc_block_public_access.id)) > 0
+      ))
+    )
+    error_message = "BPA must be disabled without IDs/exclusions, or enabled in block-ingress/block-bidirectional create-or-inject mode."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, exclusion in var.vpc_block_public_access.exclusions :
+      contains(["allow-bidirectional", "allow-egress"], exclusion.internet_gateway_exclusion_mode) &&
+      (exclusion.internet_gateway_exclusion_mode != "allow-egress" || var.vpc_block_public_access.internet_gateway_block_mode == "block-bidirectional") &&
+      (exclusion.create ? exclusion.id == null : (
+        exclusion.id != null && length(trimspace(exclusion.id)) > 0
+      )) &&
+      (exclusion.target == "vpc" ? (
+        exclusion.subnet_key == null && exclusion.subnet_id == null
+        ) : exclusion.target == "subnet" ? (
+        (exclusion.subnet_key != null ? 1 : 0) + (exclusion.subnet_id != null ? 1 : 0) == 1
+      ) : false)
+    ])
+    error_message = "Each BPA exclusion must select a compatible mode, create-or-inject ownership, and exactly one VPC/subnet target. allow-egress requires block-bidirectional."
+  }
+
+  validation {
+    condition = alltrue([
+      for name in keys(var.vpc_block_public_access.exclusions) : can(regex("^[a-z0-9][a-z0-9_-]*$", name)) && !strcontains(name, "/")
+    ])
+    error_message = "BPA exclusion keys must be stable lowercase identifiers without '/'."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DHCP OPTIONS — typed create-or-inject association
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "dhcp_options" {
+  description = "DHCP option set for the VPC. Enable create mode from typed settings or inject an existing dhcp_options_id."
+  type = object({
+    enabled                           = optional(bool, false)
+    create                            = optional(bool, true)
+    id                                = optional(string)
+    domain_name                       = optional(string)
+    domain_name_servers               = optional(list(string), ["AmazonProvidedDNS"])
+    ntp_servers                       = optional(list(string), [])
+    netbios_name_servers              = optional(list(string), [])
+    netbios_node_type                 = optional(number)
+    ipv6_address_preferred_lease_time = optional(string)
+    tags                              = optional(map(string), {})
+  })
+  default = {}
+
+  validation {
+    condition = !var.dhcp_options.enabled ? var.dhcp_options.id == null : (
+      var.dhcp_options.create ? var.dhcp_options.id == null : (
+        var.dhcp_options.id != null && length(trimspace(var.dhcp_options.id)) > 0
+      )
+    )
+    error_message = "DHCP options create mode requires id=null; inject mode requires create=false and a non-empty id."
+  }
+
+  validation {
+    condition     = var.dhcp_options.netbios_node_type == null || contains([1, 2, 4, 8], var.dhcp_options.netbios_node_type)
+    error_message = "dhcp_options.netbios_node_type must be one of 1, 2, 4, or 8."
+  }
+
+  validation {
+    condition = alltrue([
+      for server in concat(
+        var.dhcp_options.domain_name_servers,
+        var.dhcp_options.ntp_servers,
+        var.dhcp_options.netbios_name_servers,
+      ) : length(trimspace(server)) > 0
+    ])
+    error_message = "DHCP server lists must not contain empty strings."
   }
 }
 

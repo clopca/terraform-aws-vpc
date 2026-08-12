@@ -48,7 +48,7 @@ output "subnet_ids_by_group" {
   description = "Subnet IDs by group. Shape: map(group_name, list(subnet_id))."
   value = {
     for name in sort(keys(var.subnets)) : name => [
-      for az in local.azs : aws_subnet.main["${name}/${az}"].id
+      for az in local.azs : local.subnet_ids["${name}/${az}"]
     ]
   }
 }
@@ -57,7 +57,7 @@ output "subnet_ids_by_group_by_az" {
   description = "Subnet IDs by group and AZ. Shape: map(group_name, map(az, subnet_id))."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].id
+      for az in local.azs : az => local.subnet_ids["${name}/${az}"]
     }
   }
 }
@@ -66,7 +66,7 @@ output "subnet_cidrs_by_group" {
   description = "Subnet IPv4 CIDRs by group. Shape: map(group_name, list(cidr|null))."
   value = {
     for name in sort(keys(var.subnets)) : name => [
-      for az in local.azs : aws_subnet.main["${name}/${az}"].cidr_block
+      for az in local.azs : local.subnet_ipv4_cidrs["${name}/${az}"]
     ]
   }
 }
@@ -75,7 +75,7 @@ output "subnet_cidrs_by_group_by_az" {
   description = "Subnet IPv4 CIDRs by group and AZ. Shape: map(group_name, map(az, cidr|null))."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].cidr_block
+      for az in local.azs : az => local.subnet_ipv4_cidrs["${name}/${az}"]
     }
   }
 }
@@ -84,7 +84,7 @@ output "subnet_ipv6_cidrs_by_group_by_az" {
   description = "Subnet IPv6 CIDRs by group and AZ. Shape: map(group_name, map(az, cidr|null))."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].ipv6_cidr_block
+      for az in local.azs : az => local.subnet_ipv6_cidrs["${name}/${az}"]
     }
   }
 }
@@ -93,7 +93,7 @@ output "subnet_arns_by_group_by_az" {
   description = "Subnet ARNs by group and AZ. Shape: map(group_name, map(az, arn))."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].arn
+      for az in local.azs : az => local.subnet_arns["${name}/${az}"]
     }
   }
 }
@@ -108,7 +108,7 @@ output "subnet_ids_by_semantic_role" {
     for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
     role => flatten([
       for name in sort(keys(var.subnets)) : [
-        for az in local.azs : aws_subnet.main["${name}/${az}"].id
+        for az in local.azs : local.subnet_ids["${name}/${az}"]
       ] if var.subnets[name].role == role
     ])
   }
@@ -120,7 +120,7 @@ output "subnet_ids_by_semantic_role_by_az" {
     for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
     role => {
       for az in local.azs : az => [
-        for name in sort(keys(var.subnets)) : aws_subnet.main["${name}/${az}"].id
+        for name in sort(keys(var.subnets)) : local.subnet_ids["${name}/${az}"]
         if var.subnets[name].role == role
       ]
     }
@@ -133,7 +133,7 @@ output "subnet_cidrs_by_semantic_role" {
     for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
     role => flatten([
       for name in sort(keys(var.subnets)) : [
-        for az in local.azs : aws_subnet.main["${name}/${az}"].cidr_block
+        for az in local.azs : local.subnet_ipv4_cidrs["${name}/${az}"]
       ] if var.subnets[name].role == role
     ])
   }
@@ -145,7 +145,7 @@ output "subnet_cidrs_by_semantic_role_by_az" {
     for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
     role => {
       for az in local.azs : az => [
-        for name in sort(keys(var.subnets)) : aws_subnet.main["${name}/${az}"].cidr_block
+        for name in sort(keys(var.subnets)) : local.subnet_ipv4_cidrs["${name}/${az}"]
         if var.subnets[name].role == role
       ]
     }
@@ -235,25 +235,50 @@ output "internet_gateway_id" {
 }
 
 output "egress_only_igw_id" {
-  description = "Egress-only Internet Gateway ID, or null when not created."
+  description = "Egress-only Internet Gateway ID (created or injected), or null when unused."
   value       = local.eigw_id
+}
+
+output "secondary_cidr_association_ids" {
+  description = "Secondary IPv4 CIDR association IDs by stable caller-owned key."
+  value       = local.secondary_cidr_association_ids
+}
+
+output "vpc_block_public_access_options_id" {
+  description = "VPC Block Public Access regional options ID (created or injected), or null when disabled."
+  value       = local.vpc_block_public_access_options_id
+}
+
+output "vpc_block_public_access_exclusion_ids" {
+  description = "VPC Block Public Access exclusion IDs by stable key."
+  value       = local.vpc_block_public_access_exclusion_ids
+}
+
+output "dhcp_options_id" {
+  description = "DHCP option set ID associated with the VPC (created or injected), or null when disabled."
+  value       = local.dhcp_options_id
 }
 
 # ─── Attachments, Flow Logs, and VPC Lattice ─────────────────────────────
 
 output "transit_gateway_attachment_id" {
   description = "Transit Gateway VPC attachment ID, or null when the role is absent."
-  value       = try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"].id, null)
+  value       = local.transit_gateway_attachment_id
 }
 
 output "core_network_attachment_id" {
   description = "Cloud WAN Core Network VPC attachment ID, or null when the role is absent."
-  value       = try(aws_networkmanager_vpc_attachment.this["vpc"].id, null)
+  value       = local.core_network_attachment_id
+}
+
+output "core_network_attachment_accepter_id" {
+  description = "Cloud WAN attachment accepter ID (created or injected), or null when acceptance is not managed."
+  value       = local.core_network_accepter_id
 }
 
 output "flow_log_ids" {
   description = "VPC Flow Log IDs by the stable flow_logs map key. Shape: map(key, flow_log_id)."
-  value       = { for name, flow_log in aws_flow_log.this : name => flow_log.id }
+  value       = local.flow_log_ids
 }
 
 output "flow_log_destination_arns" {
@@ -268,7 +293,7 @@ output "flow_log_role_arns" {
 
 output "vpc_lattice_service_network_association_id" {
   description = "VPC Lattice Service Network VPC association ID, or null when disabled."
-  value       = try(aws_vpclattice_service_network_vpc_association.this["vpc"].id, null)
+  value       = local.vpc_lattice_association_id
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -295,21 +320,21 @@ output "private_subnet_attributes_by_az" {
 
 output "public_subnet_attributes_by_az" {
   description = "DEPRECATED: v4-compatible map of full public subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6."
-  value = contains(keys(var.subnets), "public") ? {
+  value = contains(keys(var.subnets), "public") && var.subnets.public.create ? {
     for az in local.azs : az => aws_subnet.main["public/${az}"]
   } : {}
 }
 
 output "tgw_subnet_attributes_by_az" {
   description = "DEPRECATED: v4-compatible map of full TGW subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6."
-  value = contains(keys(var.subnets), "transit_gateway") ? {
+  value = contains(keys(var.subnets), "transit_gateway") && var.subnets.transit_gateway.create ? {
     for az in local.azs : az => aws_subnet.main["transit_gateway/${az}"]
   } : {}
 }
 
 output "core_network_subnet_attributes_by_az" {
   description = "DEPRECATED: v4-compatible map of full Cloud WAN subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6."
-  value = contains(keys(var.subnets), "core_network") ? {
+  value = contains(keys(var.subnets), "core_network") && var.subnets.core_network.create ? {
     for az in local.azs : az => aws_subnet.main["core_network/${az}"]
   } : {}
 }
@@ -383,7 +408,7 @@ output "subnet_ids_by_role" {
   description = "DEPRECATED: prototype alias keyed by group name. Use subnet_ids_by_group. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => [
-      for az in local.azs : aws_subnet.main["${name}/${az}"].id
+      for az in local.azs : local.subnet_ids["${name}/${az}"]
     ]
   }
 }
@@ -392,7 +417,7 @@ output "subnet_ids_by_role_by_az" {
   description = "DEPRECATED: prototype alias keyed by group name. Use subnet_ids_by_group_by_az. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].id
+      for az in local.azs : az => local.subnet_ids["${name}/${az}"]
     }
   }
 }
@@ -401,7 +426,7 @@ output "subnet_cidrs_by_role_by_az" {
   description = "DEPRECATED: prototype alias keyed by group name. Use subnet_cidrs_by_group_by_az. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => aws_subnet.main["${name}/${az}"].cidr_block
+      for az in local.azs : az => local.subnet_ipv4_cidrs["${name}/${az}"]
     }
   }
 }
@@ -417,9 +442,12 @@ output "resources" {
       created  = aws_vpc.main
       existing = data.aws_vpc.existing
     }
-    secondary_cidr_associations = aws_vpc_ipv4_cidr_block_association.secondary
-    subnets                     = aws_subnet.main
-    route_tables                = aws_route_table.main
+    secondary_cidr_associations    = aws_vpc_ipv4_cidr_block_association.secondary
+    secondary_cidr_association_ids = local.secondary_cidr_association_ids
+    subnets                        = aws_subnet.main
+    injected_subnets               = data.aws_subnet.existing
+    subnet_ids                     = local.subnet_ids
+    route_tables                   = aws_route_table.main
     injected_route_table_ids = {
       for name, cfg in var.subnets : name => cfg.route_table_id
       if !cfg.manage_route_table
@@ -432,11 +460,22 @@ output "resources" {
     transit_gateway_attachments  = aws_ec2_transit_gateway_vpc_attachment.this
     core_network_attachments     = aws_networkmanager_vpc_attachment.this
     core_network_accepters       = aws_networkmanager_attachment_accepter.this
-    flow_logs                    = aws_flow_log.this
-    flow_log_destinations        = aws_cloudwatch_log_group.flow_logs
-    flow_log_roles               = aws_iam_role.flow_logs
-    flow_log_role_policies       = aws_iam_role_policy.flow_logs
-    vpc_lattice_associations     = aws_vpclattice_service_network_vpc_association.this
+    injected_attachment_ids = {
+      transit_gateway = local.transit_gateway_attachment_id
+      core_network    = local.core_network_attachment_id
+      core_accepter   = local.core_network_accepter_id
+    }
+    flow_logs                          = aws_flow_log.this
+    injected_flow_log_ids              = local.flow_log_ids
+    flow_log_destinations              = aws_cloudwatch_log_group.flow_logs
+    flow_log_roles                     = aws_iam_role.flow_logs
+    flow_log_role_policies             = aws_iam_role_policy.flow_logs
+    vpc_lattice_associations           = aws_vpclattice_service_network_vpc_association.this
+    vpc_lattice_association_id         = local.vpc_lattice_association_id
+    vpc_block_public_access_options    = aws_vpc_block_public_access_options.this
+    vpc_block_public_access_exclusions = aws_vpc_block_public_access_exclusion.this
+    dhcp_options                       = aws_vpc_dhcp_options.this
+    dhcp_options_associations          = aws_vpc_dhcp_options_association.this
     routes = {
       igw_ipv4  = aws_route.igw_ipv4
       igw_ipv6  = aws_route.igw_ipv6

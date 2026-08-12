@@ -43,9 +43,11 @@ module "vpc" {
   addressing = {
     ipv4 = {
       cidr_block = "10.0.0.0/16"
-      secondary = [{
-        cidr_block = "100.64.0.0/20"
-      }]
+      secondary = {
+        shared-services = {
+          cidr_block = "100.64.0.0/20"
+        }
+      }
     }
     ipv6 = {
       amazon_assigned = true
@@ -92,7 +94,10 @@ module "vpc" {
 
     endpoints = {
       role = "isolated"
-      ipv4 = { netmask = 26 }
+      ipv4 = {
+        cidrs              = ["100.64.0.0/26", "100.64.0.64/26", "100.64.0.128/26"]
+        secondary_cidr_key = "shared-services"
+      }
       tags = { Tier = "vpc-endpoints" }
     }
   }
@@ -100,22 +105,16 @@ module "vpc" {
   nat_gateway = {
     mode         = "all_azs"
     subnet_group = "public"
-    eip = {
-      mode             = "byoip_pool"
-      public_ipv4_pool = "ipv4pool-ec2-012345678"
-    }
   }
 
-  # Externally managed S3 destination with parquet hourly partitions.
+  # Module-owned CloudWatch destination and delivery role keep the example
+  # deployable without pre-existing logging infrastructure.
   flow_logs = {
     archive = {
-      destination_type = "s3"
-      destination_arn  = "arn:aws:s3:::enterprise-vpc-flow-logs"
+      destination_type = "cloudwatch"
       traffic_type     = "ALL"
-      s3_options = {
-        file_format                = "parquet"
-        hive_compatible_partitions = true
-        per_hour_partition         = true
+      cloudwatch_options = {
+        retention_in_days = 365
       }
     }
   }
