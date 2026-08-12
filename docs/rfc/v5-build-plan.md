@@ -42,7 +42,7 @@
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
 | 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
 | 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | ✅ `a5fb279` + `2db15d7` |
-| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🔴 auditada; remediación tanda 1 cerrada, gate global pendiente |
+| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🟡 auditada; remediaciones 1 y 2 cerradas, evidencia AWS/migración integral pendiente |
 
 ### Entrega fase 4
 
@@ -112,6 +112,26 @@ Commits locales: `db758f7` (IPv6/AZ/examples/tests) y `0a1f424`
 El gate global de Fase 6 no se marca cerrado: los findings fuera del scope de esta
 tanda permanecen sujetos a remediaciones posteriores.
 
+## Remediación tanda 2 — D6 + IPAM secondary + fronteras + quality gates
+
+Commits locales: `3f96aba` (contrato/recursos/tests) y `606fc47`
+(TFLint/CI/ejemplos).
+
+- D6: VPC Block Public Access regional y DHCP options con contratos tipados,
+  create-or-inject, exclusiones estables y outputs Tier 1.
+- Secondary CIDRs: mapa con claves caller-owned, XOR static/IPAM/inject, selector
+  `secondary_cidr_key` y dependencia subnet→association; cierre funcional de
+  #146/#142 sin `-target`.
+- Fronteras: EIGW, subnet, TGW attachment, Cloud WAN attachment/accepter, Flow
+  Log, Lattice y secondary associations tienen create-or-inject explícito.
+- Quality gates: TFLint 0.63.1 + AWS ruleset 0.48.0, dos locals muertos
+  eliminados, ejemplos sin placeholders estructurales y workflow CI v5 fijado.
+- Gate ejecutado: fmt, TFLint, init/validate del módulo y cuatro ejemplos, y
+  `terraform test` **49 passed, 0 failed** (60 asserts; 21 negative runs).
+
+El gate global conserva fuera de scope el apply AWS real y la demostración
+integral de migración v4→v5 sobre state real.
+
 ## Reglas fijas del builder
 
 1. Todo `object()` + `optional()` + `validation` — prohibido `type = any`.
@@ -132,6 +152,7 @@ tanda permanecen sujetos a remediaciones posteriores.
 - [docs/rfc/reviews/fase-4.md](reviews/fase-4.md) — R1+R2 gate cerrado en `9834664` + `724c964`.
 - docs/rfc/reviews/fase-5.md … fase-6.md — pendientes.
 - [docs/rfc/reviews/remediacion-1.md](reviews/remediacion-1.md) — cierre de Criticals y Highs acoplados de la primera tanda post-auditoría.
+- [docs/rfc/reviews/remediacion-2.md](reviews/remediacion-2.md) — cierre de D6, IPAM secondary, fronteras y quality gates de la segunda tanda.
 
 ## Cambios del contrato introducidos en Gate 1
 

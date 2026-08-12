@@ -89,7 +89,7 @@ The v4 module suffers from three structural defects:
 - Zero `type = any` in the public contract
 - Explicit `role` per subnet group (no magic keys)
 - Stable state keys: unified `"name/az"` for all resources
-- Create-or-inject pattern for VPC, EIP/NAT, IGW
+- Create-or-inject pattern for every managed boundary resource
 - IPAM first-class at VPC and subnet level
 - Tiered outputs with semver stability guarantees
 - Zero-diff migration path from v4 via `moved` blocks
@@ -106,6 +106,8 @@ variable "vpc" {
     id               = optional(string)           # required when create=false; may be computed
     igw_create       = optional(bool, true)       # plan-known ownership selector
     igw_id           = optional(string)           # required for needed injected IGW; may be computed
+    eigw_create      = optional(bool, true)       # plan-known ownership selector
+    eigw_id          = optional(string)           # required for needed injected EIGW; may be computed
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -121,11 +123,13 @@ variable "addressing" {
       cidr_block     = optional(string)
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      secondary = optional(list(object({
+      secondary = optional(map(object({
+        create         = optional(bool, true)
+        association_id = optional(string)
         cidr_block     = optional(string)
         ipam_pool_id   = optional(string)
         netmask_length = optional(number)
-      })), [])
+      })), {})
     }))
     ipv6 = optional(object({
       amazon_assigned = optional(bool, false)
@@ -149,6 +153,12 @@ variable "availability_zones" {
 }
 ```
 
+D6 adds two typed top-level contracts. `vpc_block_public_access` controls the
+regional options singleton and stable-keyed exclusions; options and each
+exclusion independently select create or inject. `dhcp_options` likewise
+selects create or inject and always manages the association to this VPC when
+enabled. Their complete generated schemas are part of the module README.
+
 ### 3.2 Subnet Contract: `subnets = map(object({...}))`
 
 The core of v5. Each entry is a **subnet group** replicated across AZs.
@@ -166,7 +176,9 @@ attachment per TGW/CWAN per VPC).
 ```hcl
 variable "subnets" {
   type = map(object({
-    role = string  # "public" | "private" | "isolated" | "transit_gateway" | "core_network"
+    role         = string  # "public" | "private" | "isolated" | "transit_gateway" | "core_network"
+    create       = optional(bool, true)
+    existing_ids = optional(map(string)) # AZ -> subnet ID when create=false
 
     # ── Addressing (one required unless ipv6.native_only) ──
     ipv4 = optional(object({
@@ -174,7 +186,8 @@ variable "subnets" {
       cidrs          = optional(list(string))  # explicit, one per AZ
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      cidr_index     = optional(number)       # pinning slot for netmask stability [R1-C2]
+      cidr_index         = optional(number)   # pinning slot for netmask stability [R1-C2]
+      secondary_cidr_key = optional(string)   # stable key in addressing.ipv4.secondary
     }))
     ipv6 = optional(object({
       auto_assign    = optional(bool, false) # also calculates a VPC-derived /64 when no other source is set
@@ -210,6 +223,8 @@ variable "subnets" {
 
     transit_gateway_options = optional(object({
       id                              = string
+      create                          = optional(bool, true)
+      attachment_id                   = optional(string)
       default_route_table_association = optional(bool, true)
       default_route_table_propagation = optional(bool, true)
       appliance_mode_support          = optional(bool, false)
@@ -220,9 +235,13 @@ variable "subnets" {
     core_network_options = optional(object({
       id                 = string
       arn                = optional(string)  # auto-derived if omitted
+      create             = optional(bool, true)
+      attachment_id      = optional(string)
       appliance_mode     = optional(bool, false)
       require_acceptance = optional(bool, false)
       accept_attachment  = optional(bool, false) # explicit true supports same-account acceptance only
+      create_accepter    = optional(bool, true)
+      accepter_id        = optional(string)
     }))
   }))
 }
@@ -328,11 +347,14 @@ major release. Minor releases may add outputs or additive map keys.
   `route_table_ids_by_group_by_az`, `route_table_ids_by_semantic_role`,
   `route_table_ids_by_semantic_role_by_az`.
 - NAT/gateways: `nat_gateway_ids`, `nat_public_ips`, `nat_private_ips`,
-  `nat_eip_allocation_ids`, `internet_gateway_id`, `egress_only_igw_id`.
+  `nat_eip_allocation_ids`, `internet_gateway_id`, `egress_only_igw_id`,
+  and `secondary_cidr_association_ids`.
 - Attachments/logging/Lattice: `transit_gateway_attachment_id`,
-  `core_network_attachment_id`, `flow_log_ids`,
-  `flow_log_destination_arns`, `flow_log_role_arns`,
-  `vpc_lattice_service_network_association_id`.
+  `core_network_attachment_id`, `core_network_attachment_accepter_id`,
+  `flow_log_ids`, `flow_log_destination_arns`, `flow_log_role_arns`,
+  and `vpc_lattice_service_network_association_id`.
+- D6: `vpc_block_public_access_options_id`,
+  `vpc_block_public_access_exclusion_ids`, and `dhcp_options_id`.
 
 Per-role/per-AZ values are lists because v5 permits multiple groups sharing one
 semantic role. Consumers such as hubandspoke and cloudwan can select group or
@@ -365,7 +387,8 @@ The pre-publication aliases `subnet_ids_by_role`, `subnet_ids_by_role_by_az`, an
 `resources` exposes complete created/existing VPC collections, subnets, route
 tables and associations, gateways, EIPs/NAT Gateways, attachments/accepter,
 Flow Logs and CloudWatch/IAM resources, Lattice associations, secondary CIDR
-associations, and every route collection. Its shape may change in any release.
+associations, BPA/DHCP resources, injected handles, and every route collection.
+Its shape may change in any release.
 
 ### 3.7 Cross-Variable Invariants (enforced via preconditions) [R2-C2, R2-C3, R2-H1]
 
@@ -382,7 +405,9 @@ callers should use explicit `names` for stable AZ identity and plan-time diagnos
 4. **VPC/subnet IPv6 sources exist and are exclusive**: IPv6 addressing preconditions.
 5. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition.
 6. **Injected IDs accompany explicit ownership flags**: variable/resource preconditions.
-7. **isolated has no routing, including DNS64/NAT64**: `subnets` validation.
+7. **Secondary selector exists before subnet creation**: stable-key validation plus
+   subnet dependency on created associations.
+8. **isolated has no routing, including DNS64/NAT64**: `subnets` validation.
 
 ### 3.8 Provider Floor [R2-H2]
 
@@ -460,8 +485,8 @@ removing a documented mode.
 #### ADR-R1-2 — Ownership flags, never ID nullness, decide cardinality
 
 **Decision:** add plan-known selectors (`vpc.create`, `vpc.igw_create`,
-`manage_route_table`, `nat_gateway.create`, Flow Log create flags, and
-`vpc_lattice.enabled`). IDs/ARNs are values only and may be computed upstream.
+`vpc.eigw_create`, subnet/route-table ownership, `nat_gateway.create`,
+attachment ownership, Flow Log create flags, and `vpc_lattice.enabled`). IDs/ARNs are values only and may be computed upstream.
 This is a deliberate pre-release contract correction: inferring ownership from
 `id == null` makes Terraform unable to know count/for_each during the first plan.
 
@@ -479,19 +504,35 @@ explicit false suppresses the IGW and default route. A public NAT created by the
 module still requires an IGW. `isolated` rejects DNS64 because managed NAT64 is
 egress routing, not an addressing-only feature.
 
+### 3.10.2 Remediation batch 2 ADRs
+
+#### ADR-R2-1 — Secondary CIDR identity and dependency
+
+**Decision:** `addressing.ipv4.secondary` is a stable-keyed map. Each entry
+selects exactly one static/IPAM source in create mode or one association ID in
+inject mode. Subnets reference the association by `secondary_cidr_key` and wait
+for created associations, closing #146/#142 without targeted applies.
+
+#### ADR-R2-2 — D6 is in scope
+
+**Decision:** implement VPC Block Public Access and DHCP options rather than
+silently narrowing D6. BPA options/exclusions and DHCP options publish stable IDs
+and support explicit create-or-inject ownership.
+
+#### ADR-R2-3 — Create-or-inject is universal for managed boundaries
+
+**Decision:** EIGW, subnets, TGW/Cloud WAN attachments and accepter, Flow Logs,
+Lattice, and secondary associations all use plan-known ownership selectors. S3
+and Firehose remain caller-owned data destinations under ADR-F3-1.
+
 ### 3.11 Import and adoption
 
-Existing resources can be adopted without adding unmanaged-resource bypasses:
-
-```shell
-terraform import 'module.vpc.aws_ec2_transit_gateway_vpc_attachment.this["vpc"]' tgw-attach-0123456789abcdef0
-terraform import 'module.vpc.aws_networkmanager_vpc_attachment.this["vpc"]' attachment-0123456789abcdef0
-terraform import 'module.vpc.aws_vpclattice_service_network_vpc_association.this["vpc"]' snva-0123456789abcdef0
-terraform import 'module.vpc.aws_flow_log.this["audit"]' fl-0123456789abcdef0
-```
-
-Use the caller-owned `flow_logs` map key in the final address. Imported attachments
-retain the singleton `"vpc"` address.
+Existing resources are adopted declaratively by setting the boundary-specific
+`create=false` selector and supplying its ID. The module then omits the managed
+resource while preserving the same Tier 1 handle. This applies to EIGW, subnets,
+secondary associations, TGW/Cloud WAN attachments and accepter, Flow Logs, and
+Lattice. Import remains appropriate only when transferring lifecycle ownership
+into a `create=true` resource address during migration.
 
 ---
 
@@ -525,4 +566,5 @@ keys, route destinations, and optional resources.
 - **Phase 4**: Tiered outputs and v4 migration guide/example — ✅ DONE (`9a4bb9c`)
 - **Phase 5**: Native plan-only contract tests, stateful moved fixture, examples, and generated docs — ✅ DONE (`a5fb279`, `2db15d7`)
 - **Remediation 1**: IPv6/AZ count/computed-ID selectors/routing coherence — ✅ DONE (`db758f7`, `0a1f424`)
+- **Remediation 2**: D6, stable secondary IPAM, boundary injection, TFLint/CI — ✅ DONE (`3f96aba`, `606fc47`)
 - **Post-v5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]

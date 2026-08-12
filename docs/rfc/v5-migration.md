@@ -151,7 +151,7 @@
 |---|---|---|
 | `name` | `vpc.name` | Copy unchanged. |
 | `create_vpc` + `vpc_id` | `vpc.create` + `vpc.id` | Create: keep `create=true` and `id=null`. Existing VPC: set `create=false` and `id`; the ID may be computed upstream. |
-| `cidr_block` | `addressing.ipv4.cidr_block` | Primary CIDR when creating. For v4 secondary-CIDR mode, put it in `addressing.ipv4.secondary[0].cidr_block`. |
+| `cidr_block` | `addressing.ipv4.cidr_block` | Primary CIDR when creating. For v4 secondary-CIDR mode, put it in a stable caller-owned entry such as `addressing.ipv4.secondary.legacy.cidr_block`. |
 | `vpc_enable_dns_hostnames` | `vpc.dns.enable_hostnames` | Copy boolean. |
 | `vpc_enable_dns_support` | `vpc.dns.enable_support` | Copy boolean. |
 | `vpc_instance_tenancy` | `vpc.instance_tenancy` | Copy unchanged. |
@@ -161,7 +161,7 @@
 | `vpc_ipv6_cidr_block` | `addressing.ipv6.cidr_block` | Copy unchanged. |
 | `vpc_ipv6_ipam_pool_id` | `addressing.ipv6.ipam_pool_id` | Copy with netmask length. |
 | `vpc_ipv6_netmask_length` | `addressing.ipv6.netmask_length` | Convert the v4 string value to a number. |
-| `vpc_secondary_cidr` | `addressing.ipv4.secondary` | Replace the boolean with an explicit list entry. The v4 module supported one association; v5 supports a list. |
+| `vpc_secondary_cidr` | `addressing.ipv4.secondary` | Replace the boolean with a stable-keyed map entry such as `legacy = { cidr_block = ... }`. v5 supports multiple named associations without positional state churn. |
 | `vpc_secondary_cidr_natgw` | `nat_gateway.create=false` + `existing_ids` | Convert `{ az = { id = "nat-*" } }` to `{ az = "nat-*" }`; set inject mode plus matching NAT mode/AZ. |
 | `az_count` | `availability_zones.count` | Development only. Explicit names are recommended for stable state. |
 | `azs` | `availability_zones.names` | Copy unchanged; this is the production migration path. |
@@ -180,7 +180,7 @@
 | `subnets.public.nat_gateway_configuration` | `nat_gateway.mode` | Copy `none`, `single_az`, or `all_azs`. For `single_az`, set `nat_gateway.az` to the v4 first AZ explicitly. |
 | `subnets.<private>.connect_to_public_natgw` | `subnets.<private>.routing.nat_gateway` | Copy boolean. |
 | `subnets.<private>.connect_to_eigw` | `subnets.<private>.routing.egress_only_igw` | Copy boolean. |
-| `vpc_egress_only_internet_gateway` | derived from `subnets[*].routing.egress_only_igw` | Remove the top-level switch; v5 creates EIGW when any group requests it. |
+| `vpc_egress_only_internet_gateway` | `subnets[*].routing.egress_only_igw` + `vpc.eigw_create`/`eigw_id` | Copy routing intent. Keep create mode for a moved v4 EIGW; use `eigw_create=false` plus ID only when ownership moves outside this module. |
 | `subnets.transit_gateway.connect_to_public_natgw` | `subnets.transit_gateway.routing.nat_gateway` | v4 accepts a bool in implementation; copy as boolean. |
 | `subnets.transit_gateway.transit_gateway_default_route_table_association` | `subnets.transit_gateway.transit_gateway_options.default_route_table_association` | Copy boolean. |
 | `subnets.transit_gateway.transit_gateway_default_route_table_propagation` | `subnets.transit_gateway.transit_gateway_options.default_route_table_propagation` | Copy boolean. |
@@ -255,9 +255,24 @@ A v4 secondary association moves as follows when that mode is used:
 ```hcl
 moved {
   from = module.vpc.aws_vpc_ipv4_cidr_block_association.secondary[0]
-  to   = module.vpc.aws_vpc_ipv4_cidr_block_association.secondary["0"]
+  to   = module.vpc.aws_vpc_ipv4_cidr_block_association.secondary["legacy"]
 }
 ```
+
+Configure the matching contract key before the move:
+
+```hcl
+addressing = {
+  ipv4 = {
+    secondary = {
+      legacy = { cidr_block = "100.64.0.0/16" }
+    }
+  }
+}
+```
+
+A subnet that consumes this range sets `ipv4.secondary_cidr_key = "legacy"`;
+that selector establishes the association dependency for a normal apply.
 
 ## Cases that cannot use `moved`
 
