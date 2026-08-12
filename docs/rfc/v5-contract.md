@@ -1,6 +1,18 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 5 Implemented (gate pending)
+> **Status:** Draft / Phase 6 audited; remediation batch 1 implemented (gate remains pending for out-of-scope findings)
+>
+> **Remediation batch 1 (2026-08-12, `db758f7`, `0a1f424`):**
+> - IPv6 is functional end-to-end: Amazon `/56`, IPv6 IPAM/exact CIDR, injected
+>   VPC discovery, deterministic/pinned subnet `/64`s, subnet IPAM, IPv6-native,
+>   EIGW `::/0`, and DNS64/NAT64 `64:ff9b::/96`.
+> - `availability_zones.count` now sorts discovery and slices exactly N AZs.
+> - Plan-known ownership flags keep computed IDs in resource values, never in
+>   count/for_each decisions; a dedicated upstream-composition fixture plans.
+> - Isolated DNS64 is rejected, explicit `internet_gateway=false` is honored,
+>   and the hub example's calculated CIDRs no longer overlap explicit ranges.
+> - `terraform test`: 35 passed, 0 failed; tests assert planned IPv6 attributes
+>   and routing, not only collection shapes.
 >
 > **Phase 5 implementation (2026-08-12, `a5fb279`, `2db15d7`):**
 > - Native tests run without AWS credentials through Terraform mock providers:
@@ -90,8 +102,10 @@ The v4 module suffers from three structural defects:
 variable "vpc" {
   type = object({
     name             = string
-    id               = optional(string)           # null = create; set = use existing
-    igw_id           = optional(string)           # null = create; set = inject existing [R1-H2]
+    create           = optional(bool, true)       # plan-known ownership selector
+    id               = optional(string)           # required when create=false; may be computed
+    igw_create       = optional(bool, true)       # plan-known ownership selector
+    igw_id           = optional(string)           # required for needed injected IGW; may be computed
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -124,6 +138,7 @@ variable "addressing" {
 
 variable "availability_zones" {
   description = <<-EOT
+    `count` sorts eligible AZs and selects exactly the first N.
     ⚠️  `count` mode is for DEVELOPMENT ONLY [R1-H4].
     For production, always use explicit `names` to guarantee AZ stability.
   EOT
@@ -162,15 +177,19 @@ variable "subnets" {
       cidr_index     = optional(number)       # pinning slot for netmask stability [R1-C2]
     }))
     ipv6 = optional(object({
-      auto_assign = optional(bool, false)
-      cidrs       = optional(list(string))
-      native_only = optional(bool, false)
+      auto_assign    = optional(bool, false) # also calculates a VPC-derived /64 when no other source is set
+      cidrs          = optional(list(string))
+      ipam_pool_id   = optional(string)
+      netmask_length = optional(number)      # 64 for subnet IPAM
+      native_only    = optional(bool, false)
+      cidr_index     = optional(number)      # six-AZ pinning slot, analogous to IPv4
     }))
 
     # ── Naming & Tags ──
-    name_prefix   = optional(string)  # cosmetic; defaults to map key
-    tags          = optional(map(string), {})
-    route_table_id = optional(string) # inject one existing shared RT for the group
+    name_prefix        = optional(string)  # cosmetic; defaults to map key
+    tags               = optional(map(string), {})
+    manage_route_table = optional(bool, true)
+    route_table_id     = optional(string) # required when manage_route_table=false; may be computed
 
     # ── Routing (co-located, list-based destinations) [R1-C3] ──
     routing = optional(object({
@@ -215,6 +234,7 @@ variable "subnets" {
 variable "nat_gateway" {
   type = object({
     mode              = optional(string, "none")  # "none" | "single_az" | "all_azs"
+    create            = optional(bool, true)         # false injects existing_ids; plan-known
     az                = optional(string)          # required when mode = "single_az"
     connectivity_type = optional(string, "public") # "public" | "private" (private NAT, no EIP)
     subnet_group      = optional(string)           # explicit host group; null = first compatible group
@@ -231,8 +251,9 @@ variable "nat_gateway" {
 
 ### 3.3.1 Route Table and NAT Placement Injection Semantics
 
-- `subnets.<group>.route_table_id` injects one existing route table shared by every
-  AZ subnet in the group. The module skips `aws_route_table` creation, associates
+- `subnets.<group>.manage_route_table=false` plus `route_table_id` injects one
+  existing route table shared by every AZ subnet in the group. The module skips
+  `aws_route_table` creation, associates
   those subnets to the injected table, and adds the routes declared in `routing`
   to that existing table. Callers must avoid destination conflicts with routes
   managed outside the module.
@@ -278,9 +299,16 @@ variable "nat_gateway" {
 - Unpinned groups: may shift if a group that sorts before them is added/removed.
 - AZ addition: only the newly selected reserved slot is materialized per group.
 
+**IPv6 allocation:** VPC creation supports Amazon-provided `/56` or IPv6 IPAM
+with exactly one of an explicit CIDR or netmask; injected VPC mode discovers an
+associated block. A subnet accepts explicit `/64`s, IPv6 IPAM with `/64`, or
+VPC-derived `/64`s when `auto_assign=true`. The derived path uses six AZ slots per
+group and `ipv6.cidr_index` pins an absolute group slot exactly as IPv4 pinning
+does. `native_only=true` omits IPv4 and still requires a real IPv6 source.
+
 **Production recommendation:** use explicit `cidrs` for the strongest immutable
 allocation contract, `cidr_index` for stable calculated six-AZ reservations, and
-bare `netmask` only where shifts after group mutations are acceptable.
+bare `netmask`/`auto_assign` only where shifts after group mutations are acceptable.
 
 ### 3.6 Outputs — 3 Tiers
 
@@ -289,12 +317,13 @@ bare `netmask` only where shifts after group mutations are acceptable.
 Tier 1 names, value types, and existing collection keys do not change without a
 major release. Minor releases may add outputs or additive map keys.
 
-- VPC/AZ: `vpc_id`, `vpc_arn`, `vpc_cidr_block`, `azs`.
+- VPC/AZ: `vpc_id`, `vpc_arn`, `vpc_cidr_block`, `vpc_ipv6_cidr_block`, `azs`.
 - Subnet IDs: `subnet_ids_by_group`, `subnet_ids_by_group_by_az`,
   `subnet_ids_by_semantic_role`, `subnet_ids_by_semantic_role_by_az`.
 - Subnet CIDRs/ARNs: `subnet_cidrs_by_group`,
-  `subnet_cidrs_by_group_by_az`, `subnet_cidrs_by_semantic_role`,
-  `subnet_cidrs_by_semantic_role_by_az`, `subnet_arns_by_group_by_az`.
+  `subnet_cidrs_by_group_by_az`, `subnet_ipv6_cidrs_by_group_by_az`,
+  `subnet_cidrs_by_semantic_role`, `subnet_cidrs_by_semantic_role_by_az`,
+  `subnet_arns_by_group_by_az`.
 - Route tables: `route_table_ids_by_group`,
   `route_table_ids_by_group_by_az`, `route_table_ids_by_semantic_role`,
   `route_table_ids_by_semantic_role_by_az`.
@@ -347,9 +376,13 @@ AZ names come from `data.aws_availability_zones`; preconditions that depend on t
 are unknown during the initial plan and Terraform defers them to apply time. Production
 callers should use explicit `names` for stable AZ identity and plan-time diagnostics.
 
-1. **cidrs length == AZ count** [R2-C2]: `terraform_data.cidrs_az_count_validation`
-2. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`
-3. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition
+1. **cidrs length == AZ count** [R2-C2]: IPv4 and IPv6 cardinality resources.
+2. **count <= discovered AZs**: `terraform_data.availability_zone_count_validation`.
+3. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`.
+4. **VPC/subnet IPv6 sources exist and are exclusive**: IPv6 addressing preconditions.
+5. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition.
+6. **Injected IDs accompany explicit ownership flags**: variable/resource preconditions.
+7. **isolated has no routing, including DNS64/NAT64**: `subnets` validation.
 
 ### 3.8 Provider Floor [R2-H2]
 
@@ -365,9 +398,9 @@ nor validate the complete module, so v5 intentionally raises the major floor.
 
 ### 3.9 Isolated Role Semantics
 
-`isolated` is functionally `private` with a routing guard. It prevents accidental
-routing configuration (including TGW/CWAN routes). Use `role = "private"` for subnets
-that need selective routing without internet access.
+`isolated` is functionally `private` with a routing guard. It prevents every
+routing configuration, including TGW/CWAN and DNS64/NAT64. Use `role = "private"`
+for subnets that need selective routing without internet access.
 
 ### 3.10 Phase 3 ADRs
 
@@ -414,6 +447,38 @@ cross-account ownership from an ARN or attempt to prove IAM permissions at plan
 time; those are runtime/account-policy concerns. `deliver_cross_account_role_arn`
 is accepted as an explicit non-empty ARN and remains caller-owned.
 
+### 3.10.1 Remediation batch 1 ADRs
+
+#### ADR-R1-1 — Keep `availability_zones.count`, but make it exact
+
+**Decision:** retain development-only count mode. Sort eligible data-source names,
+then select exactly `slice(0, count)`; fail if discovery returns fewer names.
+Explicit `names` remain the production contract because a future AZ can alter the
+sorted prefix. This follows the final technical audit recommendation rather than
+removing a documented mode.
+
+#### ADR-R1-2 — Ownership flags, never ID nullness, decide cardinality
+
+**Decision:** add plan-known selectors (`vpc.create`, `vpc.igw_create`,
+`manage_route_table`, `nat_gateway.create`, Flow Log create flags, and
+`vpc_lattice.enabled`). IDs/ARNs are values only and may be computed upstream.
+This is a deliberate pre-release contract correction: inferring ownership from
+`id == null` makes Terraform unable to know count/for_each during the first plan.
+
+#### ADR-R1-3 — One deterministic IPv6 engine
+
+**Decision:** derive automatic subnet `/64`s from the VPC block with the same
+six-AZ stride and caller pinning model as IPv4. Explicit `/64` and subnet IPAM stay
+first-class alternatives. `auto_assign` enables address assignment and selects the
+derived path only when neither explicit CIDRs nor IPAM is configured.
+
+#### ADR-R1-4 — Resolved routing is authoritative
+
+**Decision:** public role supplies the default `internet_gateway=true`, but an
+explicit false suppresses the IGW and default route. A public NAT created by the
+module still requires an IGW. `isolated` rejects DNS64 because managed NAT64 is
+egress routing, not an addressing-only feature.
+
 ### 3.11 Import and adoption
 
 Existing resources can be adopted without adding unmanaged-resource bypasses:
@@ -452,11 +517,12 @@ keys, route destinations, and optional resources.
 
 - **Phase 2**: Route table injection via `subnets[*].route_table_id` — ✅ DONE
 - **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
-- **Phase 2**: IGW injection via `vpc.igw_id` — ✅ DONE (Phase 1)
+- **Phase 2**: IGW injection via `vpc.igw_create=false` + `vpc.igw_id` — ✅ DONE
 - **Phase 2**: EIGW creation + routing — ✅ DONE
 - **Phase 2**: Private NAT (connectivity_type) — ✅ DONE
-- **Phase 2**: DNS64/NAT64 support — ✅ DONE
+- **Phase 2**: DNS64/NAT64 support — ✅ DONE; functional IPv6 regression coverage added in `db758f7`
 - **Phase 2**: Route tables co-located per group/az — ✅ DONE
 - **Phase 4**: Tiered outputs and v4 migration guide/example — ✅ DONE (`9a4bb9c`)
 - **Phase 5**: Native plan-only contract tests, stateful moved fixture, examples, and generated docs — ✅ DONE (`a5fb279`, `2db15d7`)
+- **Remediation 1**: IPv6/AZ count/computed-ID selectors/routing coherence — ✅ DONE (`db758f7`, `0a1f424`)
 - **Post-v5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]

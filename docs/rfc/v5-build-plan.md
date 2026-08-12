@@ -42,7 +42,7 @@
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
 | 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
 | 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | ✅ `a5fb279` + `2db15d7` |
-| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |
+| 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🔴 auditada; remediación tanda 1 cerrada, gate global pendiente |
 
 ### Entrega fase 4
 
@@ -93,6 +93,25 @@
 - `terraform test`: 28 passed, 0 failed; `fmt -check`, `validate` del módulo y
   de los cuatro ejemplos: PASS. Gate R1+R2 de fase 5 queda pendiente.
 
+## Remediación tanda 1 — Criticals + Highs acoplados
+
+Commits locales: `db758f7` (IPv6/AZ/examples/tests) y `0a1f424`
+(selectores plan-known y coherencia de routing).
+
+- IPv6 end-to-end: VPC Amazon/IPAM/CIDR, `/64` determinista y pinneable,
+  subnet IPAM, IPv6-native, EIGW y DNS64/NAT64.
+- `availability_zones.count`: orden alfabético y slice exacto; names explícitos
+  siguen siendo la recomendación productiva (ADR-R1-1).
+- IDs computed: ownership/cardinalidad sale de flags de configuración; fixture
+  upstream cubre VPC, IGW, route table, IPv6 IPAM, Flow Logs y Lattice.
+- Hub sin solapes; `isolated` rechaza DNS64; `internet_gateway=false` es
+  autoritativo salvo el requisito independiente de un NAT público creado.
+- Gate ejecutado: fmt, init/validate del módulo y cuatro ejemplos, y
+  `terraform test` **35 passed, 0 failed**.
+
+El gate global de Fase 6 no se marca cerrado: los findings fuera del scope de esta
+tanda permanecen sujetos a remediaciones posteriores.
+
 ## Reglas fijas del builder
 
 1. Todo `object()` + `optional()` + `validation` — prohibido `type = any`.
@@ -112,6 +131,7 @@
 - [docs/rfc/reviews/fase-3.md](reviews/fase-3.md) — R1+R2 gate cerrado.
 - [docs/rfc/reviews/fase-4.md](reviews/fase-4.md) — R1+R2 gate cerrado en `9834664` + `724c964`.
 - docs/rfc/reviews/fase-5.md … fase-6.md — pendientes.
+- [docs/rfc/reviews/remediacion-1.md](reviews/remediacion-1.md) — cierre de Criticals y Highs acoplados de la primera tanda post-auditoría.
 
 ## Cambios del contrato introducidos en Gate 1
 
@@ -124,3 +144,7 @@
 - Outputs renombrados: `*_by_role` → `*_by_group` + nuevo `*_by_semantic_role` [R1-H3]
 - Provider floor: `>= 6.29` [R2-H2]; 5.69 queda supersedido por el schema IPAM de subnet.
 - Preconditions: cidrs↔AZs, nat_gateway.az∈AZs [R2-C2, R2-C3]
+- IPv6: VPC Amazon/IPAM/CIDR; subnet explícita/IPAM/calculada, `native_only` y `ipv6.cidr_index`.
+- Ownership plan-known: `vpc.create`, `vpc.igw_create`, `manage_route_table`,
+  `nat_gateway.create`, flags de Flow Logs y `vpc_lattice.enabled`.
+- Count AZ: slice alfabético exacto y validación de capacidad del discovery.

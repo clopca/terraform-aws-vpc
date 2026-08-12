@@ -150,7 +150,7 @@
 | v4 variable/path | v5 variable/path | Migration rule |
 |---|---|---|
 | `name` | `vpc.name` | Copy unchanged. |
-| `create_vpc` + `vpc_id` | `vpc.id` | Create: omit/null `vpc.id`. Existing VPC: set `vpc.id`; there is no separate boolean. |
+| `create_vpc` + `vpc_id` | `vpc.create` + `vpc.id` | Create: keep `create=true` and `id=null`. Existing VPC: set `create=false` and `id`; the ID may be computed upstream. |
 | `cidr_block` | `addressing.ipv4.cidr_block` | Primary CIDR when creating. For v4 secondary-CIDR mode, put it in `addressing.ipv4.secondary[0].cidr_block`. |
 | `vpc_enable_dns_hostnames` | `vpc.dns.enable_hostnames` | Copy boolean. |
 | `vpc_enable_dns_support` | `vpc.dns.enable_support` | Copy boolean. |
@@ -162,7 +162,7 @@
 | `vpc_ipv6_ipam_pool_id` | `addressing.ipv6.ipam_pool_id` | Copy with netmask length. |
 | `vpc_ipv6_netmask_length` | `addressing.ipv6.netmask_length` | Convert the v4 string value to a number. |
 | `vpc_secondary_cidr` | `addressing.ipv4.secondary` | Replace the boolean with an explicit list entry. The v4 module supported one association; v5 supports a list. |
-| `vpc_secondary_cidr_natgw` | `nat_gateway.existing_ids` | Convert `{ az = { id = "nat-*" } }` to `{ az = "nat-*" }`; set the matching NAT mode/AZ. |
+| `vpc_secondary_cidr_natgw` | `nat_gateway.create=false` + `existing_ids` | Convert `{ az = { id = "nat-*" } }` to `{ az = "nat-*" }`; set inject mode plus matching NAT mode/AZ. |
 | `az_count` | `availability_zones.count` | Development only. Explicit names are recommended for stable state. |
 | `azs` | `availability_zones.names` | Copy unchanged; this is the production migration path. |
 | `subnets.<key>.netmask` | `subnets.<key>.ipv4.netmask` | Add `role`; preserve `<key>`. Pin with `cidr_index` or, preferably, migrate with explicit current CIDRs. |
@@ -200,8 +200,8 @@
 | `vpc_flow_logs` | `flow_logs.default` | Use stable key `default`; the remaining rows map every field. |
 | `vpc_flow_logs.name_override` or v4 generated log-group name | `flow_logs.default.cloudwatch_options.name` | Set the exact physical `name` reported by `terraform state show`, not merely the old prefix. Preserve the group with remove/import; do not use a moved block from `name_prefix` to `name`. |
 | v4 generated CloudWatch IAM role `name_prefix` | `flow_logs.default.role_name_prefix` | Copy the exact `name_prefix` reported by state (not the generated role `name`) before applying the IAM role moved block. |
-| `vpc_flow_logs.log_destination` | `flow_logs.default.destination_arn` | Rename; required for externally managed S3/Firehose. |
-| `vpc_flow_logs.iam_role_arn` | `flow_logs.default.iam_role_arn` | Copy for CloudWatch; omit to create the v5 role. |
+| `vpc_flow_logs.log_destination` | `flow_logs.default.create_destination=false` + `destination_arn` | CloudWatch injection sets the explicit flag; S3/Firehose remain externally managed and always require the ARN. |
+| `vpc_flow_logs.iam_role_arn` | `flow_logs.default.create_iam_role=false` + `iam_role_arn` | Set both for CloudWatch role injection; keep `create_iam_role=true` to create the v5 role. |
 | `vpc_flow_logs.kms_key_id` | `flow_logs.default.cloudwatch_options.kms_key_id` | Copy for CloudWatch. S3/Firehose encryption belongs to the external destination. |
 | `vpc_flow_logs.log_destination_type` | `flow_logs.default.destination_type` | Map `cloud-watch-logs` -> `cloudwatch`, `s3` -> `s3`; `none` -> omit/disable the map entry. v5 additionally supports `kinesis`. |
 | `vpc_flow_logs.log_format` | `flow_logs.default.log_format` | Copy unchanged. |
@@ -212,7 +212,7 @@
 | `vpc_flow_logs.destination_options.file_format` | `flow_logs.default.s3_options.file_format` | Copy for S3. |
 | `vpc_flow_logs.destination_options.hive_compatible_partitions` | `flow_logs.default.s3_options.hive_compatible_partitions` | Copy for S3. |
 | `vpc_flow_logs.destination_options.per_hour_partition` | `flow_logs.default.s3_options.per_hour_partition` | Copy for S3. |
-| `vpc_lattice.service_network_identifier` | `vpc_lattice.service_network_identifier` | Copy unchanged. |
+| `vpc_lattice.service_network_identifier` | `vpc_lattice.enabled=true` + `service_network_identifier` | Enable explicitly, then copy the identifier; it may be computed upstream. |
 | `vpc_lattice.security_group_ids` | `vpc_lattice.security_group_ids` | Convert list to set semantics (ordering is ignored). |
 | `vpc_lattice.tags` | `vpc_lattice.tags` | Copy unchanged. |
 | `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
@@ -268,7 +268,7 @@ moved {
 | `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main` | `module.vpc.aws_iam_role_policy.flow_logs["default"]` | Resource type changes from managed `aws_iam_policy` to inline `aws_iam_role_policy`; neither `moved` nor `terraform state mv` can change type. After the complete-plan gate, target-create the inline policy first and verify delivery. Only a later complete apply may destroy the old managed policy. If an equivalent inline policy already exists, import it as `ROLE_NAME:POLICY_NAME` before plan. |
 | `...aws_iam_role_policy_attachment.main` | no v5 resource | v5 attaches no managed policy. Keep the attachment through the targeted inline-policy apply; remove it only in the subsequent reviewed complete apply after delivery verification. |
 | v4-created S3 Flow Log bucket and its public-access, encryption, and lifecycle resources | caller-owned logging module/resource | v5 intentionally does not own durable S3/Firehose destinations. Move same-type resources with `terraform state mv` into a new caller-owned logging resource/module address, or import them there, then pass the bucket ARN as `flow_logs.default.destination_arn`. Do not allow Terraform to destroy a log archive. |
-| Any address whose destination is an injected ID (`vpc.id`, `vpc.igw_id`, `nat_gateway.existing_ids`, `subnets[*].route_table_id`) | no managed destination resource | Injection removes lifecycle ownership. Use `terraform state rm` only after the target is represented in another state, or first `terraform state mv`/import it into its new owning configuration. |
+| Any address whose destination is an injected ID (`vpc.create=false`, `vpc.igw_create=false`, `nat_gateway.create=false`, `subnets[*].manage_route_table=false`) | no managed destination resource | Injection removes lifecycle ownership; the paired ID fields may be computed. Use `terraform state rm` only after the target is represented in another state, or first `terraform state mv`/import it into its new owning configuration. |
 | Route whose v4 destination or v5 route list changed during migration | no safe one-to-one block | Freeze destinations for the migration. If already changed, import the AWS route into the final v5 address where supported, or allow a reviewed delete/create during a maintenance window. |
 
 `terraform state mv` is appropriate only when source and destination have the same resource type. Prefer declarative `moved` blocks for repeatability and retain them until every workspace has applied the upgrade.

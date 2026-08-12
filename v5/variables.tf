@@ -225,8 +225,9 @@ variable "subnets" {
         as a non-breaking change.
       - core_network: limited to 1 group (same AWS API constraint)
 
-    Set `route_table_id` to inject one existing route table for the whole subnet
-    group. The module will not create route tables for that group; it associates
+    Set `manage_route_table = false` plus `route_table_id` to inject one existing
+    route table for the whole subnet group. The module will not create route tables
+    for that group; it associates
     every AZ subnet with the injected table and adds all routes declared in
     `routing` to it. A shared injected table cannot provide per-AZ NAT targets, so
     `nat_gateway.mode = "all_azs"` is rejected when that group requests NAT/NAT64.
@@ -581,8 +582,8 @@ variable "nat_gateway" {
     their Elastic IPs are sourced (create new, use BYOIP pool, or inject existing).
     The `az` field is REQUIRED when mode = "single_az" to avoid positional fragility.
 
-    Set `existing_ids` to inject existing NAT Gateways (create-or-inject pattern).
-    When set, the module uses the referenced NAT GWs instead of creating new ones.
+    Set `create = false` plus `existing_ids` to inject existing NAT Gateways.
+    The explicit boolean keeps cardinality plan-known when IDs are computed.
 
     `connectivity_type` controls whether the NAT is public (internet-facing, needs EIP)
     or private (inter-VPC, no EIP). Default: "public".
@@ -660,7 +661,8 @@ variable "flow_logs" {
 
     destination_type accepts cloudwatch, s3, or kinesis (Kinesis Data Firehose).
     CloudWatch supports create-or-inject for both the log group and the VPC Flow
-    Logs IAM role. `cloudwatch_options.name` is the fixed physical log-group name;
+    Logs IAM role. Set `create_destination=false` and/or `create_iam_role=false`
+    when injecting computed ARNs. `cloudwatch_options.name` is the fixed physical log-group name;
     set it to the exact imported v4 name during migration. `role_name_prefix` is
     passed through exactly (maximum 38 characters) so a moved v4 IAM role keeps its
     original prefix and is not replaced. S3 buckets and Firehose delivery streams
