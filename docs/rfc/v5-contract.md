@@ -125,6 +125,7 @@ variable "subnets" {
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
       internet_gateway     = optional(bool)           # null = auto (true for public) [R2-H3]
+      dns64                = optional(bool, false)    # Enable DNS64 on subnet (NAT64 via NAT GW)
       transit_gateway      = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
       transit_gateway_ipv6 = optional(list(string))
       core_network         = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
@@ -161,9 +162,10 @@ variable "subnets" {
 ```hcl
 variable "nat_gateway" {
   type = object({
-    mode         = optional(string, "none")  # "none" | "single_az" | "all_azs"
-    az           = optional(string)          # required when mode = "single_az"
-    existing_ids = optional(map(string))     # az → nat_gw_id for inject mode [R1-H2]
+    mode              = optional(string, "none")  # "none" | "single_az" | "all_azs"
+    az                = optional(string)          # required when mode = "single_az"
+    connectivity_type = optional(string, "public") # "public" | "private" (private NAT, no EIP)
+    existing_ids      = optional(map(string))     # az → nat_gw_id for inject mode [R1-H2]
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
@@ -220,6 +222,9 @@ output "subnet_ids_by_semantic_role_by_az" {} # map(role, map(az, list(id))) [R1
 output "nat_gateway_ids" {}                 # map(az, nat_id)
 output "nat_public_ips" {}                  # map(az, ip)
 output "internet_gateway_id" {}
+output "egress_only_igw_id" {}              # EIGW ID (null if not created)
+output "route_table_ids_by_group_by_az" {}  # map(group, map(az, rt_id))
+output "route_table_ids_by_semantic_role" {} # map(role, list(rt_id))
 output "transit_gateway_attachment_id" {}
 output "core_network_attachment_id" {}
 ```
@@ -278,7 +283,10 @@ that need selective routing without internet access.
 ## 6. Future Work (TODO)
 
 - **Phase 2-3**: Route table injection (create-or-inject) — deferred due to complexity [R1-H2]
-- **Phase 2**: NAT Gateway injection via `existing_ids` — contract ready, implementation pending
-- **Phase 2**: IGW injection via `vpc.igw_id` — contract ready, implementation pending
-- **Phase 2**: EIGW injection — contract TBD
+- **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
+- **Phase 2**: IGW injection via `vpc.igw_id` — ✅ DONE (Phase 1)
+- **Phase 2**: EIGW creation + routing — ✅ DONE
+- **Phase 2**: Private NAT (connectivity_type) — ✅ DONE
+- **Phase 2**: DNS64/NAT64 support — ✅ DONE
+- **Phase 2**: Route tables co-located per group/az — ✅ DONE
 - **Phase 5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]

@@ -17,7 +17,7 @@
 | 0 | RFC + prototipo del contrato (validado) | ✅ ea2b21d |
 | 1 | Núcleo: aws_vpc + addressing + motor de subnets tipado + CIDRs deterministas + claves "name/az" | ✅ afe42fb |
 | 1-gate | Cierre findings R1+R2: C1 multi-public, C2 pinning, C3 list routing, H1-H4 docs+inject+outputs, R2-C1/C2/C3 provider+preconditions | ✅ (este commit) |
-| 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | pendiente |
+| 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | ✅ |
 | 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | pendiente |
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | pendiente |
 | 5 | Tests: unit plan-only del motor de subnets + asserts + 3 examples + terraform-docs | pendiente |
