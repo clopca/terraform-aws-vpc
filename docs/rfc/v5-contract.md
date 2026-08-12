@@ -106,8 +106,12 @@ variable "vpc" {
     id               = optional(string)           # required when create=false; may be computed
     igw_create       = optional(bool, true)       # plan-known ownership selector
     igw_id           = optional(string)           # required for needed injected IGW; may be computed
+    igw_name_format  = optional(string, "{vpc}-igw")
+    igw_tags         = optional(map(string), {})
     eigw_create      = optional(bool, true)       # plan-known ownership selector
     eigw_id          = optional(string)           # required for needed injected EIGW; may be computed
+    eigw_name_format = optional(string, "{vpc}-eigw")
+    eigw_tags        = optional(map(string), {})
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -199,9 +203,11 @@ variable "subnets" {
     }))
 
     # ── Naming & Tags ──
-    name_prefix        = optional(string)  # cosmetic; defaults to map key
-    tags               = optional(map(string), {})
-    manage_route_table = optional(bool, true)
+    name_prefix             = optional(string)  # cosmetic; defaults to map key
+    name_format             = optional(string)  # complete Name; {vpc}/{group}/{az}
+    route_table_name_format = optional(string)  # defaults to name_format
+    tags                    = optional(map(string), {})
+    manage_route_table      = optional(bool, true)
     route_table_id     = optional(string) # required when manage_route_table=false; may be computed
 
     # ── Routing (co-located, list-based destinations) [R1-C3] ──
@@ -258,10 +264,14 @@ variable "nat_gateway" {
     connectivity_type = optional(string, "public") # "public" | "private" (private NAT, no EIP)
     subnet_group      = optional(string)           # explicit host group; null = first compatible group
     existing_ids      = optional(map(string))      # az → nat_gw_id for inject mode [R1-H2]
+    name_format       = optional(string, "{vpc}-nat-{az}")
+    tags              = optional(map(string), {})
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
       allocation_ids   = optional(map(string))  # nullable, required for "existing" [R2-H2]
+      name_format      = optional(string)        # defaults to NAT format
+      tags             = optional(map(string), {})
     }), { mode = "create" })
   })
   default = { mode = "none" }
@@ -285,6 +295,23 @@ variable "nat_gateway" {
   should always set it to prevent relocation when subnet groups are added.
 - `dns64 = true` creates both the subnet DNS64 flag and the required
   `64:ff9b::/96 -> NAT Gateway` route. It fails early when NAT is disabled.
+
+### 3.3.2 Resource Name and tag precedence
+
+Display names are independent from state identity. Subnet groups accept a complete
+`name_format`; route tables inherit it unless `route_table_name_format` is set.
+NAT/EIP formats resolve against the selected host group, while IGW/EIGW formats
+resolve at the VPC boundary. Supported placeholders are `{vpc}`, `{group}`, and
+`{az}` where meaningful; a literal string is also valid. The generated `Name` tag
+always wins over user maps so a duplicate `Name` cannot silently defeat the naming
+contract.
+
+Every taggable resource uses an explicit `merge`. Effective precedence is AWS
+provider `default_tags` < `var.tags` < resource/group tags < generated `Name`.
+Provider `>= 6.29` is beyond the historical pre-5.0 `default_tags` identical-tag
+perpetual-diff defects. No `ignore_changes` is used: changing provider defaults is
+a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
+resources and validation-only `terraform_data` have no tag argument by schema.
 
 ### 3.4 State Keys — Unified `"name/az"`
 
@@ -524,6 +551,30 @@ and support explicit create-or-inject ownership.
 **Decision:** EIGW, subnets, TGW/Cloud WAN attachments and accepter, Flow Logs,
 Lattice, and secondary associations all use plan-known ownership selectors. S3
 and Firehose remain caller-owned data destinations under ADR-F3-1.
+
+### 3.10.3 Remediation batch 4 ADRs
+
+#### ADR-R4-1 — Complete Name formats, separate from state identity
+
+**Decision:** use complete format strings rather than a second family of fixed
+`name` fields. Subnet `name_format` supports `{vpc}`, `{group}`, and `{az}`;
+`route_table_name_format` inherits it by default. NAT/EIP use the same placeholders
+with `{group}` bound to the selected host group's display prefix. IGW/EIGW accept
+`{vpc}`. Defaults retain native v5 names, while migration can reproduce v4 exactly
+with `{group}-{az}`, `nat-{group}-{az}`, `{vpc}-igw`, and `{vpc}`.
+
+**Rationale:** one format covers one or many AZs without duplicate per-AZ maps,
+preserves caller-owned state keys, and still permits a fully literal Name. Route
+tables inherit subnet naming because v4 deliberately named both alike, but expose
+an independent override for consumers that distinguish them.
+
+#### ADR-R4-2 — Explicit tag layers; no drift suppression
+
+**Decision:** all taggable resources merge provider defaults implicitly and module
+layers explicitly as provider < global < group/resource < Name. NAT/EIP inherit the
+host subnet-group tags; IGW/EIGW expose boundary-specific tag maps. Do not add
+`ignore_changes` for `tags`/`tags_all`; provider-default changes are actionable
+configuration, not perpetual drift.
 
 ### 3.11 Import and adoption
 

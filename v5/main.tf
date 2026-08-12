@@ -104,8 +104,8 @@ resource "aws_internet_gateway" "main" {
 
   vpc_id = local.vpc_id
 
-  tags = merge(var.tags, {
-    Name = "${var.vpc.name}-igw"
+  tags = merge(var.tags, var.vpc.igw_tags, {
+    Name = replace(var.vpc.igw_name_format, "{vpc}", var.vpc.name)
   })
 }
 
@@ -138,7 +138,7 @@ resource "aws_subnet" "main" {
   enable_dns64 = each.value.routing.dns64
 
   tags = merge(var.tags, each.value.tags, {
-    Name = "${var.vpc.name}-${each.value.name_prefix}-${each.value.az}"
+    Name = each.value.resource_name
   })
 
   depends_on = [aws_vpc_ipv4_cidr_block_association.secondary]

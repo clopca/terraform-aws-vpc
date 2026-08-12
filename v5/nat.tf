@@ -24,8 +24,8 @@ resource "aws_eip" "nat" {
   domain           = "vpc"
   public_ipv4_pool = var.nat_gateway.eip.public_ipv4_pool
 
-  tags = merge(var.tags, {
-    Name = "${var.vpc.name}-nat-${each.value.az}"
+  tags = merge(var.tags, each.value.tags, {
+    Name = each.value.name
   })
 }
 
@@ -41,8 +41,8 @@ resource "aws_nat_gateway" "main" {
   connectivity_type = each.value.connectivity_type
   subnet_id         = each.value.subnet_id
 
-  tags = merge(var.tags, {
-    Name = "${var.vpc.name}-nat-${each.value.az}"
+  tags = merge(var.tags, each.value.tags, {
+    Name = each.value.name
   })
 
   depends_on = [aws_internet_gateway.main]
@@ -56,7 +56,7 @@ resource "aws_egress_only_internet_gateway" "main" {
 
   vpc_id = local.vpc_id
 
-  tags = merge(var.tags, {
-    Name = "${var.vpc.name}-eigw"
+  tags = merge(var.tags, var.vpc.eigw_tags, {
+    Name = replace(var.vpc.eigw_name_format, "{vpc}", var.vpc.name)
   })
 }

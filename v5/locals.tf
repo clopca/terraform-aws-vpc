@@ -249,12 +249,20 @@ locals {
   subnet_map = merge([
     for name, cfg in var.subnets : {
       for ai, az in local.azs : "${name}/${az}" => {
-        name               = name
-        az                 = az
-        role               = cfg.role
-        create             = cfg.create
-        existing_id        = try(cfg.existing_ids[az], null)
-        name_prefix        = coalesce(cfg.name_prefix, name)
+        name        = name
+        az          = az
+        role        = cfg.role
+        create      = cfg.create
+        existing_id = try(cfg.existing_ids[az], null)
+        name_prefix = coalesce(cfg.name_prefix, name)
+        resource_name = replace(replace(replace(
+          coalesce(cfg.name_format, "{vpc}-{group}-{az}"),
+          "{vpc}", var.vpc.name), "{group}", coalesce(cfg.name_prefix, name)), "{az}", az
+        )
+        route_table_name = replace(replace(replace(
+          coalesce(cfg.route_table_name_format, cfg.name_format, "{vpc}-{group}-{az}"),
+          "{vpc}", var.vpc.name), "{group}", coalesce(cfg.name_prefix, name)), "{az}", az
+        )
         tags               = cfg.tags
         manage_route_table = cfg.manage_route_table
         route_table_id     = cfg.route_table_id
@@ -372,6 +380,25 @@ locals {
     ? var.nat_gateway.subnet_group
     : local.nat_default_host_group
   )
+  nat_host_group_name = local.nat_host_group == null ? "" : coalesce(
+    try(var.subnets[local.nat_host_group].name_prefix, null),
+    local.nat_host_group,
+  )
+  nat_host_group_tags = local.nat_host_group == null ? {} : try(var.subnets[local.nat_host_group].tags, {})
+  nat_resource_tags   = merge(local.nat_host_group_tags, var.nat_gateway.tags)
+  nat_eip_tags        = merge(local.nat_resource_tags, var.nat_gateway.eip.tags)
+  nat_names = {
+    for az in local.nat_az_set : az => replace(replace(replace(
+      var.nat_gateway.name_format,
+      "{vpc}", var.vpc.name), "{group}", local.nat_host_group_name), "{az}", az
+    )
+  }
+  nat_eip_names = {
+    for az in local.nat_az_set : az => replace(replace(replace(
+      coalesce(var.nat_gateway.eip.name_format, var.nat_gateway.name_format),
+      "{vpc}", var.vpc.name), "{group}", local.nat_host_group_name), "{az}", az
+    )
+  }
 
   # ─── EIPs to create ─────────────────────────────────────────────────────
   # Only when: creating NAT GWs (not inject), public connectivity, eip.mode != "existing"
@@ -380,7 +407,11 @@ locals {
     var.nat_gateway.connectivity_type == "public" &&
     try(var.nat_gateway.eip.mode, "create") != "existing"
     ) ? {
-    for az in local.nat_az_set : "nat/${az}" => { az = az }
+    for az in local.nat_az_set : "nat/${az}" => {
+      az   = az
+      name = local.nat_eip_names[az]
+      tags = local.nat_eip_tags
+    }
   } : {}
 
   # ─── NAT Gateways to create ─────────────────────────────────────────────
@@ -390,6 +421,8 @@ locals {
       az                = az
       connectivity_type = var.nat_gateway.connectivity_type
       subnet_id         = local.nat_host_group != null ? try(local.subnet_ids["${local.nat_host_group}/${az}"], null) : null
+      name              = local.nat_names[az]
+      tags              = local.nat_resource_tags
       allocation_id = (
         var.nat_gateway.connectivity_type == "private" ? null :
         try(var.nat_gateway.eip.mode, "create") == "existing" ?
@@ -413,10 +446,11 @@ locals {
   # shared route_table_id. Associations and outputs consume the unified ID map.
   route_table_map = {
     for key, s in local.subnet_map : key => {
-      name        = s.name
-      az          = s.az
-      name_prefix = s.name_prefix
-      tags        = s.tags
+      name             = s.name
+      az               = s.az
+      name_prefix      = s.name_prefix
+      route_table_name = s.route_table_name
+      tags             = s.tags
     } if s.manage_route_table
   }
 

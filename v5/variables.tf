@@ -18,7 +18,8 @@ variable "vpc" {
     Set `igw_create = false` and `igw_id` to inject an existing Internet Gateway.
     Set `eigw_create = false` and `eigw_id` to inject an existing egress-only
     Internet Gateway. Gateway resources are created only when resolved routing
-    requires them.
+    requires them. Gateway Name tags accept a complete format with `{vpc}`;
+    gateway-specific tags override global tags while the generated Name wins last.
   EOT
   type = object({
     name             = string
@@ -26,8 +27,12 @@ variable "vpc" {
     id               = optional(string)
     igw_create       = optional(bool, true)
     igw_id           = optional(string)
+    igw_name_format  = optional(string, "{vpc}-igw")
+    igw_tags         = optional(map(string), {})
     eigw_create      = optional(bool, true)
     eigw_id          = optional(string)
+    eigw_name_format = optional(string, "{vpc}-eigw")
+    eigw_tags        = optional(map(string), {})
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -44,6 +49,14 @@ variable "vpc" {
   validation {
     condition     = length(var.vpc.name) > 0
     error_message = "vpc.name must not be empty."
+  }
+
+  validation {
+    condition = alltrue([
+      for format in [var.vpc.igw_name_format, var.vpc.eigw_name_format] :
+      length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(format, "{vpc}", "")))
+    ])
+    error_message = "Gateway name formats must be non-empty and may use only the {vpc} placeholder."
   }
 
   validation {
@@ -265,6 +278,10 @@ variable "subnets" {
     every AZ subnet with the injected table and adds all routes declared in
     `routing` to it. A shared injected table cannot provide per-AZ NAT targets, so
     `nat_gateway.mode = "all_azs"` is rejected when that group requests NAT/NAT64.
+
+    `name_format` controls the complete subnet Name tag with `{vpc}`, `{group}`,
+    and `{az}` placeholders. `{group}` resolves `name_prefix` or the map key.
+    `route_table_name_format` can diverge; when omitted it inherits `name_format`.
   EOT
   type = map(object({
     role         = string
@@ -295,10 +312,12 @@ variable "subnets" {
     }))
 
     # ── Naming, Tags, and Route Table Injection ──
-    name_prefix        = optional(string)
-    tags               = optional(map(string), {})
-    manage_route_table = optional(bool, true)
-    route_table_id     = optional(string) # required when manage_route_table=false
+    name_prefix             = optional(string)
+    name_format             = optional(string)
+    route_table_name_format = optional(string)
+    tags                    = optional(map(string), {})
+    manage_route_table      = optional(bool, true)
+    route_table_id          = optional(string) # required when manage_route_table=false
 
     # ── Routing (co-located per subnet group) ──
     # [R1-C3]: transit_gateway and core_network accept lists of destinations
@@ -382,6 +401,16 @@ variable "subnets" {
       for k, v in var.subnets : !strcontains(k, "/")
     ])
     error_message = "Subnet map keys must not contain '/' (reserved for state key composition as 'name/az')."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for key, cfg in var.subnets : [
+        for format in compact([cfg.name_format, cfg.route_table_name_format]) :
+        length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+      ]
+    ]))
+    error_message = "Subnet and route-table name formats must be non-empty and may use only {vpc}, {group}, and {az}."
   }
 
   # R1-C1: REMOVED singleton constraint for public role.
@@ -680,6 +709,11 @@ variable "nat_gateway" {
     for private NAT. Default null preserves convenience behavior by selecting the
     first compatible group alphabetically; set it explicitly in production so
     adding another group cannot relocate the NAT Gateway.
+
+    `name_format` controls the complete NAT Gateway Name tag. The EIP inherits it
+    unless `eip.name_format` is set. Both accept `{vpc}`, `{group}`, and `{az}`;
+    `{group}` resolves the selected host group's `name_prefix` or map key. NAT/EIP
+    tags inherit host-group tags after globals and before their resource tags.
   EOT
   type = object({
     mode              = optional(string, "none")
@@ -688,10 +722,14 @@ variable "nat_gateway" {
     connectivity_type = optional(string, "public") # "public" | "private"
     subnet_group      = optional(string)           # explicit NAT host group; null = first compatible group
     existing_ids      = optional(map(string))      # az → nat_gateway_id, for inject mode [R1-H2]
+    name_format       = optional(string, "{vpc}-nat-{az}")
+    tags              = optional(map(string), {})
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
       allocation_ids   = optional(map(string)) # R2-H2: default null instead of {}
+      name_format      = optional(string)
+      tags             = optional(map(string), {})
     }), { mode = "create" })
   })
   default = { mode = "none" }
@@ -734,6 +772,14 @@ variable "nat_gateway" {
   validation {
     condition     = contains(["public", "private"], var.nat_gateway.connectivity_type)
     error_message = "nat_gateway.connectivity_type must be 'public' or 'private'."
+  }
+
+  validation {
+    condition = alltrue([
+      for format in compact([var.nat_gateway.name_format, var.nat_gateway.eip.name_format]) :
+      length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+    ])
+    error_message = "NAT and EIP name formats must be non-empty and may use only {vpc}, {group}, and {az}."
   }
 }
 
