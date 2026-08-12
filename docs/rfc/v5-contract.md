@@ -336,6 +336,21 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.5 ADR-R8-3 — NACL rule number is state identity
+
+**Decision:** each subnet group may optionally create or inject one Network ACL.
+Rules are direction-specific maps whose keys are canonical AWS rule numbers; the
+resource address is `<group>/<ingress|egress>/<rule-number>`, and subnet association
+addresses remain `<group>/<az>`. Reordering source declarations therefore produces
+no positional churn. Inject mode owns neither ACL identity nor tags, but does own
+explicitly declared rules and associations against that ID.
+
+The absent block is semantically significant: no ACL, rule, or association resource
+is planned, preserving AWS default-NACL behavior. The contract validates ownership,
+rule-number range, protocol, action, exactly one address family, port ordering, and
+ICMP fields before apply. NACLs remain an opt-in defense-in-depth control because
+their stateless reverse-path complexity is inappropriate as a default.
+
 ### 3.3.4 ADR-R8-2 — explicit service plus stable endpoint key
 
 **Decision:** `gateway_endpoints` is a map keyed by caller identity; each value has

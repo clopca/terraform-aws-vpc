@@ -46,3 +46,13 @@ output "default_resource_hardening" {
     route_table_count    = length(module.vpc.resources.default_resources.route_tables)
   }
 }
+
+
+output "network_acl_controls" {
+  description = "Per-group NACL IDs plus explicit stateless rule and subnet-association counts."
+  value = {
+    ids               = module.vpc.network_acl_ids_by_group
+    rule_count        = length(module.vpc.network_acl_rule_ids)
+    association_count = length(module.vpc.network_acl_association_ids)
+  }
+}

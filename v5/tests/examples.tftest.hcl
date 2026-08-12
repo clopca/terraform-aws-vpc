@@ -242,9 +242,12 @@ run "secure_isolated_example" {
       output.route_counts.eigw == 0 &&
       output.default_resource_hardening.security_group_count == 1 &&
       output.default_resource_hardening.network_acl_count == 1 &&
-      output.default_resource_hardening.route_table_count == 1
+      output.default_resource_hardening.route_table_count == 1 &&
+      toset(keys(output.network_acl_controls.ids)) == toset(["control", "enclave"]) &&
+      output.network_acl_controls.rule_count == 4 &&
+      output.network_acl_controls.association_count == 4
     )
-    error_message = "The secure isolated example must harden all default resources while retaining no Internet, NAT, EIGW, or egress-route resources."
+    error_message = "The secure isolated example must harden defaults, manage two explicit stateless NACLs, and retain no egress resources."
   }
 }
 

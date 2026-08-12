@@ -287,6 +287,25 @@ output "secondary_cidr_association_ids" {
   value       = local.secondary_cidr_association_ids
 }
 
+output "network_acl_ids_by_group" {
+  description = "Created or injected Network ACL IDs by stable subnet-group key; groups without network_acl are absent."
+  value       = local.network_acl_ids
+}
+
+output "network_acl_rule_ids" {
+  description = "Managed Network ACL rule IDs keyed '<group>/<ingress|egress>/<rule-number>'."
+  value = {
+    for key, rule in aws_network_acl_rule.this : key => rule.id
+  }
+}
+
+output "network_acl_association_ids" {
+  description = "Managed Network ACL association IDs keyed by stable '<group>/<az>' subnet identity."
+  value = {
+    for key, association in aws_network_acl_association.this : key => association.id
+  }
+}
+
 output "gateway_endpoint_ids" {
   description = "Gateway VPC endpoint IDs by stable caller-owned gateway_endpoints key."
   value       = local.gateway_endpoint_ids_by_key
@@ -510,6 +529,10 @@ output "resources" {
       if !cfg.manage_route_table
     }
     route_table_associations = aws_route_table_association.main
+    network_acls             = aws_network_acl.this
+    network_acl_rules        = aws_network_acl_rule.this
+    network_acl_associations = aws_network_acl_association.this
+    network_acl_ids          = local.network_acl_ids
     default_resources = {
       security_groups = aws_default_security_group.this
       network_acls    = aws_default_network_acl.this

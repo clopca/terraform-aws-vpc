@@ -5,6 +5,7 @@ This example combines the v5 D6 controls into an enclave/air-gapped topology:
 - VPC Block Public Access in `block-bidirectional` mode;
 - a custom DHCP option set with a private domain, Amazon-provided DNS, and Amazon Time Sync;
 - opt-in adoption of the AWS-created default security group, network ACL, and route table;
+- explicit per-group NACLs allowing only control-to-enclave TLS plus its stateless return path;
 - two subnet groups whose semantic role is exclusively `isolated`;
 - no Internet Gateway, egress-only Internet Gateway, NAT Gateway, or managed egress route.
 
@@ -14,8 +15,9 @@ Use this pattern for restricted processing zones, offline control planes, regula
 flowchart TB
   BPA[VPC Block Public Access\nblock bidirectional] --> VPC[Secure VPC]
   DHCP[Custom DHCP options] --> VPC
-  VPC --> Enclave[Enclave subnets\n2 AZs]
-  VPC --> Control[Control subnets\n2 AZs]
+  VPC --> Enclave[Enclave subnets\n2 AZs\ncustom NACL]
+  VPC --> Control[Control subnets\n2 AZs\ncustom NACL]
+  Control -->|TCP 443 + explicit return path| Enclave
   Internet((Internet)) -. blocked / no route .-> VPC
 ```
 
@@ -28,6 +30,19 @@ workloads still using those defaults; inventory dependencies and move workloads 
 explicit SGs, NACLs, and route tables first. All selectors default to `false`, so
 existing deployments and v4 migration plans remain unchanged unless explicitly
 enabled.
+
+## Stateless NACL warning
+
+NACLs are stateless: every allowed request path needs a separate reverse-direction
+rule. The example permits control-to-enclave TCP/443 and explicitly permits the
+1024–65535 response path; all unmatched traffic remains denied. Rule map keys are
+the AWS rule numbers, so reordering source declarations does not change state.
+
+Do not add NACLs merely to duplicate security-group policy. Prefer stateful security
+groups when workload identity is sufficient, return-port management would be
+fragile, or teams cannot test both traffic directions. Use NACLs for deliberate
+subnet-boundary defense in depth, coarse deny controls, or compliance boundaries.
+Omitting `network_acl` preserves AWS default-NACL behavior.
 
 ## Regional singleton warning
 

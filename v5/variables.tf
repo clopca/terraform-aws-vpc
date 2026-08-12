@@ -319,6 +319,12 @@ variable "subnets" {
     `name_format` controls the complete subnet Name tag with `{vpc}`, `{group}`,
     and `{az}` placeholders. `{group}` resolves `name_prefix` or the map key.
     `route_table_name_format` can diverge; when omitted it inherits `name_format`.
+
+    `network_acl` is optional. When absent, the module creates no NACL resources or
+    associations and AWS default-NACL behavior is retained. Create mode owns one ACL
+    per group; inject mode uses an existing ID while still managing declared rules
+    and every subnet association. Ingress/egress maps are keyed by explicit AWS rule
+    number so source declaration order never becomes state identity.
   EOT
   type = map(object({
     role         = string
@@ -355,6 +361,36 @@ variable "subnets" {
     tags                    = optional(map(string), {})
     manage_route_table      = optional(bool, true)
     route_table_id          = optional(string) # required when manage_route_table=false
+
+    # ── Optional stateless Network ACL (one per subnet group) ──
+    # Rule map keys are the explicit AWS rule numbers and therefore stable state
+    # identity, independent of declaration order.
+    network_acl = optional(object({
+      create      = optional(bool, true)
+      id          = optional(string)
+      name_format = optional(string, "{vpc}-{group}-nacl")
+      tags        = optional(map(string), {})
+      ingress = optional(map(object({
+        protocol        = string
+        action          = string
+        cidr_block      = optional(string)
+        ipv6_cidr_block = optional(string)
+        from_port       = optional(number)
+        to_port         = optional(number)
+        icmp_type       = optional(number)
+        icmp_code       = optional(number)
+      })), {})
+      egress = optional(map(object({
+        protocol        = string
+        action          = string
+        cidr_block      = optional(string)
+        ipv6_cidr_block = optional(string)
+        from_port       = optional(number)
+        to_port         = optional(number)
+        icmp_type       = optional(number)
+        icmp_code       = optional(number)
+      })), {})
+    }))
 
     # ── Routing (co-located per subnet group) ──
     # [R1-C3]: transit_gateway and core_network accept lists of destinations
@@ -576,6 +612,121 @@ variable "subnets" {
       for key in keys(var.subnets) : can(regex("^[a-z0-9][a-z0-9_-]*$", key))
     ])
     error_message = "Subnet map keys must start with a lowercase letter or digit and contain only lowercase letters, digits, hyphens, and underscores."
+  }
+
+  validation {
+    condition = alltrue([
+      for group, subnet in var.subnets : subnet.network_acl == null ? true : (
+        subnet.network_acl.create ? subnet.network_acl.id == null : (
+          subnet.network_acl.id != null && length(trimspace(subnet.network_acl.id)) > 0
+        )
+      )
+    ])
+    error_message = "network_acl create mode requires id=null; inject mode requires create=false and a non-empty id. Inject mode still manages declared rules and subnet associations."
+  }
+
+  validation {
+    condition = alltrue([
+      for group, subnet in var.subnets : subnet.network_acl == null ? true : (
+        length(trimspace(subnet.network_acl.name_format)) > 0 &&
+        !can(regex("\\{[^}]+\\}", replace(replace(subnet.network_acl.name_format, "{vpc}", ""), "{group}", "")))
+      )
+    ])
+    error_message = "network_acl.name_format must be non-empty and may use only {vpc} and {group}."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : concat(
+        [for rule_number in keys(subnet.network_acl.ingress) :
+          can(tonumber(rule_number)) &&
+          try(floor(tonumber(rule_number)) == tonumber(rule_number), false) &&
+          try(tonumber(rule_number) >= 1 && tonumber(rule_number) <= 32766, false) &&
+          try(tostring(tonumber(rule_number)) == rule_number, false)
+        ],
+        [for rule_number in keys(subnet.network_acl.egress) :
+          can(tonumber(rule_number)) &&
+          try(floor(tonumber(rule_number)) == tonumber(rule_number), false) &&
+          try(tonumber(rule_number) >= 1 && tonumber(rule_number) <= 32766, false) &&
+          try(tostring(tonumber(rule_number)) == rule_number, false)
+        ],
+      )
+    ]))
+    error_message = "Network ACL rule keys must be canonical integer rule numbers from 1 through 32766 (for example, '100')."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : [
+        for rule in concat(values(subnet.network_acl.ingress), values(subnet.network_acl.egress)) :
+        lower(rule.protocol) == rule.protocol && (
+          contains(["-1", "tcp", "udp", "icmp", "icmpv6"], rule.protocol) || (
+            can(tonumber(rule.protocol)) &&
+            try(floor(tonumber(rule.protocol)) == tonumber(rule.protocol), false) &&
+            try(tonumber(rule.protocol) >= 0 && tonumber(rule.protocol) <= 255, false) &&
+            try(tostring(tonumber(rule.protocol)) == rule.protocol, false)
+          )
+        )
+      ]
+    ]))
+    error_message = "Network ACL rule protocol must be lowercase -1, tcp, udp, icmp, icmpv6, or a canonical integer from 0 through 255."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : [
+        for rule in concat(values(subnet.network_acl.ingress), values(subnet.network_acl.egress)) :
+        contains(["allow", "deny"], rule.action)
+      ]
+    ]))
+    error_message = "Network ACL rule action must be allow or deny."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : [
+        for rule in concat(values(subnet.network_acl.ingress), values(subnet.network_acl.egress)) : (
+          (rule.cidr_block != null ? 1 : 0) + (rule.ipv6_cidr_block != null ? 1 : 0) == 1 &&
+          (rule.cidr_block == null ? true : can(cidrhost(rule.cidr_block, 0)) && !strcontains(rule.cidr_block, ":")) &&
+          (rule.ipv6_cidr_block == null ? true : can(cidrhost(rule.ipv6_cidr_block, 0)) && strcontains(rule.ipv6_cidr_block, ":"))
+        )
+      ]
+    ]))
+    error_message = "Each Network ACL rule must set exactly one valid IPv4 cidr_block or IPv6 ipv6_cidr_block."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : [
+        for rule in concat(values(subnet.network_acl.ingress), values(subnet.network_acl.egress)) :
+        contains(["tcp", "udp", "6", "17"], rule.protocol) ? (
+          rule.from_port != null && rule.to_port != null &&
+          try(floor(rule.from_port) == rule.from_port && floor(rule.to_port) == rule.to_port, false) &&
+          try(rule.from_port >= 0 && rule.from_port <= rule.to_port && rule.to_port <= 65535, false)
+          ) : (
+          rule.from_port == null && rule.to_port == null
+        )
+      ]
+    ]))
+    error_message = "TCP/UDP Network ACL rules require an ordered integer from_port/to_port range from 0 through 65535; other protocols must omit ports."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : subnet.network_acl == null ? [true] : [
+        for rule in concat(values(subnet.network_acl.ingress), values(subnet.network_acl.egress)) :
+        contains(["icmp", "icmpv6", "1", "58"], rule.protocol) ? (
+          (rule.icmp_type == null && rule.icmp_code == null) || (
+            rule.icmp_type != null && rule.icmp_code != null &&
+            try(floor(rule.icmp_type) == rule.icmp_type && floor(rule.icmp_code) == rule.icmp_code, false) &&
+            try(rule.icmp_type >= -1 && rule.icmp_type <= 255 && rule.icmp_code >= -1 && rule.icmp_code <= 255, false)
+          )
+          ) : (
+          rule.icmp_type == null && rule.icmp_code == null
+        )
+      ]
+    ]))
+    error_message = "ICMP/ICMPv6 type and code must both be omitted or be integers from -1 through 255; non-ICMP protocols must omit them."
   }
 
   validation {

@@ -26,6 +26,27 @@ module "vpc" {
           cidrsubnet(var.vpc_cidr, 8, index)
         ]
       }
+      network_acl = {
+        ingress = {
+          "100" = {
+            protocol   = "tcp"
+            action     = "allow"
+            cidr_block = cidrsubnet(var.vpc_cidr, 4, 1)
+            from_port  = 443
+            to_port    = 443
+          }
+        }
+        egress = {
+          "100" = {
+            protocol   = "tcp"
+            action     = "allow"
+            cidr_block = cidrsubnet(var.vpc_cidr, 4, 1)
+            from_port  = 1024
+            to_port    = 65535
+          }
+        }
+        tags = { DataClassification = "restricted" }
+      }
       tags = {
         DataClassification = "restricted"
       }
@@ -38,6 +59,27 @@ module "vpc" {
           for index, az in var.availability_zones :
           cidrsubnet(var.vpc_cidr, 8, index + 16)
         ]
+      }
+      network_acl = {
+        ingress = {
+          "100" = {
+            protocol   = "tcp"
+            action     = "allow"
+            cidr_block = cidrsubnet(var.vpc_cidr, 4, 0)
+            from_port  = 1024
+            to_port    = 65535
+          }
+        }
+        egress = {
+          "100" = {
+            protocol   = "tcp"
+            action     = "allow"
+            cidr_block = cidrsubnet(var.vpc_cidr, 4, 0)
+            from_port  = 443
+            to_port    = 443
+          }
+        }
+        tags = { Purpose = "offline-control-plane" }
       }
       tags = {
         Purpose = "offline-control-plane"
