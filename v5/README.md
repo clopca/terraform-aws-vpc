@@ -56,7 +56,10 @@ module "vpc" {
 Complete configurations are available in [`examples/basic`](examples/basic),
 [`examples/enterprise`](examples/enterprise), [`examples/hub`](examples/hub),
 [`examples/nat_byoip`](examples/nat\_byoip), [`examples/ipam`](examples/ipam),
-[`examples/dual_stack`](examples/dual\_stack), and the state-oriented
+[`examples/dual_stack`](examples/dual\_stack),
+[`examples/existing_vpc`](examples/existing\_vpc),
+[`examples/secure_isolated`](examples/secure\_isolated),
+[`examples/private_nat`](examples/private\_nat), and the state-oriented
 [`examples/migration-from-v4`](examples/migration-from-v4) skeleton. The hub and
 dedicated feature examples document the external IDs/ARNs or IPAM pools that must
 exist before apply; validated variables keep synthetic placeholders out of

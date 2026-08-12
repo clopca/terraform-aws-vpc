@@ -17,6 +17,7 @@
 | Documentación pública v5 incompleta | Publicadas `v5/docs/UPGRADE-GUIDE-5.0.md` y `v5/docs/how-to-use-outputs.md`; README, header, RFC y skeleton de migración enlazan la fuente correcta y describen Tier 1/2/3. El RFC queda como evidencia interna. | `8075896` | ✅ Cerrado |
 | README generado debía usar terraform-docs 0.19.0 | Regenerado con el binario oficial `terraform-docs v0.19.0` para Darwin arm64 y checksum verificado. | `8075896` | ✅ Cerrado |
 | **Critical — asociación VPC Lattice no idempotente tras apply real** | El apply de `enterprise` creó 78 recursos, pero el plan repetido proponía reemplazar la asociación: AWS materializa `dns_options` con `VERIFIED_DOMAINS_ONLY` y un sentinel calculado `[*]`, mientras la configuración omitía el bloque. Se añadió contrato tipado, default alineado con AWS, validaciones y bloque dinámico. Los dominios permanecen `null` salvo modos specified, permitiendo absorber el sentinel sin drift. | `4582076` | ✅ Cerrado |
+| Faltaban ejemplos explícitos de create-or-inject, enclave D6 y private NAT hacia TGW | Añadidos `existing_vpc`, `secure_isolated` y `private_nat` con estructura completa, catálogo público, validación CI y plan tests. Los ejemplos fijan respectivamente ownership externo computado, ausencia total de egress con BPA/DHCP y la cadena workload → private NAT → TGW para dominios 10/8 solapados. | commit de esta ampliación | ✅ Cerrado |
 
 ## Inventario de ejemplos
 
@@ -29,6 +30,9 @@
 | `nat_byoip` | EIP `create`, `byoip_pool` y `existing` con topología equivalente | Validate + plan test |
 | `ipam` | VPC IPv4/IPv6 por IPAM, secundarios IPAM/estático y subnets por pool | Validate + plan test |
 | `dual_stack` | Subnets dual-stack e IPv6-native, DNS64/NAT64, IGW y EIGW | Validate + plan test |
+| `existing_vpc` | VPC/IGW/route table/EIPs externos inyectados; subnets y NAT bajo ownership del módulo | Validate + plan test |
+| `secure_isolated` | BPA bidireccional, DHCP custom y sólo roles `isolated`, sin gateways ni rutas de egress | Validate + plan test |
+| `private_nat` | Private NAT por AZ sobre CIDR de traducción y rutas específicas a un TGW externo | Validate + plan test |
 
 ## Inventario de documentación
 
@@ -36,7 +40,7 @@
 - `v5/docs/UPGRADE-GUIDE-5.0.md`: runbook v4 → v5, state moves, CloudWatch remove/import y transición IAM sin gap.
 - `v5/docs/how-to-use-outputs.md`: Tier 1/2/3, consumo por grupo/rol/AZ y sentinels opcionales.
 - `docs/rfc/v5-migration.md`: rationale, ADRs y evidencia interna; enlaza la guía normativa de usuario.
-- Siete README de ejemplo: features, arquitectura, prerequisitos y comandos.
+- Diez README de ejemplo: features, arquitectura, prerequisitos y comandos.
 
 ## Decisiones de diseño
 
@@ -54,7 +58,7 @@ Los maps conservan todas las claves grupo/AZ para cruzarse con IDs y route table
 
 ### ADR-R5-4 — Ejemplos validables sin fingir recursos externos
 
-Los IDs IPAM/BYOIP/EIP son placeholders con forma válida para validate y plan mock; los README exigen sustituirlos antes de apply. `nat_byoip` mantiene la topología constante entre modos, `ipam` separa pools VPC/subnet y asociaciones, y `dual_stack` concentra los caminos IPv6.
+Los IDs IPAM/BYOIP/EIP son placeholders con forma válida para validate y plan mock; los README exigen sustituirlos antes de apply. `nat_byoip` mantiene la topología constante entre modos, `ipam` separa pools VPC/subnet y asociaciones, y `dual_stack` concentra los caminos IPv6. `existing_vpc` demuestra IDs computed sin inferir ownership; `secure_isolated` advierte del singleton regional BPA; `private_nat` exige un TGW externo y separa rutas workload→NAT de NAT→TGW.
 
 ## Evidencia y gates
 
@@ -65,10 +69,11 @@ El plan repetido del apply real de `enterprise` registró `1 to add, 1 to destro
 | `terraform fmt -check -recursive v5` | PASS |
 | `tflint --chdir=v5 --init` | PASS |
 | `tflint --chdir=v5 --recursive` | PASS, 0 findings |
-| `terraform init -backend=false -lockfile=readonly` | PASS en módulo y siete ejemplos |
-| `terraform validate -no-color` | PASS en módulo y siete ejemplos |
-| `terraform test -no-color` | **56 passed, 0 failed** |
+| `terraform init -backend=false -lockfile=readonly` | PASS en módulo y diez ejemplos |
+| `terraform validate -no-color` | PASS en módulo y diez ejemplos |
+| `terraform test -no-color` | **59 passed, 0 failed** |
 | Test focal Lattice | **3 passed, 0 failed** |
+| Plan tests de los diez ejemplos | **9 passed, 0 failed** |
 | Regeneración `terraform-docs v0.19.0` | PASS, checksum verificado |
 | Auditoría de exports `aws_iam_role` | PASS; sólo proyección explícita en `resources.flow_log_roles` |
 | Workaround macOS | `xattr -dr com.apple.provenance` aplicado a cada `.terraform/providers` antes de validate/test |

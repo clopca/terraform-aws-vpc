@@ -28,6 +28,14 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_vpc" {
+    defaults = {
+      id         = "vpc-mock"
+      arn        = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
+      cidr_block = "10.80.0.0/16"
+    }
+  }
+
   mock_resource "aws_subnet" {
     defaults = {
       id              = "subnet-mock"
@@ -183,5 +191,70 @@ run "dual_stack_example" {
       output.ipv6_route_counts.nat64 == 2
     )
     error_message = "The dual-stack example must plan dual-stack and IPv6-native subnets plus IGW, EIGW, and NAT64 routes."
+  }
+}
+
+run "existing_vpc_example" {
+  command = plan
+
+  module {
+    source = "./examples/existing_vpc"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.subnet_ids)) == toset(["application", "public"]) &&
+      length(output.nat_gateway_ids) == 2 &&
+      output.module_ownership.vpcs == 0 &&
+      output.module_ownership.internet_gateways == 0 &&
+      output.module_ownership.elastic_ips == 0 &&
+      toset(keys(output.module_ownership.injected_route_tables)) == toset(["public"])
+    )
+    error_message = "The existing-VPC example must inject its VPC, IGW, public route table, and NAT EIPs while creating subnets and two NAT Gateways."
+  }
+}
+
+run "secure_isolated_example" {
+  command = plan
+
+  module {
+    source = "./examples/secure_isolated"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.isolated_subnet_ids)) == toset(["control", "enclave"]) &&
+      output.egress_resources.internet_gateway_id == null &&
+      length(output.egress_resources.nat_gateway_ids) == 0 &&
+      output.egress_resources.egress_only_igw_id == null &&
+      output.route_counts.internet == 0 &&
+      output.route_counts.nat == 0 &&
+      output.route_counts.eigw == 0
+    )
+    error_message = "The secure isolated example must contain only isolated subnet groups and no Internet, NAT, EIGW, or egress-route resources."
+  }
+}
+
+run "private_nat_example" {
+  command = plan
+
+  module {
+    source = "./examples/private_nat"
+  }
+
+  variables {
+    transit_gateway_id = "tgw-0123456789abcdef0"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.subnet_ids)) == toset(["nat-host", "tgw", "workload"]) &&
+      length(output.private_nat_gateway_ids) == 2 &&
+      length(output.nat_public_ips) == 0 &&
+      output.route_counts.workload_to_nat == 2 &&
+      output.route_counts.nat_to_tgw == 4 &&
+      output.route_counts.internet == 0
+    )
+    error_message = "The private-NAT example must plan two private NAT Gateways, workload NAT routes, four translated TGW routes, and no Internet route."
   }
 }
