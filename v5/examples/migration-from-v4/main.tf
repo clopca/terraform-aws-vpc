@@ -1,18 +1,3 @@
-terraform {
-  required_version = ">= 1.5"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.29"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
 # This skeleton preserves the v4 reserved group names so every deprecated
 # Tier 2 output keeps its exact v4 key shape during the transition.
 module "vpc" {
@@ -116,30 +101,5 @@ module "vpc" {
 
   tags = {
     ManagedBy = "terraform"
-  }
-}
-
-output "vpc_id" {
-  value = module.vpc.vpc_id
-}
-
-output "subnet_ids_by_group_by_az" {
-  value = module.vpc.subnet_ids_by_group_by_az
-}
-
-# Keep old downstreams operational while migrating them to Tier 1.
-output "v4_private_subnet_attributes_by_az" {
-  value = module.vpc.private_subnet_attributes_by_az
-}
-
-output "v4_name_compatibility" {
-  description = "Representative Name tags that must remain identical during v4 migration."
-  value = {
-    public_subnet    = module.vpc.resources.subnets["public/us-east-1a"].tags.Name
-    app_route_table  = module.vpc.resources.route_tables["app/us-east-1a"].tags.Name
-    nat_eip          = module.vpc.resources.eips["nat/us-east-1a"].tags.Name
-    nat_gateway      = module.vpc.resources.nat_gateways["nat/us-east-1a"].tags.Name
-    internet_gateway = module.vpc.resources.internet_gateway[0].tags.Name
-    egress_only_igw  = module.vpc.resources.egress_only_internet_gateway[0].tags.Name
   }
 }

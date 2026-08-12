@@ -1,23 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Example 1: Basic — Simple 3-AZ Web Application VPC
-# Demonstrates: single_az NAT, EIGW for IPv6, DNS64, route tables,
-# and native CloudWatch VPC Flow Logs with a created IAM role
-# ─────────────────────────────────────────────────────────────────────────────
-
-terraform {
-  required_version = ">= 1.5"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.29"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
 module "vpc" {
   source = "../.."
 
@@ -83,40 +63,4 @@ module "vpc" {
     Environment = "development"
     Project     = "web-app"
   }
-}
-
-output "vpc_id" {
-  value = module.vpc.vpc_id
-}
-
-output "subnet_ids" {
-  value = module.vpc.subnet_ids_by_group
-}
-
-output "subnet_ipv6_cidrs" {
-  value = module.vpc.subnet_ipv6_cidrs_by_group_by_az
-}
-
-output "subnets_by_role" {
-  value = module.vpc.subnet_ids_by_semantic_role
-}
-
-output "nat_gateway_ids" {
-  value = module.vpc.nat_gateway_ids
-}
-
-output "nat_public_ips" {
-  value = module.vpc.nat_public_ips
-}
-
-output "route_tables" {
-  value = module.vpc.route_table_ids_by_group_by_az
-}
-
-output "eigw_id" {
-  value = module.vpc.egress_only_igw_id
-}
-
-output "flow_log_ids" {
-  value = module.vpc.flow_log_ids
 }

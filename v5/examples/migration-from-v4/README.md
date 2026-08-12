@@ -1,15 +1,50 @@
 # Migration from v4
 
-This is a state-migration skeleton, not a deployable network template. Follow the complete runbook and ADR in `../../../docs/rfc/v5-migration.md`.
+This example is a **state-migration skeleton**, not a new-network template. It demonstrates:
 
-1. With v4 still configured, back up state, upgrade Terraform/AWS provider separately, and reach a clean **normal** plan.
-2. Copy the exact observed order of `module.vpc.azs` into `availability_zones.names`; align every explicit CIDR list to that order. Keep the v4 group keys `public`, `transit_gateway`, `core_network`, and every private key unchanged.
-3. Copy the v4 Name formulas exactly: `name_format = "{group}-{az}"` on every subnet group, `nat_gateway.name_format = "nat-{group}-{az}"`, `vpc.igw_name_format = "{vpc}-igw"`, and `vpc.eigw_name_format = "{vpc}"`. Copy every v4 `name_prefix` and tag map unchanged.
-4. Capture the physical v4 CloudWatch log-group name and IAM role `name_prefix` with `terraform state show`. Put them in `flow_logs.default.cloudwatch_options.name` and `flow_logs.default.role_name_prefix`.
-5. Copy this example's active `moved.tf` to the caller root, substitute real AZs/groups/destinations, and remove blocks whose source is absent. The 63 blocks are a feature union, not a target count: the remediation-3 fixture used 26 and omitted 37 absent-feature sources.
-6. Materialize those address moves with the saved refresh-only state plan described in the runbook. This is not the migration gate. Then remove the old log-group state address and import the same physical group at `module.vpc.aws_cloudwatch_log_group.flow_logs["default"]`; materializing EIP/NAT moves first prevents evaluation against stale v4 keys.
-7. Run a complete normal `terraform plan` (never use refresh-only as the acceptance gate). Require zero replacements and compare every action with the allowlist in the RFC, including the internal `terraform_data` state records.
-8. Create the v5 inline Flow Logs role policy with the documented targeted first apply, verify delivery, then run and apply a new complete plan that retires the old managed attachment/policy.
-9. Verify preserved physical IDs, no residual v4 addresses, active Flow Logs with new events, and a final normal plan with detailed exit code 0.
+- preservation of v4 subnet group keys and physical Name-tag formulas;
+- explicit production AZ/CIDR ordering copied from v4 state;
+- Tier 2 compatibility aliases while consumers move to Tier 1;
+- a 63-block `moved.tf` catalog covering the demonstrated feature union;
+- the exceptional remove/import cutover for a v4-created CloudWatch log group;
+- an ordered Flow Logs IAM policy transition with no delivery-permission gap.
 
-The active `moved.tf` contains 63 moves for the union of two-AZ `public`, `app`, `transit_gateway`, `core_network`, routing, attachment, Lattice, NAT/EIP, and Flow Logs features. Keep only sources present in `terraform state list`; repeat the private pattern per real group. It preserves Flow Log and IAM role addresses, but deliberately excludes the replacement-prone v4 `name_prefix` -> v5 `name` log-group move.
+Follow the user-facing [v5 upgrade guide](../../../docs/UPGRADE-GUIDE-5.0.md). The detailed [migration RFC](../../../docs/rfc/v5-migration.md) records rationale and fixture evidence.
+
+## State transition
+
+```mermaid
+flowchart LR
+  V4[v4 configuration + state] --> Baseline[Provider-only baseline]
+  Baseline --> Translate[v5 typed inputs\nexact AZ/CIDR/name identity]
+  Translate --> Moves[Apply selected moved blocks\nto state only]
+  Moves --> Import[Remove/import same\nCloudWatch log group]
+  Import --> Gate[Complete normal plan\nzero replacements]
+  Gate --> IAM[Create inline role policy\nverify delivery]
+  IAM --> Final[Complete apply +\nclean normal plan]
+```
+
+## Rehearse safely
+
+1. Clone the caller configuration and a copy of production state into an isolated backend/workspace.
+2. Replace every synthetic ID, ARN, CIDR, AZ, generated log-group name, and IAM role prefix in `main.tf`.
+3. Copy `moved.tf` to the caller root. Keep only addresses present in `terraform state list`; repeat per actual private group/AZ.
+4. Run `terraform init` and the exact staged commands in the upgrade guide. Do not use `terraform apply` on this sample unchanged.
+5. Require zero replacements in the complete plan and verify every durable physical ID before testing against production state.
+
+The example has two AZs and a feature-union catalog. The catalog size is not a migration target: the real remediation fixture selected 26 moves and omitted 37 absent sources.
+
+## Why the CloudWatch log group is different
+
+v4 used `name_prefix`; v5 owns a fixed `name`. A `moved` block would re-address state but still propose replacement. Capture the real generated name, configure it under `flow_logs.default.cloudwatch_options.name`, materialize ordinary moves first, then remove/import the same physical group exactly as documented. The IAM role can use a normal move only when its exact v4 `name_prefix` is preserved.
+
+## Validation-only commands
+
+These commands prove syntax and provider compatibility; they do **not** prove a migration:
+
+```shell
+terraform init -backend=false
+terraform validate
+```
+
+Migration acceptance always requires a complete normal plan against copied real state, followed by the physical-ID and Flow Logs delivery checks in the upgrade guide.

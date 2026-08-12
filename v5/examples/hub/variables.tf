@@ -1,3 +1,9 @@
+variable "aws_region" {
+  description = "AWS Region containing the injected hub dependencies."
+  type        = string
+  default     = "us-west-2"
+}
+
 variable "existing_igw_id" {
   description = "Existing Internet Gateway ID attached to the hub VPC."
   type        = string

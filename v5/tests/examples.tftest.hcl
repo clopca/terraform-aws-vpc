@@ -130,3 +130,58 @@ run "hub_example" {
     error_message = "The hub example must plan non-overlapping dual-stack subnets, Firehose Flow Logs, route tables, and two inspection NAT Gateways."
   }
 }
+
+run "nat_byoip_example" {
+  command = plan
+
+  module {
+    source = "./examples/nat_byoip"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.nat_gateway_ids)) == toset(["byoip_pool", "create", "existing"]) &&
+      alltrue([for ids in values(output.nat_gateway_ids) : length(ids) == 2]) &&
+      alltrue([for ids in values(output.nat_eip_allocation_ids) : length(ids) == 2])
+    )
+    error_message = "The NAT BYOIP example must plan two NAT Gateways for each create, BYOIP-pool, and existing-EIP mode."
+  }
+}
+
+run "ipam_example" {
+  command = plan
+
+  module {
+    source = "./examples/ipam"
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.secondary_cidr_association_ids)) == toset(["analytics", "legacy"]) &&
+      toset(keys(output.subnet_ids)) == toset(["analytics", "application", "legacy"]) &&
+      alltrue([for subnets in values(output.subnet_ids) : length(subnets) == 2])
+    )
+    error_message = "The IPAM example must plan primary/IPAM and named secondary addressing across all documented subnet groups."
+  }
+}
+
+run "dual_stack_example" {
+  command = plan
+
+  module {
+    source = "./examples/dual_stack"
+  }
+
+  assert {
+    condition = (
+      alltrue(flatten([for group in ["public", "application", "ipv6-native"] : [
+        for cidr in values(output.subnet_ipv6_cidrs[group]) : cidr != null && cidr != ""
+      ]])) &&
+      length(output.ipv6_native_subnet_ids) == 2 &&
+      output.ipv6_route_counts.internet_gateway == 2 &&
+      output.ipv6_route_counts.egress_only_igw == 4 &&
+      output.ipv6_route_counts.nat64 == 2
+    )
+    error_message = "The dual-stack example must plan dual-stack and IPv6-native subnets plus IGW, EIGW, and NAT64 routes."
+  }
+}

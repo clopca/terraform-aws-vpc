@@ -1,23 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Example 2: Enterprise — IPAM + Explicit CIDRs + Multiple Tiers
-# Demonstrates: all_azs NAT with BYOIP pool, EIGW, CIDR pinning [R1-C2],
-# native S3 VPC Flow Logs, and a typed VPC Lattice association
-# ─────────────────────────────────────────────────────────────────────────────
-
-terraform {
-  required_version = ">= 1.5"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.29"
-    }
-  }
-}
-
-provider "aws" {
-  region = "eu-west-1"
-}
-
 resource "aws_vpclattice_service_network" "enterprise" {
   name      = "enterprise-service-network"
   auth_type = "AWS_IAM"
@@ -130,48 +110,4 @@ module "vpc" {
     Environment = "production"
     ManagedBy   = "terraform"
   }
-}
-
-output "vpc_id" {
-  value = module.vpc.vpc_id
-}
-
-output "subnet_ids" {
-  value = module.vpc.subnet_ids_by_group_by_az
-}
-
-output "subnet_cidrs" {
-  value = module.vpc.subnet_cidrs_by_group_by_az
-}
-
-output "subnet_ipv6_cidrs" {
-  value = module.vpc.subnet_ipv6_cidrs_by_group_by_az
-}
-
-output "subnets_by_role" {
-  value = module.vpc.subnet_ids_by_semantic_role
-}
-
-output "nat_gateway_ids" {
-  value = module.vpc.nat_gateway_ids
-}
-
-output "nat_public_ips" {
-  value = module.vpc.nat_public_ips
-}
-
-output "route_tables" {
-  value = module.vpc.route_table_ids_by_group_by_az
-}
-
-output "eigw_id" {
-  value = module.vpc.egress_only_igw_id
-}
-
-output "flow_log_ids" {
-  value = module.vpc.flow_log_ids
-}
-
-output "lattice_association_id" {
-  value = module.vpc.vpc_lattice_service_network_association_id
 }
