@@ -487,6 +487,132 @@ variable "nat_gateway" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# VPC FLOW LOGS — native resources, create-or-inject destinations and roles
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "flow_logs" {
+  description = <<-EOT
+    VPC Flow Logs keyed by a stable logical name. Map keys are Terraform state
+    identity and must not be renamed without a moved block.
+
+    destination_type accepts cloudwatch, s3, or kinesis (Kinesis Data Firehose).
+    Set destination_arn to inject an existing destination; omit it to create the
+    destination natively. CloudWatch also supports create-or-inject for the VPC
+    Flow Logs IAM role through iam_role_arn. A created Firehose supports the same
+    pattern for its S3 sink and delivery role through kinesis_options.
+  EOT
+  type = map(object({
+    enabled                        = optional(bool, true)
+    destination_type               = optional(string, "cloudwatch")
+    destination_arn                = optional(string)
+    iam_role_arn                   = optional(string)
+    deliver_cross_account_role_arn = optional(string)
+    traffic_type                   = optional(string, "ALL")
+    log_format                     = optional(string)
+    max_aggregation_interval       = optional(number, 600)
+    role_name_prefix               = optional(string)
+    role_permissions_boundary      = optional(string)
+    cloudwatch_options = optional(object({
+      name              = optional(string)
+      retention_in_days = optional(number, 30)
+      kms_key_id        = optional(string)
+    }), {})
+    s3_options = optional(object({
+      file_format                = optional(string, "plain-text")
+      hive_compatible_partitions = optional(bool, false)
+      per_hour_partition         = optional(bool, false)
+    }), {})
+    kinesis_options = optional(object({
+      delivery_stream_name = optional(string)
+      s3_bucket_arn        = optional(string)
+      delivery_role_arn    = optional(string)
+      role_name_prefix     = optional(string)
+      permissions_boundary = optional(string)
+      buffering_interval   = optional(number, 300)
+      buffering_size       = optional(number, 5)
+      compression_format   = optional(string, "GZIP")
+      prefix               = optional(string, "vpc-flow-logs/")
+      error_output_prefix  = optional(string, "vpc-flow-logs-errors/")
+    }), {})
+    tags = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains(["cloudwatch", "s3", "kinesis"], cfg.destination_type)
+    ])
+    error_message = "flow_logs[*].destination_type must be cloudwatch, s3, or kinesis."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains(["ALL", "ACCEPT", "REJECT"], cfg.traffic_type)
+    ])
+    error_message = "flow_logs[*].traffic_type must be ALL, ACCEPT, or REJECT."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains([60, 600], cfg.max_aggregation_interval)
+    ])
+    error_message = "flow_logs[*].max_aggregation_interval must be 60 or 600 seconds."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : can(regex("^[a-z0-9][a-z0-9-]*$", name)) && !strcontains(name, "/")
+    ])
+    error_message = "Flow log map keys must use lowercase alphanumeric characters and hyphens, and must not contain '/'."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains(["plain-text", "parquet"], cfg.s3_options.file_format)
+    ])
+    error_message = "flow_logs[*].s3_options.file_format must be plain-text or parquet."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains(["UNCOMPRESSED", "GZIP", "ZIP", "Snappy", "HADOOP_SNAPPY"], cfg.kinesis_options.compression_format)
+    ])
+    error_message = "flow_logs[*].kinesis_options.compression_format is not supported by Kinesis Data Firehose."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : cfg.destination_type == "cloudwatch" || cfg.iam_role_arn == null
+    ])
+    error_message = "flow_logs[*].iam_role_arn is only valid for destination_type = cloudwatch."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VPC LATTICE — typed Service Network association
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "vpc_lattice" {
+  description = "VPC Lattice Service Network association. Null disables the association."
+  type = object({
+    service_network_identifier = string
+    security_group_ids         = optional(list(string), [])
+    private_dns_enabled        = optional(bool, true)
+    tags                       = optional(map(string), {})
+  })
+  default = null
+
+  validation {
+    condition = var.vpc_lattice == null ? true : (
+      length(trimspace(var.vpc_lattice.service_network_identifier)) > 0 &&
+      alltrue([for id in var.vpc_lattice.security_group_ids : length(trimspace(id)) > 0]) &&
+      length(distinct(var.vpc_lattice.security_group_ids)) == length(var.vpc_lattice.security_group_ids)
+    )
+    error_message = "vpc_lattice requires a non-empty service_network_identifier and unique, non-empty security_group_ids."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GLOBAL TAGS
 # ─────────────────────────────────────────────────────────────────────────────
 

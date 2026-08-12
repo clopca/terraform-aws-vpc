@@ -23,9 +23,10 @@ data "aws_vpc" "existing" {
   id    = var.vpc.id
 }
 
-# For core_network_arn auto-derivation when arn is not explicitly provided
+# Scalar account identity for constructed Cloud WAN/VPC ARNs. The attachment
+# never consumes the full existing-VPC data object, avoiding unknown propagation.
 data "aws_caller_identity" "current" {
-  count = length([for k, v in var.subnets : k if v.role == "core_network" && try(v.core_network_options.arn, null) == null]) > 0 ? 1 : 0
+  count = length([for k, v in var.subnets : k if v.role == "core_network"]) > 0 ? 1 : 0
 }
 
 # ─── VPC ───────────────────────────────────────────────────────────────────

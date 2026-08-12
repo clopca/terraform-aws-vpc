@@ -371,7 +371,7 @@ locals {
   core_network_arn = try([
     for name, cfg in var.subnets : coalesce(
       try(cfg.core_network_options.arn, null),
-      "arn:aws:networkmanager::${data.aws_caller_identity.current[0].account_id}:core-network/${cfg.core_network_options.id}"
+      "arn:${data.aws_partition.current[0].partition}:networkmanager::${data.aws_caller_identity.current[0].account_id}:core-network/${cfg.core_network_options.id}"
     )
     if cfg.role == "core_network"
   ][0], null)

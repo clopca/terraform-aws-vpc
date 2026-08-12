@@ -226,13 +226,25 @@ output "route_table_ids_by_semantic_role" {
 }
 
 output "transit_gateway_attachment_id" {
-  description = "Transit Gateway VPC Attachment ID. Null until Phase 3."
-  value       = null # Phase 3
+  description = "Transit Gateway VPC Attachment ID, or null when no transit_gateway subnet group is configured."
+  value       = try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"].id, null)
 }
 
 output "core_network_attachment_id" {
-  description = "Cloud WAN Core Network Attachment ID. Null until Phase 3."
-  value       = null # Phase 3
+  description = "Cloud WAN Core Network VPC Attachment ID, or null when no core_network subnet group is configured."
+  value       = try(aws_networkmanager_vpc_attachment.this["vpc"].id, null)
+}
+
+output "flow_log_ids" {
+  description = "VPC Flow Log IDs indexed by the stable flow_logs map key."
+  value = {
+    for name, flow_log in aws_flow_log.this : name => flow_log.id
+  }
+}
+
+output "vpc_lattice_service_network_association_id" {
+  description = "VPC Lattice Service Network VPC association ID, or null when disabled."
+  value       = try(aws_vpclattice_service_network_vpc_association.this["vpc"].id, null)
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -281,6 +293,10 @@ output "resources" {
         injected = local.subnet_map[key].route_table_id != null
       }
     }
+    transit_gateway_attachment = try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"], null)
+    core_network_attachment    = try(aws_networkmanager_vpc_attachment.this["vpc"], null)
+    flow_logs                  = aws_flow_log.this
+    vpc_lattice_association    = try(aws_vpclattice_service_network_vpc_association.this["vpc"], null)
     secondary_cidr_associations = {
       for key, assoc in aws_vpc_ipv4_cidr_block_association.secondary : key => {
         id         = assoc.id
