@@ -273,7 +273,7 @@ resource "terraform_data" "cidr_pinning_validation" {
 # first-compatible-group fallback.
 
 resource "terraform_data" "nat_gateway_subnet_group_validation" {
-  count = var.nat_gateway.mode != "none" && !local.nat_inject_mode ? 1 : 0
+  count = var.nat_gateway.mode != "none" && var.nat_gateway.mode != "regional" && !local.nat_inject_mode ? 1 : 0
 
   lifecycle {
     precondition {
@@ -302,7 +302,7 @@ resource "terraform_data" "nat_routing_requires_nat_gateway" {
   lifecycle {
     precondition {
       condition     = var.nat_gateway.mode != "none"
-      error_message = "One or more subnet groups have routing.nat_gateway = true, but nat_gateway.mode = 'none'. Set nat_gateway.mode to 'single_az' or 'all_azs', or remove the NAT routing from subnets: ${join(", ", [for k, v in var.subnets : k if try(v.routing.nat_gateway, false)])}."
+      error_message = "One or more subnet groups have routing.nat_gateway = true, but nat_gateway.mode = 'none'. Set nat_gateway.mode to 'single_az', 'all_azs', or 'regional', or remove the NAT routing from subnets: ${join(", ", [for k, v in var.subnets : k if try(v.routing.nat_gateway, false)])}."
     }
   }
 }
@@ -414,8 +414,8 @@ resource "terraform_data" "nat_gateway_existing_ids_validation" {
 
   lifecycle {
     precondition {
-      condition     = toset(keys(var.nat_gateway.existing_ids)) == local.nat_az_set
-      error_message = "nat_gateway.existing_ids keys must exactly match the NAT AZ set selected by nat_gateway.mode and nat_gateway.az."
+      condition     = toset(keys(var.nat_gateway.existing_ids)) == (var.nat_gateway.mode == "regional" ? toset(["regional"]) : local.nat_az_set)
+      error_message = "nat_gateway.existing_ids keys must match the selected zonal AZ set, or exactly { regional = nat_gateway_id } when mode = 'regional'."
     }
   }
 }

@@ -148,11 +148,11 @@ run "nat_byoip_example" {
 
   assert {
     condition = (
-      toset(keys(output.nat_gateway_ids)) == toset(["byoip_pool", "create", "existing"]) &&
+      toset(keys(output.nat_gateway_ids)) == toset(["byoip_pool", "create", "existing", "regional"]) &&
       alltrue([for ids in values(output.nat_gateway_ids) : length(ids) == 2]) &&
-      alltrue([for ids in values(output.nat_eip_allocation_ids) : length(ids) == 2])
+      alltrue([for mode in ["byoip_pool", "create", "existing"] : length(output.nat_eip_allocation_ids[mode]) == 2])
     )
-    error_message = "The NAT BYOIP example must plan two NAT Gateways for each create, BYOIP-pool, and existing-EIP mode."
+    error_message = "The NAT BYOIP example must plan three two-AZ zonal modes plus one Regional NAT whose ID is repeated across AZ output keys."
   }
 }
 

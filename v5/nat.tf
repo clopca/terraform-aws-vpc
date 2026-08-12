@@ -7,16 +7,15 @@
 #
 # EIP sourcing: create (new) | byoip_pool (BYO pool) | existing (allocation_ids)
 # Connectivity type: public (default) | private (no EIP needed)
-#
-# for_each keys: "nat/<az>" — stable, deterministic.
+# Availability mode: zonal resources use "nat/<az>"; regional uses "nat/regional".
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Elastic IPs for NAT Gateways ─────────────────────────────────────────
-# Created only when:
-#   - mode != "none"
-#   - existing_ids not set (create mode for NAT)
-#   - connectivity_type = "public" (private NAT doesn't need EIPs)
-#   - eip.mode != "existing" (user provides allocation_ids)
+# Created only for public NAT in module-owned EIP modes:
+#   - zonal eip.mode = "create" or "byoip_pool"
+#   - regional eip.mode = "byoip_pool" (manual address mode)
+# Regional eip.mode = "create" delegates IP/AZ management to AWS; existing mode
+# always keeps EIP lifecycle caller-owned.
 
 resource "aws_eip" "nat" {
   for_each = local.nat_eips_to_create
@@ -30,16 +29,27 @@ resource "aws_eip" "nat" {
 }
 
 # ─── NAT Gateways ─────────────────────────────────────────────────────────
-# Created only when existing_ids is not set (create mode).
-# Placed in nat_gateway.subnet_group, or the documented first compatible
-# group fallback when subnet_group is null.
+# Created only when existing_ids is not set (create mode). Zonal Gateways use
+# nat_gateway.subnet_group or the documented first-compatible-group fallback.
+# Regional creates one VPC-level Gateway with no host subnet.
 
 resource "aws_nat_gateway" "main" {
   for_each = local.nat_gateways_to_create
 
-  allocation_id     = each.value.connectivity_type == "public" ? each.value.allocation_id : null
+  allocation_id     = each.value.allocation_id
+  availability_mode = each.value.availability_mode
   connectivity_type = each.value.connectivity_type
   subnet_id         = each.value.subnet_id
+  vpc_id            = each.value.vpc_id
+
+  dynamic "availability_zone_address" {
+    for_each = each.value.availability_zone_addresses
+
+    content {
+      allocation_ids    = availability_zone_address.value
+      availability_zone = availability_zone_address.key
+    }
+  }
 
   tags = merge(var.tags, each.value.tags, {
     Name = each.value.name

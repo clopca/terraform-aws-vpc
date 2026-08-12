@@ -203,33 +203,64 @@ output "route_table_ids_by_semantic_role_by_az" {
 # ─── NAT and gateways ─────────────────────────────────────────────────────
 
 output "nat_gateway_ids" {
-  description = "NAT Gateway IDs by AZ. Empty when nat_gateway.mode is none. Shape: map(az, nat_gateway_id)."
+  description = "NAT Gateway IDs by configured AZ. Regional mode repeats its one VPC-level ID for every AZ; none returns an empty map. Shape: map(az, nat_gateway_id)."
   value       = var.nat_gateway.mode == "none" ? {} : local.nat_gateway_ids
 }
 
 output "nat_public_ips" {
-  description = "Created public NAT Gateway public IPs by AZ. Empty for injected or private NAT Gateways."
+  description = "Created public NAT IPs. Zonal keys are AZs; regional keys are '<az>/<allocation-id>' so every scaled address is preserved. Empty for injected/private NAT."
   value = (
-    var.nat_gateway.mode == "none" || var.nat_gateway.connectivity_type == "private" || local.nat_inject_mode
-    ? {}
-    : { for key, nat in aws_nat_gateway.main : split("/", key)[1] => nat.public_ip }
+    var.nat_gateway.mode == "none" || var.nat_gateway.connectivity_type == "private" || local.nat_inject_mode ? {} :
+    var.nat_gateway.mode == "regional" ? {
+      for address in aws_nat_gateway.main["nat/regional"].regional_nat_gateway_address :
+      "${address.availability_zone}/${address.allocation_id}" => address.public_ip
+      } : {
+      for key, nat in aws_nat_gateway.main : split("/", key)[1] => nat.public_ip
+    }
   )
 }
 
 output "nat_private_ips" {
-  description = "Created NAT Gateway private IPs by AZ. Empty when NAT Gateways are injected."
-  value = local.nat_inject_mode ? {} : {
+  description = "Created zonal NAT private IPs by AZ. Regional provider addresses expose no private IP; injected NAT returns an empty map."
+  value = local.nat_inject_mode || var.nat_gateway.mode == "regional" ? {} : {
     for key, nat in aws_nat_gateway.main : split("/", key)[1] => nat.private_ip
   }
 }
 
 output "nat_eip_allocation_ids" {
-  description = "Created or caller-supplied EIP allocation IDs by AZ for public NAT Gateways. Empty for injected/private NAT Gateways."
+  description = "Effective public NAT EIP allocation IDs. Zonal keys are AZs; regional keys are '<az>/<allocation-id>'. Empty for injected/private NAT."
   value = (
-    var.nat_gateway.mode == "none" || var.nat_gateway.connectivity_type == "private" || local.nat_inject_mode
-    ? {}
-    : { for key, nat in aws_nat_gateway.main : split("/", key)[1] => nat.allocation_id }
+    var.nat_gateway.mode == "none" || var.nat_gateway.connectivity_type == "private" || local.nat_inject_mode ? {} :
+    var.nat_gateway.mode == "regional" ? {
+      for address in aws_nat_gateway.main["nat/regional"].regional_nat_gateway_address :
+      "${address.availability_zone}/${address.allocation_id}" => address.allocation_id
+      } : {
+      for key, nat in aws_nat_gateway.main : split("/", key)[1] => nat.allocation_id
+    }
   )
+}
+
+output "regional_nat_gateway_route_table_id" {
+  description = "AWS-managed route table ID for a created Regional NAT Gateway, or null for zonal/injected NAT."
+  value = var.nat_gateway.mode == "regional" && !local.nat_inject_mode ? (
+    aws_nat_gateway.main["nat/regional"].route_table_id
+  ) : null
+}
+
+output "regional_nat_gateway_addresses_by_az" {
+  description = "Created Regional NAT Gateway address records grouped by configured AZ; empty for zonal or injected NAT."
+  value = var.nat_gateway.mode == "regional" && !local.nat_inject_mode ? {
+    for az in local.azs : az => [
+      for address in aws_nat_gateway.main["nat/regional"].regional_nat_gateway_address : {
+        allocation_id        = address.allocation_id
+        association_id       = address.association_id
+        availability_zone_id = address.availability_zone_id
+        network_interface_id = address.network_interface_id
+        public_ip            = address.public_ip
+        status               = address.status
+      } if address.availability_zone == az
+    ]
+  } : {}
 }
 
 output "internet_gateway_id" {
@@ -365,14 +396,16 @@ output "rt_attributes_by_type_by_az" {
 }
 
 output "nat_gateway_attributes_by_az" {
-  description = "DEPRECATED: v4-compatible map of full created NAT Gateway objects keyed by AZ. Use nat_gateway_ids/nat_*_ips. Removed in v6."
-  value = {
+  description = "DEPRECATED: v4-compatible map of full created NAT objects keyed by AZ; Regional NAT repeats one object per configured AZ. Use Tier 1 outputs. Removed in v6."
+  value = local.nat_inject_mode ? {} : var.nat_gateway.mode == "regional" ? {
+    for az in local.azs : az => aws_nat_gateway.main["nat/regional"]
+    } : {
     for key, nat_gateway in aws_nat_gateway.main : split("/", key)[1] => nat_gateway
   }
 }
 
 output "natgw_id_per_az" {
-  description = "DEPRECATED: v4-compatible map(az, object({id=string})); duplicates the selected ID in single_az mode. Use nat_gateway_ids. Removed in v6."
+  description = "DEPRECATED: v4-compatible map(az, object({id=string})); single_az and regional repeat one selected ID. Use nat_gateway_ids. Removed in v6."
   value = var.nat_gateway.mode == "none" ? {} : {
     for az in local.azs : az => {
       id = local.nat_gateway_ids[var.nat_gateway.mode == "single_az" ? var.nat_gateway.az : az]

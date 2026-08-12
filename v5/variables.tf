@@ -694,26 +694,34 @@ variable "subnets" {
 
 variable "nat_gateway" {
   description = <<-EOT
-    NAT Gateway configuration. Controls how many NAT GWs are created and how
-    their Elastic IPs are sourced (create new, use BYOIP pool, or inject existing).
-    The `az` field is REQUIRED when mode = "single_az" to avoid positional fragility.
+    NAT Gateway configuration. `single_az` and `all_azs` create zonal Gateways;
+    `regional` creates one public VPC-level Gateway and repeats its ID by configured
+    AZ in Tier 1 outputs so existing route-key shapes remain stable. The `az` field
+    is required only for `single_az`. Regional mode rejects both `az` and
+    `subnet_group`, does not require public subnets, and does not support private NAT.
 
     Set `create = false` plus `existing_ids` to inject existing NAT Gateways.
-    The explicit boolean keeps cardinality plan-known when IDs are computed.
+    Zonal maps are keyed by selected AZ; regional injection uses exactly the key
+    `regional`. The explicit boolean keeps cardinality plan-known when IDs are computed.
 
-    `connectivity_type` controls whether the NAT is public (internet-facing, needs EIP)
-    or private (inter-VPC, no EIP). Default: "public".
+    `connectivity_type` controls public (internet-facing) versus private
+    (inter-VPC) zonal NAT. Regional NAT is always public.
 
-    `subnet_group` explicitly selects the subnet group that hosts created NAT
-    Gateways. It must reference a public group for public NAT or a private group
-    for private NAT. Default null preserves convenience behavior by selecting the
-    first compatible group alphabetically; set it explicitly in production so
-    adding another group cannot relocate the NAT Gateway.
+    `subnet_group` explicitly selects the group that hosts zonal NAT Gateways.
+    It must reference a public group for public NAT or a private group for private
+    NAT. Null selects the first compatible group alphabetically. Regional mode is
+    VPC-level and therefore requires `subnet_group = null`.
+
+    EIP `create` uses ordinary module-owned EIPs for zonal mode and AWS automatic
+    IP/AZ management for regional mode. Regional `byoip_pool` and `existing` use
+    manual `availability_zone_address` blocks for every configured AZ; BYOIP creates
+    one module-owned EIP per AZ, while existing keeps EIP lifecycle caller-owned.
 
     `name_format` controls the complete NAT Gateway Name tag. The EIP inherits it
     unless `eip.name_format` is set. Both accept `{vpc}`, `{group}`, and `{az}`;
-    `{group}` resolves the selected host group's `name_prefix` or map key. NAT/EIP
-    tags inherit host-group tags after globals and before their resource tags.
+    regional resource naming resolves both `{group}` and `{az}` to `regional`.
+    Zonal NAT/EIP tags inherit host-group tags; regional resources use global plus
+    NAT/EIP-specific tags because no host subnet group exists.
   EOT
   type = object({
     mode              = optional(string, "none")
@@ -721,7 +729,7 @@ variable "nat_gateway" {
     az                = optional(string)
     connectivity_type = optional(string, "public") # "public" | "private"
     subnet_group      = optional(string)           # explicit NAT host group; null = first compatible group
-    existing_ids      = optional(map(string))      # az → nat_gateway_id, for inject mode [R1-H2]
+    existing_ids      = optional(map(string))      # zonal: az → ID; regional: { regional = ID } [R1-H2]
     name_format       = optional(string, "{vpc}-nat-{az}")
     tags              = optional(map(string), {})
     eip = optional(object({
@@ -735,8 +743,8 @@ variable "nat_gateway" {
   default = { mode = "none" }
 
   validation {
-    condition     = contains(["none", "single_az", "all_azs"], var.nat_gateway.mode)
-    error_message = "nat_gateway.mode must be: none, single_az, or all_azs."
+    condition     = contains(["none", "single_az", "all_azs", "regional"], var.nat_gateway.mode)
+    error_message = "nat_gateway.mode must be: none, single_az, all_azs, or regional."
   }
 
   validation {
@@ -744,6 +752,21 @@ variable "nat_gateway" {
       var.nat_gateway.az != null && length(var.nat_gateway.az) > 0
     )
     error_message = "nat_gateway.az is required when mode = 'single_az'."
+  }
+
+  validation {
+    condition     = var.nat_gateway.mode != "regional" || var.nat_gateway.az == null
+    error_message = "nat_gateway.az must be null when mode = 'regional'; Regional NAT Gateway is VPC-level."
+  }
+
+  validation {
+    condition     = var.nat_gateway.mode != "regional" || var.nat_gateway.subnet_group == null
+    error_message = "nat_gateway.subnet_group must be null when mode = 'regional'; Regional NAT Gateway does not use a host subnet."
+  }
+
+  validation {
+    condition     = var.nat_gateway.mode != "regional" || var.nat_gateway.connectivity_type == "public"
+    error_message = "nat_gateway.mode = 'regional' requires connectivity_type = 'public'; private NAT remains zonal."
   }
 
   # R2-H2: allocation_ids is now nullable (default null); validate != null for existing mode

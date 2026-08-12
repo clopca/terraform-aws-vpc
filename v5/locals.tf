@@ -340,28 +340,35 @@ locals {
   # ═══════════════════════════════════════════════════════════════════════════
 
   # ─── NAT Gateway — AZ resolution ────────────────────────────────────────
-  # Determine which AZs get a NAT gateway based on mode.
+  # Regional mode creates one VPC-level resource but retains the configured AZ
+  # set for output/routing keys and manual EIP coverage.
   nat_az_set = (
     var.nat_gateway.mode == "none" ? toset([]) :
     var.nat_gateway.mode == "single_az" ? toset([var.nat_gateway.az]) :
-    toset(local.azs) # all_azs
+    toset(local.azs) # all_azs or regional
   )
 
-  # Are we injecting existing NAT GWs?
   nat_inject_mode = !var.nat_gateway.create
+  nat_eip_mode    = try(var.nat_gateway.eip.mode, "create")
 
-  # ─── NAT Gateway ID map (unified: created or injected) ──────────────────
-  # Shape: map(az, nat_gw_id) — used by routing locals to wire routes.
-  nat_gateway_ids = (
-    local.nat_inject_mode ? var.nat_gateway.existing_ids : {
-      for az in local.nat_az_set : az => aws_nat_gateway.main["nat/${az}"].id
-    }
+  # Tier 1 remains map(az, id). Regional mode repeats the one physical ID for
+  # every configured AZ so route addresses and consumers keep stable AZ keys.
+  nat_gateway_ids = var.nat_gateway.mode == "none" ? {} : (
+    var.nat_gateway.mode == "regional" ? {
+      for az in local.azs : az => (
+        local.nat_inject_mode
+        ? var.nat_gateway.existing_ids["regional"]
+        : aws_nat_gateway.main["nat/regional"].id
+      )
+      } : (
+      local.nat_inject_mode ? var.nat_gateway.existing_ids : {
+        for az in local.nat_az_set : az => aws_nat_gateway.main["nat/${az}"].id
+      }
+    )
   )
 
-  # ─── NAT Gateway subnet placement ──────────────────────────────────────
-  # Explicit subnet_group is the production-safe contract. The null fallback is
-  # retained for convenience and documented as the first compatible group sorted
-  # alphabetically; adding a group can therefore relocate a created NAT Gateway.
+  # Zonal Gateways require a compatible host subnet group. Regional mode is
+  # VPC-level and intentionally bypasses every subnet-placement fallback.
   first_public_group = try(sort([
     for name, cfg in var.subnets : name if cfg.role == "public"
   ])[0], null)
@@ -375,14 +382,16 @@ locals {
     ? local.first_private_group
     : local.first_public_group
   )
-  nat_host_group = (
+  nat_host_group = var.nat_gateway.mode == "regional" ? null : (
     var.nat_gateway.subnet_group != null
     ? var.nat_gateway.subnet_group
     : local.nat_default_host_group
   )
-  nat_host_group_name = local.nat_host_group == null ? "" : coalesce(
-    try(var.subnets[local.nat_host_group].name_prefix, null),
-    local.nat_host_group,
+  nat_host_group_name = var.nat_gateway.mode == "regional" ? "regional" : (
+    local.nat_host_group == null ? "" : coalesce(
+      try(var.subnets[local.nat_host_group].name_prefix, null),
+      local.nat_host_group,
+    )
   )
   nat_host_group_tags = local.nat_host_group == null ? {} : try(var.subnets[local.nat_host_group].tags, {})
   nat_resource_tags   = merge(local.nat_host_group_tags, var.nat_gateway.tags)
@@ -393,6 +402,10 @@ locals {
       "{vpc}", var.vpc.name), "{group}", local.nat_host_group_name), "{az}", az
     )
   }
+  regional_nat_name = replace(replace(replace(
+    var.nat_gateway.name_format,
+    "{vpc}", var.vpc.name), "{group}", "regional"), "{az}", "regional"
+  )
   nat_eip_names = {
     for az in local.nat_az_set : az => replace(replace(replace(
       coalesce(var.nat_gateway.eip.name_format, var.nat_gateway.name_format),
@@ -400,12 +413,17 @@ locals {
     )
   }
 
-  # ─── EIPs to create ─────────────────────────────────────────────────────
-  # Only when: creating NAT GWs (not inject), public connectivity, eip.mode != "existing"
+  # Zonal create/byoip_pool creates EIPs. Regional create is AWS automatic mode
+  # (no child aws_eip); regional byoip_pool creates one EIP per configured AZ for
+  # manual availability_zone_address blocks.
   nat_eips_to_create = (
     !local.nat_inject_mode &&
     var.nat_gateway.connectivity_type == "public" &&
-    try(var.nat_gateway.eip.mode, "create") != "existing"
+    (
+      var.nat_gateway.mode == "regional"
+      ? local.nat_eip_mode == "byoip_pool"
+      : local.nat_eip_mode != "existing"
+    )
     ) ? {
     for az in local.nat_az_set : "nat/${az}" => {
       az   = az
@@ -414,23 +432,48 @@ locals {
     }
   } : {}
 
-  # ─── NAT Gateways to create ─────────────────────────────────────────────
-  # Not created when existing_ids are injected.
-  nat_gateways_to_create = !local.nat_inject_mode ? {
+  regional_nat_availability_zone_addresses = (
+    var.nat_gateway.mode == "regional" && local.nat_eip_mode != "create"
+    ) ? {
+    for az in local.azs : az => toset([
+      local.nat_eip_mode == "existing"
+      ? var.nat_gateway.eip.allocation_ids[az]
+      : aws_eip.nat["nat/${az}"].id
+    ])
+  } : {}
+
+  zonal_nat_gateways_to_create = !local.nat_inject_mode && var.nat_gateway.mode != "regional" ? {
     for az in local.nat_az_set : "nat/${az}" => {
-      az                = az
-      connectivity_type = var.nat_gateway.connectivity_type
-      subnet_id         = local.nat_host_group != null ? try(local.subnet_ids["${local.nat_host_group}/${az}"], null) : null
-      name              = local.nat_names[az]
-      tags              = local.nat_resource_tags
-      allocation_id = (
-        var.nat_gateway.connectivity_type == "private" ? null :
-        try(var.nat_gateway.eip.mode, "create") == "existing" ?
-        var.nat_gateway.eip.allocation_ids[az] :
-        aws_eip.nat["nat/${az}"].id
-      )
+      az                          = az
+      allocation_id               = var.nat_gateway.connectivity_type == "private" ? null : local.nat_eip_mode == "existing" ? var.nat_gateway.eip.allocation_ids[az] : aws_eip.nat["nat/${az}"].id
+      availability_mode           = "zonal"
+      availability_zone_addresses = {}
+      connectivity_type           = var.nat_gateway.connectivity_type
+      subnet_id                   = local.nat_host_group != null ? try(local.subnet_ids["${local.nat_host_group}/${az}"], null) : null
+      vpc_id                      = null
+      name                        = local.nat_names[az]
+      tags                        = local.nat_resource_tags
     }
   } : {}
+
+  regional_nat_gateways_to_create = !local.nat_inject_mode && var.nat_gateway.mode == "regional" ? {
+    "nat/regional" = {
+      az                          = null
+      allocation_id               = null
+      availability_mode           = "regional"
+      availability_zone_addresses = local.regional_nat_availability_zone_addresses
+      connectivity_type           = "public"
+      subnet_id                   = null
+      vpc_id                      = local.vpc_id
+      name                        = local.regional_nat_name
+      tags                        = local.nat_resource_tags
+    }
+  } : {}
+
+  nat_gateways_to_create = merge(
+    local.zonal_nat_gateways_to_create,
+    local.regional_nat_gateways_to_create,
+  )
 
   # ─── EIGW ───────────────────────────────────────────────────────────────
   needs_eigw = anytrue([
@@ -515,8 +558,8 @@ locals {
     } if rt.routing.internet_gateway && rt.has_ipv6
   }
 
-  # NAT routes: resolve single-AZ or per-AZ targets. Injected shared route
-  # tables are limited by precondition to single_az mode.
+  # NAT routes: resolve single-AZ or per-AZ keys. Regional mode repeats one
+  # physical ID across AZ keys, so shared injected route tables remain valid.
   routes_nat = var.nat_gateway.mode != "none" ? {
     for key, rt in local.route_table_targets : "${key}/nat" => {
       route_table_id = rt.route_table_id

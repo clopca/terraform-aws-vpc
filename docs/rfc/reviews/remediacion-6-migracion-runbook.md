@@ -3,7 +3,7 @@
 > **Fecha:** 2026-08-13
 > **Rama:** `explore/v5-typed-contract`
 > **Finding de origen:** `/Users/clopca/dev/aws/aws-ia-modules/analysis/vpc-deep/reviews/remediacion-5-migracion.md`
-> **Estado:** ✅ fix estructural implementado y gates completos en verde.
+> **Estado:** ✅ fix estructural y Regional NAT implementados; gates completos en verde.
 
 ## Finding
 
@@ -40,4 +40,37 @@ No se añadió `try()`/`lookup()` al acceso del ARN. La cardinalidad de `cloudwa
 | módulo + once ejemplos: `terraform validate` | PASS |
 | `terraform test -no-color` | **60 passed, 0 failed** |
 | Smoke Terraform Core: `removed { destroy=false }` + `import` en un plan | PASS: `1 to import`, `0 to destroy` |
+| `git diff --check` | PASS |
+
+
+## Tarea adicional — Regional NAT Gateway
+
+### ADR-R6 — `nat_gateway.mode = "regional"`
+
+Se añadió una primitiva tipada que materializa un único `aws_nat_gateway.main["nat/regional"]` con `availability_mode = "regional"`, `vpc_id`, conectividad pública y sin `subnet_id`. Las rutas privadas conservan sus direcciones y todas resuelven al mismo ID. `nat_gateway_ids` mantiene `map(az,id)` repitiendo ese ID.
+
+El schema real de AWS provider 6.59.0, confirmado también en el floor 6.29.0, declara `availability_mode`, `vpc_id` y el set `availability_zone_address` con `allocation_ids` plural más `availability_zone`/`availability_zone_id`; `subnet_id` y `allocation_id` son sólo zonales. Regional exige público y no soporta private NAT.
+
+- `eip.mode = "create"`: modo automático AWS, sin recursos `aws_eip` hijos.
+- `eip.mode = "existing"`: modo manual con una dirección caller-owned por AZ configurada.
+- `eip.mode = "byoip_pool"`: modo manual con un EIP del pool por AZ, owned por el módulo.
+- `az` y `subnet_group` son incompatibles con regional; las tres combinaciones inválidas tienen plan tests negativos.
+- Los outputs regionales preservan todas las IPs con claves `<az>/<allocation-id>`, exponen records agrupados y publican el route-table ID gestionado por AWS.
+
+### Trade-off documentado
+
+Regional elimina subnets públicas de hosting y automatiza HA/contracción, pero no reduce el coste horario: AWS factura por AZ activa. La presencia de ENIs puede mantener una AZ activa; la expansión tarda 15–20 minutos de media y hasta 60, con forwarding cross-AZ temporal y posible coste de transferencia. AWS soporta hasta 32 IPs por AZ. Se recomienda regional para egress público nuevo y zonal para private NAT.
+
+### Gates de la tarea adicional
+
+| Gate | Resultado |
+|---|---|
+| `terraform fmt -check -recursive v5` | PASS |
+| `tflint --chdir=v5 --init` | PASS |
+| `tflint --chdir=v5 --recursive` | PASS, 0 findings |
+| módulo + once ejemplos: `terraform init -backend=false` / `terraform validate` | PASS, 12/12 configuraciones |
+| Test focal `regional_nat.tftest.hcl` | **6 passed, 0 failed** |
+| Test focal `examples.tftest.hcl` | **10 passed, 0 failed** |
+| README con terraform-docs 0.19.0 | PASS |
+| `terraform test -no-color` | **66 passed, 0 failed** |
 | `git diff --check` | PASS |

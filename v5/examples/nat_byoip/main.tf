@@ -10,6 +10,14 @@ locals {
       routing = { nat_gateway = true }
     }
   }
+
+  regional_subnet_groups = {
+    application = {
+      role    = "private"
+      ipv4    = { netmask = 24 }
+      routing = { nat_gateway = true }
+    }
+  }
 }
 
 module "create" {
@@ -56,6 +64,23 @@ module "existing" {
   nat_gateway = {
     mode         = "all_azs"
     subnet_group = "public"
+    eip = {
+      mode           = "existing"
+      allocation_ids = var.existing_eip_allocation_ids
+    }
+  }
+}
+
+module "regional_existing" {
+  source = "../.."
+
+  vpc                = { name = "nat-regional-existing" }
+  addressing         = { ipv4 = { cidr_block = "10.40.0.0/16" } }
+  availability_zones = { names = var.availability_zones }
+  subnets            = local.regional_subnet_groups
+
+  nat_gateway = {
+    mode = "regional"
     eip = {
       mode           = "existing"
       allocation_ids = var.existing_eip_allocation_ids

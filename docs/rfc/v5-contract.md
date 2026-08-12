@@ -2,6 +2,11 @@
 
 > **Status:** Draft / Phase 6 audited; remediation batches 1, 2, and 4 implemented (live AWS migration revalidation remains pending)
 >
+> **Remediation batch 6 (2026-08-13):**
+> - Flow Logs migration now uses one declarative removed/import handoff in the normal-plan gate.
+> - `nat_gateway.mode = "regional"` creates one public VPC-level NAT, supports AWS automatic IP management or manual existing/BYOIP addresses, and preserves AZ-keyed routing/output shapes.
+> - Regional NAT requires no public host subnet; private NAT remains zonal.
+>
 > **Remediation batch 4 (2026-08-12, `f0db68e`, `dcaab57`):**
 > - Complete Name formats preserve v4 subnet, route-table, NAT/EIP, IGW, and EIGW tags without coupling display names to state keys.
 > - All 15 taggable resource types were schema-audited; IGW/EIGW gained boundary tag maps and NAT/EIP inherit host-group tags. Provider `default_tags` precedence and migration behavior are explicit.
@@ -30,8 +35,8 @@
 >   and overlapping pins across netmasks fail during plan.
 > - A mocked stateful fixture preserves representative subnet, route-table, and
 >   association IDs across v4-to-v5 moves; the full 63-block migration example
->   also plans syntactically. The CloudWatch remove/import exception remains the
->   explicit operational procedure in `v5-migration.md`.
+>   also plans syntactically. CloudWatch ownership transfers in one normal plan
+>   through declarative `removed { destroy = false }` plus `import` blocks.
 > - `terraform-docs` generates `v5/README.md` from an authored header covering
 >   usage, examples, tier guarantees, address stability, tests, and migration.
 >
@@ -259,17 +264,17 @@ variable "subnets" {
 }
 ```
 
-### 3.3 NAT Gateway (typed, AZ-explicit, create-or-inject)
+### 3.3 NAT Gateway (typed, zonal or VPC-level, create-or-inject)
 
 ```hcl
 variable "nat_gateway" {
   type = object({
-    mode              = optional(string, "none")  # "none" | "single_az" | "all_azs"
-    create            = optional(bool, true)         # false injects existing_ids; plan-known
-    az                = optional(string)          # required when mode = "single_az"
-    connectivity_type = optional(string, "public") # "public" | "private" (private NAT, no EIP)
-    subnet_group      = optional(string)           # explicit host group; null = first compatible group
-    existing_ids      = optional(map(string))      # az → nat_gw_id for inject mode [R1-H2]
+    mode              = optional(string, "none")  # "none" | "single_az" | "all_azs" | "regional"
+    create            = optional(bool, true)      # false injects existing_ids; plan-known
+    az                = optional(string)          # required only when mode = "single_az"
+    connectivity_type = optional(string, "public") # regional requires "public"
+    subnet_group      = optional(string)          # zonal host group; regional requires null
+    existing_ids      = optional(map(string))     # zonal: az → id; regional: { regional = id }
     name_format       = optional(string, "{vpc}-nat-{az}")
     tags              = optional(map(string), {})
     eip = optional(object({
@@ -288,17 +293,27 @@ variable "nat_gateway" {
 
 - `subnets.<group>.manage_route_table=false` plus `route_table_id` injects one
   existing route table shared by every AZ subnet in the group. The module skips
-  `aws_route_table` creation, associates
-  those subnets to the injected table, and adds the routes declared in `routing`
-  to that existing table. Callers must avoid destination conflicts with routes
-  managed outside the module.
-- Because a single shared route table cannot select a different NAT Gateway per AZ,
-  injected tables that request `nat_gateway` or `dns64` require
-  `nat_gateway.mode = "single_az"`. Use module-created tables for per-AZ NAT.
-- `nat_gateway.subnet_group` pins placement of created NAT Gateways. It must name a
-  `public` group for public NAT or a `private` group for private NAT. Null defaults
-  to the first compatible group alphabetically for convenience; production callers
-  should always set it to prevent relocation when subnet groups are added.
+  `aws_route_table` creation, associates those subnets to the injected table, and
+  adds the routes declared in `routing` to that existing table. Callers must avoid
+  destination conflicts with routes managed outside the module.
+- Because a single shared route table cannot select a different zonal NAT Gateway
+  per AZ, injected tables that request `nat_gateway` or `dns64` reject
+  `nat_gateway.mode = "all_azs"`. They support `single_az` or `regional`, where one
+  physical NAT ID serves every configured AZ key.
+- Zonal `nat_gateway.subnet_group` pins placement of created NAT Gateways. It must
+  name a `public` group for public NAT or a `private` group for private NAT. Null
+  defaults to the first compatible group alphabetically for convenience;
+  production callers should set it to prevent relocation when groups are added.
+- Regional mode creates one public `aws_nat_gateway` with
+  `availability_mode = "regional"`, `vpc_id`, and no `subnet_id`; it rejects `az`,
+  `subnet_group`, and private connectivity. No public host subnet is required.
+  `eip.mode = "create"` delegates IP/AZ management to AWS. `existing` and
+  `byoip_pool` use manual `availability_zone_address` blocks for every configured
+  AZ; existing EIPs remain caller-owned and BYOIP EIPs are module-owned.
+- Regional routes and `nat_gateway_ids` repeat one physical NAT ID under every
+  configured AZ key. Address outputs retain every scaled address under
+  `<az>/<allocation-id>` keys, while dedicated outputs expose the AWS-managed route
+  table and complete address records grouped by AZ.
 - `dns64 = true` creates both the subnet DNS64 flag and the required
   `64:ff9b::/96 -> NAT Gateway` route. It fails early when NAT is disabled.
 
@@ -592,6 +607,33 @@ host subnet-group tags; IGW/EIGW expose boundary-specific tag maps. Do not add
 `ignore_changes` for `tags`/`tags_all`; provider-default changes are actionable
 configuration, not perpetual drift.
 
+### 3.10.4 ADR-R6 — Regional NAT is a first-class public-egress mode
+
+**Decision:** add `nat_gateway.mode = "regional"` as one VPC-level
+`aws_nat_gateway` with `availability_mode = "regional"`, `vpc_id`, no `subnet_id`,
+and public connectivity. Route tables in every configured AZ retain their stable
+addresses and target the same physical NAT ID. `nat_gateway_ids` preserves its
+`map(az, id)` shape by repeating that ID.
+
+`eip.mode = "create"` selects AWS automatic Regional NAT IP/AZ management and
+creates no child `aws_eip`. `existing` and `byoip_pool` select provider manual mode
+with one `availability_zone_address` block per configured AZ; BYOIP creates one
+pool-backed EIP per AZ. The provider's block uses plural `allocation_ids`, not
+`allocation_id`. Provider 6.29 (the module floor) already contains all required
+schema fields.
+
+**Rationale:** AWS recommends Regional NAT for public-connectivity use cases. It
+removes public host subnets, owns an IGW-routed managed route table, follows ENI
+presence with zonal affinity, and scales to 32 addresses per AZ. The value is
+operational, not lower hourly cost: billing remains per active AZ. Expansion can
+take up to 60 minutes and use cross-AZ forwarding in the interim. Regional NAT
+cannot provide private connectivity, so private NAT remains zonal.
+
+**Compatibility:** `az` and `subnet_group` are invalid in regional mode. Existing
+zonal modes and resource keys are unchanged. Regional public/allocation outputs use
+`<az>/<allocation-id>` keys to retain every address without changing their
+`map(string)` type; a new grouped address output exposes complete records.
+
 ### 3.11 Import and adoption
 
 Existing resources are adopted declaratively by setting the boundary-specific
@@ -609,11 +651,10 @@ The normative mapping and state procedure is [v5-migration.md](v5-migration.md).
 The validateable skeleton under `v5/examples/migration-from-v4` contains a
 63-block feature union, not a required per-deployment count: the remediation-3
 fixture selected 26 applicable sources and omitted 37 absent-feature blocks. The
-v4 CloudWatch log group is intentionally excluded: its `name_prefix` -> v5 `name`
-transition is ForceNew, so ADR-F4-1 preserves it by configuring the generated
-physical name, materializing applicable moved addresses with a saved refresh-only
-state plan, and only then using state remove/import. The subsequent complete normal
-plan remains the acceptance gate. Static moved addresses are otherwise intentional:
+v4 CloudWatch log group is intentionally excluded from moved blocks: ADR-F4-1
+configures the generated physical name and performs one declarative
+`removed { destroy=false }` plus `import` handoff in the same complete normal plan
+that serves as the acceptance gate. Static moved addresses are otherwise intentional:
 Terraform does not permit variables or wildcards in moved addresses, so callers
 substitute their actual AZs, private group keys, route destinations, and optional
 resources.
