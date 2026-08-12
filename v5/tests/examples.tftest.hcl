@@ -21,9 +21,10 @@ mock_provider "aws" {
 
   mock_resource "aws_vpc" {
     defaults = {
-      id         = "vpc-mock"
-      arn        = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
-      cidr_block = "10.0.0.0/16"
+      id              = "vpc-mock"
+      arn             = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
+      cidr_block      = "10.0.0.0/16"
+      ipv6_cidr_block = "2600:1f18:4200::/56"
     }
   }
 
@@ -41,9 +42,12 @@ run "basic_example" {
 
   assert {
     condition = (
-      toset(keys(output.subnet_ids)) == toset(["app", "database", "public"])
+      toset(keys(output.subnet_ids)) == toset(["app", "database", "public"]) &&
+      length(output.subnet_ids.public) == 3 &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.public) : cidr != null && cidr != ""]) &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.app) : cidr != null && cidr != ""])
     )
-    error_message = "The basic example must plan all three documented subnet groups."
+    error_message = "The basic example must select exactly three AZs and plan real dual-stack subnets."
   }
 
   assert {
@@ -71,9 +75,11 @@ run "enterprise_example" {
 
   assert {
     condition = (
-      length(output.nat_gateway_ids) == 3 && length(output.flow_log_ids) == 1
+      length(output.nat_gateway_ids) == 3 && length(output.flow_log_ids) == 1 &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.public) : cidr != null && cidr != ""]) &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.application) : cidr != null && cidr != ""])
     )
-    error_message = "The enterprise example must plan three NAT Gateways and one S3 Flow Log."
+    error_message = "The enterprise example must plan three NAT Gateways, one S3 Flow Log, and real dual-stack subnets."
   }
 }
 
@@ -94,8 +100,11 @@ run "hub_example" {
   assert {
     condition = (
       length(output.flow_log_ids) == 1 && length(output.inspection_nat_ids) == 2 &&
-      toset(keys(output.route_tables)) == toset(["cwan", "edge", "firewall", "public", "tgw"])
+      toset(keys(output.route_tables)) == toset(["cwan", "edge", "firewall", "public", "tgw"]) &&
+      alltrue(flatten([for group in ["public", "edge", "firewall", "tgw", "cwan"] : [
+        for cidr in values(output.subnet_ipv6_cidrs[group]) : cidr != null && cidr != ""
+      ]]))
     )
-    error_message = "The hub example must plan Firehose Flow Logs, route tables, and two inspection NAT Gateways."
+    error_message = "The hub example must plan non-overlapping dual-stack subnets, Firehose Flow Logs, route tables, and two inspection NAT Gateways."
   }
 }

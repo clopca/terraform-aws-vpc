@@ -49,7 +49,9 @@ variable "addressing" {
   description = <<-EOT
     IPv4 and/or IPv6 addressing for the VPC. Supports static CIDR, IPAM, or
     Amazon-assigned IPv6. At least one of ipv4 or ipv6 must be configured.
-    For IPAM: provide ipam_pool_id + netmask_length (mutually exclusive with cidr_block).
+    For IPv6 IPAM, provide ipam_pool_id plus exactly one of cidr_block or
+    netmask_length. An empty IPv6 object is valid only when injecting a VPC and
+    discovering its existing IPv6 association.
   EOT
   type = object({
     ipv4 = optional(object({
@@ -93,10 +95,21 @@ variable "addressing" {
   validation {
     condition = var.addressing.ipv6 == null ? true : (
       (try(var.addressing.ipv6.amazon_assigned, false) ? 1 : 0) +
-      (var.addressing.ipv6.cidr_block != null ? 1 : 0) +
       (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) <= 1
     )
-    error_message = "addressing.ipv6: choose at most one of amazon_assigned, cidr_block, or ipam_pool_id."
+    error_message = "addressing.ipv6: amazon_assigned and ipam_pool_id are mutually exclusive."
+  }
+
+  validation {
+    condition = var.addressing.ipv6 == null ? true : (
+      var.addressing.ipv6.ipam_pool_id == null ? (
+        var.addressing.ipv6.cidr_block == null && var.addressing.ipv6.netmask_length == null
+        ) : (
+        (var.addressing.ipv6.cidr_block != null ? 1 : 0) +
+        (var.addressing.ipv6.netmask_length != null ? 1 : 0) == 1
+      )
+    )
+    error_message = "addressing.ipv6: IPAM requires ipam_pool_id plus exactly one of cidr_block or netmask_length."
   }
 }
 
@@ -144,6 +157,13 @@ variable "availability_zones" {
       length(var.availability_zones.names) >= 1 && length(var.availability_zones.names) <= 6
     )
     error_message = "availability_zones.names must contain between 1 and 6 AZs."
+  }
+
+  validation {
+    condition = var.availability_zones.names == null ? true : (
+      length(distinct(var.availability_zones.names)) == length(var.availability_zones.names)
+    )
+    error_message = "availability_zones.names must not contain duplicates."
   }
 }
 
@@ -212,9 +232,12 @@ variable "subnets" {
 
     # ── IPv6 Addressing ──
     ipv6 = optional(object({
-      auto_assign = optional(bool, false)
-      cidrs       = optional(list(string))
-      native_only = optional(bool, false)
+      auto_assign    = optional(bool, false)
+      cidrs          = optional(list(string))
+      ipam_pool_id   = optional(string)
+      netmask_length = optional(number)
+      native_only    = optional(bool, false)
+      cidr_index     = optional(number)
     }))
 
     # ── Naming, Tags, and Route Table Injection ──
@@ -425,17 +448,58 @@ variable "subnets" {
   validation {
     condition = alltrue(flatten([
       for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidrs == null ? [true] : [
-        for cidr in v.ipv6.cidrs : can(cidrhost(cidr, 0)) && strcontains(cidr, ":")
+        for cidr in v.ipv6.cidrs : can(cidrhost(cidr, 0)) && strcontains(cidr, ":") && try(tonumber(split("/", cidr)[1]) == 64, false)
       ]
     ]))
-    error_message = "subnets[*].ipv6.cidrs must contain valid IPv6 CIDR blocks."
+    error_message = "subnets[*].ipv6.cidrs must contain valid IPv6 /64 CIDR blocks."
   }
 
   validation {
     condition = alltrue([
-      for k, v in var.subnets : !try(v.ipv6.native_only, false) || try(v.ipv6.cidrs, null) != null
+      for k, v in var.subnets : v.ipv6 == null ? true : (
+        (v.ipv6.cidrs != null ? 1 : 0) +
+        (v.ipv6.ipam_pool_id != null ? 1 : 0) <= 1 &&
+        (v.ipv6.cidrs != null || v.ipv6.ipam_pool_id != null || v.ipv6.auto_assign)
+      )
     ])
-    error_message = "IPv6-native subnet groups must provide one explicit ipv6.cidrs entry per AZ."
+    error_message = "Within ipv6, provide explicit cidrs, IPAM, or auto_assign=true for deterministic /64 calculation from the VPC."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.ipv6 == null || v.ipv6.ipam_pool_id == null ? true : (
+        v.ipv6.netmask_length == 64
+      )
+    ])
+    error_message = "Within ipv6, IPAM requires netmask_length = 64."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidr_index == null ? true : (
+        v.ipv6.cidrs == null && v.ipv6.ipam_pool_id == null && v.ipv6.auto_assign &&
+        v.ipv6.cidr_index >= 0 && floor(v.ipv6.cidr_index) == v.ipv6.cidr_index
+      )
+    ])
+    error_message = "ipv6.cidr_index is valid only for auto-calculated IPv6 and must be a non-negative integer."
+  }
+
+  validation {
+    condition = length(distinct([
+      for k, v in var.subnets : v.ipv6.cidr_index
+      if v.ipv6 != null && v.ipv6.cidr_index != null
+      ])) == length([
+      for k, v in var.subnets : k
+      if v.ipv6 != null && v.ipv6.cidr_index != null
+    ])
+    error_message = "IPv6 subnet groups must have unique ipv6.cidr_index values."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : !try(v.ipv6.native_only, false) || v.ipv6 != null
+    ])
+    error_message = "IPv6-native subnet groups must define ipv6 addressing."
   }
 
   validation {

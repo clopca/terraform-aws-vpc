@@ -32,6 +32,11 @@ output "vpc_cidr_block" {
   value       = local.vpc_cidr
 }
 
+output "vpc_ipv6_cidr_block" {
+  description = "The IPv6 CIDR block used for deterministic subnet /64 allocation, or null when IPv6 is disabled."
+  value       = local.vpc_ipv6_cidr
+}
+
 output "azs" {
   description = "List of Availability Zones where subnets were created."
   value       = local.azs
@@ -71,6 +76,15 @@ output "subnet_cidrs_by_group_by_az" {
   value = {
     for name in sort(keys(var.subnets)) : name => {
       for az in local.azs : az => aws_subnet.main["${name}/${az}"].cidr_block
+    }
+  }
+}
+
+output "subnet_ipv6_cidrs_by_group_by_az" {
+  description = "Subnet IPv6 CIDRs by group and AZ. Shape: map(group_name, map(az, cidr|null))."
+  value = {
+    for name in sort(keys(var.subnets)) : name => {
+      for az in local.azs : az => aws_subnet.main["${name}/${az}"].ipv6_cidr_block
     }
   }
 }

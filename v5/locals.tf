@@ -56,16 +56,28 @@ locals {
   # ─── AZ Resolution ───────────────────────────────────────────────────────
   # When `names` is provided, use directly. When `count` is used, we rely on
   # the data source (defined in main.tf) to get region AZs.
-  # [R1-H4]: count mode depends on data source ordering — development only.
-  azs      = var.availability_zones.names != null ? var.availability_zones.names : data.aws_availability_zones.current[0].names
+  # Count mode sorts the discovery result and takes exactly the requested
+  # prefix. Explicit names preserve caller order as part of the CIDR contract.
+  discovered_azs = var.availability_zones.names != null ? [] : sort(data.aws_availability_zones.current[0].names)
+  azs = var.availability_zones.names != null ? var.availability_zones.names : slice(
+    local.discovered_azs,
+    0,
+    min(var.availability_zones.count, length(local.discovered_azs)),
+  )
   az_count = length(local.azs)
 
   # ─── VPC Identity ───────────────────────────────────────────────────────
   create_vpc = var.vpc.id == null
   vpc_id     = local.create_vpc ? aws_vpc.main[0].id : var.vpc.id
 
-  # Primary CIDR — needed for netmask calculation
+  # Primary CIDRs — needed for deterministic subnet calculation.
   vpc_cidr = local.create_vpc ? aws_vpc.main[0].cidr_block : data.aws_vpc.existing[0].cidr_block
+  vpc_ipv6_cidr = var.addressing.ipv6 == null ? null : (
+    local.create_vpc ? aws_vpc.main[0].ipv6_cidr_block : try(sort([
+      for association in data.aws_vpc.existing[0].ipv6_cidr_block_associations : association.ipv6_cidr_block
+      if association.state == "associated"
+    ])[0], null)
+  )
 
   # ─── Subnet Group Classification ────────────────────────────────────────
   # Sorted keys for deterministic processing
@@ -168,6 +180,45 @@ locals {
     }
   ]...)
 
+  # ─── Deterministic IPv6 /64 calculation ───────────────────────────────
+  # All AWS IPv6 subnets are /64. The engine mirrors IPv4 state stability:
+  # six AZ slots per group, absolute pinned group slots, then alphabetical
+  # packing of unpinned groups after the highest pin.
+  subnets_with_calculated_ipv6 = {
+    for name, cfg in var.subnets : name => cfg
+    if cfg.ipv6 != null && cfg.ipv6.cidrs == null && cfg.ipv6.ipam_pool_id == null && cfg.ipv6.auto_assign
+  }
+
+  ipv6_pinned_group_start = {
+    for name, cfg in local.subnets_with_calculated_ipv6 :
+    name => cfg.ipv6.cidr_index * local.cidr_az_stride
+    if cfg.ipv6.cidr_index != null
+  }
+  ipv6_pinned_reserved_slots = length(local.ipv6_pinned_group_start) == 0 ? 0 : max([
+    for start in values(local.ipv6_pinned_group_start) : start + local.cidr_az_stride
+  ]...)
+  ipv6_unpinned_group_order = sort([
+    for name, cfg in local.subnets_with_calculated_ipv6 : name
+    if cfg.ipv6.cidr_index == null
+  ])
+  ipv6_calculated_group_start = merge(
+    local.ipv6_pinned_group_start,
+    {
+      for name in local.ipv6_unpinned_group_order :
+      name => local.ipv6_pinned_reserved_slots + index(local.ipv6_unpinned_group_order, name) * local.cidr_az_stride
+    },
+  )
+  vpc_ipv6_prefix_length = local.vpc_ipv6_cidr == null ? null : tonumber(split("/", local.vpc_ipv6_cidr)[1])
+  calculated_ipv6_cidrs = merge([
+    for name, cfg in local.subnets_with_calculated_ipv6 : {
+      for ai, az in local.azs : "${name}/${az}" => cidrsubnet(
+        local.vpc_ipv6_cidr,
+        64 - local.vpc_ipv6_prefix_length,
+        local.ipv6_calculated_group_start[name] + ai,
+      )
+    }
+  ]...)
+
   # ─── IGW: create-or-inject [R1-H2] ─────────────────────────────────────
   # Determine if any subnet needs an IGW
   needs_igw = anytrue([
@@ -211,7 +262,7 @@ locals {
 
         # CIDR resolution: explicit > calculated > IPAM (null, resolved at apply)
         cidr_block = (
-          cfg.ipv4 != null && cfg.ipv4.cidrs != null ? cfg.ipv4.cidrs[ai] :
+          cfg.ipv4 != null && cfg.ipv4.cidrs != null ? try(cfg.ipv4.cidrs[ai], null) :
           cfg.ipv4 != null && cfg.ipv4.netmask != null ? local.calculated_cidrs["${name}/${az}"] :
           null # IPAM or ipv6-only
         )
@@ -220,16 +271,22 @@ locals {
         ipam_pool_id   = try(cfg.ipv4.ipam_pool_id, null)
         netmask_length = try(cfg.ipv4.netmask_length, null)
 
-        # IPv6
-        ipv6_cidr   = try(cfg.ipv6.cidrs[ai], null)
-        ipv6_native = try(cfg.ipv6.native_only, false)
-        assign_ipv6 = try(cfg.ipv6.auto_assign, false)
+        # IPv6: explicit > deterministic VPC /64 > subnet IPAM.
+        ipv6_cidr = (
+          try(cfg.ipv6.cidrs, null) != null ? try(cfg.ipv6.cidrs[ai], null) :
+          contains(keys(local.subnets_with_calculated_ipv6), name) ? local.calculated_ipv6_cidrs["${name}/${az}"] :
+          null
+        )
+        ipv6_ipam_pool_id   = try(cfg.ipv6.ipam_pool_id, null)
+        ipv6_netmask_length = try(cfg.ipv6.netmask_length, null)
+        ipv6_native         = try(cfg.ipv6.native_only, false)
+        assign_ipv6         = try(cfg.ipv6.auto_assign, false)
 
         # Routing config (carried through for phases 2+)
         routing = local.resolved_routing[name]
 
         # Role-specific
-        map_public_ip           = cfg.role == "public" ? try(cfg.public_options.map_public_ip, true) : false
+        map_public_ip           = cfg.role == "public" && !try(cfg.ipv6.native_only, false) ? try(cfg.public_options.map_public_ip, true) : false
         transit_gateway_options = cfg.role == "transit_gateway" ? cfg.transit_gateway_options : null
         core_network_options    = cfg.role == "core_network" ? cfg.core_network_options : null
       }

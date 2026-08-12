@@ -41,7 +41,7 @@ resource "aws_vpc" "main" {
   ipv4_netmask_length = try(var.addressing.ipv4.netmask_length, null)
 
   # IPv6
-  assign_generated_ipv6_cidr_block = try(var.addressing.ipv6.amazon_assigned, false)
+  assign_generated_ipv6_cidr_block = try(var.addressing.ipv6.amazon_assigned, false) ? true : null
   ipv6_cidr_block                  = try(var.addressing.ipv6.cidr_block, null)
   ipv6_ipam_pool_id                = try(var.addressing.ipv6.ipam_pool_id, null)
   ipv6_netmask_length              = try(var.addressing.ipv6.netmask_length, null)
@@ -115,6 +115,8 @@ resource "aws_subnet" "main" {
 
   # IPv6
   ipv6_cidr_block                 = each.value.ipv6_cidr
+  ipv6_ipam_pool_id               = each.value.ipv6_ipam_pool_id
+  ipv6_netmask_length             = each.value.ipv6_netmask_length
   ipv6_native                     = each.value.ipv6_native
   assign_ipv6_address_on_creation = each.value.assign_ipv6
 
@@ -131,8 +133,11 @@ resource "aws_subnet" "main" {
   lifecycle {
     # Basic: must have some addressing
     precondition {
-      condition     = each.value.cidr_block != null || each.value.ipam_pool_id != null || each.value.ipv6_native
-      error_message = "Subnet '${each.key}': must have cidr_block, ipam_pool_id, or be ipv6-native."
+      condition = (
+        each.value.cidr_block != null || each.value.ipam_pool_id != null ||
+        each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null
+      )
+      error_message = "Subnet '${each.key}': must have an IPv4 or IPv6 CIDR source."
     }
 
     # R2-C2: Validate cidrs length matches AZ count.
@@ -144,9 +149,48 @@ resource "aws_subnet" "main" {
       condition = (
         # Only validate for explicit cidrs mode — check that the subnet's parent
         # group uses cidrs and that the current az_index is within bounds
-        each.value.cidr_block != null || each.value.ipam_pool_id != null || each.value.ipv6_native
+        each.value.cidr_block != null || each.value.ipam_pool_id != null ||
+        each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null
       )
       error_message = "Subnet '${each.key}': explicit cidrs list has fewer entries than configured AZs. Provide exactly one CIDR per AZ."
+    }
+  }
+}
+
+# ─── AZ count discovery must satisfy the requested cardinality ──────────
+resource "terraform_data" "availability_zone_count_validation" {
+  count = var.availability_zones.count != null ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = length(local.discovered_azs) >= var.availability_zones.count
+      error_message = "availability_zones.count requests ${var.availability_zones.count} AZs, but only ${length(local.discovered_azs)} eligible AZs were discovered."
+    }
+  }
+}
+
+# ─── VPC/subnet IPv6 contract validation ─────────────────────────────────
+resource "terraform_data" "vpc_ipv6_addressing_validation" {
+  count = local.create_vpc && var.addressing.ipv6 != null ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition = (
+        (var.addressing.ipv6.amazon_assigned ? 1 : 0) +
+        (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) == 1
+      )
+      error_message = "Creating a VPC with IPv6 requires exactly one source: amazon_assigned=true or IPv6 IPAM."
+    }
+  }
+}
+
+resource "terraform_data" "subnet_ipv6_vpc_validation" {
+  count = anytrue([for name, cfg in var.subnets : cfg.ipv6 != null]) && var.addressing.ipv6 == null ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.addressing.ipv6 != null
+      error_message = "Subnet IPv6 addressing requires addressing.ipv6 on the created or injected VPC."
     }
   }
 }

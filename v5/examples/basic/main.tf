@@ -96,6 +96,10 @@ output "subnet_ids" {
   value = module.vpc.subnet_ids_by_group
 }
 
+output "subnet_ipv6_cidrs" {
+  value = module.vpc.subnet_ipv6_cidrs_by_group_by_az
+}
+
 output "subnets_by_role" {
   value = module.vpc.subnet_ids_by_semantic_role
 }

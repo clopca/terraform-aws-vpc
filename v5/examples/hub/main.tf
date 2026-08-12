@@ -48,6 +48,7 @@ module "vpc" {
       ipv4 = {
         cidrs = ["10.1.0.0/24", "10.1.1.0/24", "10.1.2.0/24"]
       }
+      ipv6 = { auto_assign = true, cidr_index = 0 }
       routing = {
         internet_gateway = true
       }
@@ -62,6 +63,7 @@ module "vpc" {
       ipv4 = {
         cidrs = ["10.1.3.0/24", "10.1.4.0/24", "10.1.5.0/24"]
       }
+      ipv6 = { auto_assign = true, cidr_index = 1 }
       routing = {
         internet_gateway = true
       }
@@ -76,7 +78,7 @@ module "vpc" {
       ipv4 = {
         cidrs = ["10.1.16.0/28", "10.1.16.16/28", "10.1.16.32/28"]
       }
-      ipv6 = { auto_assign = true }
+      ipv6 = { auto_assign = true, cidr_index = 2 }
       routing = {
         nat_gateway = true
         # Multiple TGW destinations [R1-C3], including IPv6.
@@ -93,8 +95,9 @@ module "vpc" {
       role = "transit_gateway"
       ipv4 = {
         netmask    = 28
-        cidr_index = 0 # Pinned: immune to other group additions [R1-C2]
+        cidr_index = 64 # 10.1.24.0/28+, outside all explicit ranges
       }
+      ipv6 = { auto_assign = true, cidr_index = 3 }
       routing = {
         nat_gateway = true
       }
@@ -112,8 +115,9 @@ module "vpc" {
       role = "core_network"
       ipv4 = {
         netmask    = 28
-        cidr_index = 1 # Pinned: immune to other group additions [R1-C2]
+        cidr_index = 65 # 10.1.24.96/28+, outside all explicit ranges
       }
+      ipv6 = { auto_assign = true, cidr_index = 4 }
       core_network_options = {
         id                 = "cnet-0123456789abcdef0"
         arn                = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
@@ -215,6 +219,10 @@ output "vpc_id" {
 
 output "subnet_ids" {
   value = module.vpc.subnet_ids_by_group_by_az
+}
+
+output "subnet_ipv6_cidrs" {
+  value = module.vpc.subnet_ipv6_cidrs_by_group_by_az
 }
 
 output "subnets_by_role" {
