@@ -35,7 +35,7 @@ jobs:
         run: tflint --init --config .tflint.hcl
 
       - name: Run TFLint
-        run: tflint --config .tflint.hcl --recursive
+        run: tflint --config "$GITHUB_WORKSPACE/.tflint.hcl" --recursive
 
       - name: Setup terraform-docs
         uses: jaxxstorm/action-install-gh-release@v2.1.0
