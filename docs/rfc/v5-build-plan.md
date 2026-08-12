@@ -114,8 +114,8 @@ tanda permanecen sujetos a remediaciones posteriores.
 
 ## Remediación tanda 2 — D6 + IPAM secondary + fronteras + quality gates
 
-Commits locales: `3f96aba` (contrato/recursos/tests) y `606fc47`
-(TFLint/CI/ejemplos).
+Commits locales: `3f96aba` (contrato/recursos/tests), `606fc47`
+(TFLint/CI/ejemplos) y `1f91d89` (dependencias externas del hub tipadas).
 
 - D6: VPC Block Public Access regional y DHCP options con contratos tipados,
   create-or-inject, exclusiones estables y outputs Tier 1.
@@ -126,6 +126,7 @@ Commits locales: `3f96aba` (contrato/recursos/tests) y `606fc47`
   Log, Lattice y secondary associations tienen create-or-inject explícito.
 - Quality gates: TFLint 0.63.1 + AWS ruleset 0.48.0, dos locals muertos
   eliminados, ejemplos sin placeholders estructurales y workflow CI v5 fijado.
+  El hub exige variables validadas para IGW/EIP/TGW/Cloud WAN/Firehose externos.
 - Gate ejecutado: fmt, TFLint, init/validate del módulo y cuatro ejemplos, y
   `terraform test` **49 passed, 0 failed** (60 asserts; 21 negative runs).
 

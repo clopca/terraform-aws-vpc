@@ -3,7 +3,7 @@
 > **Fecha:** 2026-08-12
 > **Rama:** `explore/v5-typed-contract`
 > **Baseline auditado:** `9bc0abca02cf0bf551565b67f867847675bd8cb0`
-> **Commits de implementación:** `3f96aba`, `606fc47`
+> **Commits de implementación:** `3f96aba`, `606fc47`, `1f91d89`
 > **Dependencias ya cerradas en tanda 1:** `db758f7`, `0a1f424`; registro `173c9db`
 > **Estado:** ✅ scope de tanda 2 cerrado; el gate global de Fase 6 conserva fuera de scope la evidencia AWS real y la migración integral.
 
@@ -16,7 +16,7 @@
 | R1-H5 / R2-H-03 — create-or-inject incompleto | Añadidos modos explícitos e IDs para EIGW, subnets, TGW attachment, Cloud WAN attachment/accepter, Flow Log, VPC Lattice y secondary associations. Las colecciones conservan claves declarativas y los outputs Tier 1 devuelven handles creados o inyectados. | `3f96aba` | ✅ Cerrado |
 | R2-M-02 — locals sin uso | Eliminados `local.subnet_names_sorted` y `local.subnets_with_ipam`; TFLint no reporta declaraciones sin uso. | `3f96aba` | ✅ Cerrado |
 | R2-M-01 — TFLint no ejecutable | Configuración v5 migrada a `call_module_type`, TFLint fijado a `0.63.1` y ruleset AWS a `0.48.0`. El workflow inicializa plugins y ejecuta `tflint --chdir=v5 --recursive`. | `606fc47` | ✅ Cerrado |
-| R1-H8 — ejemplos con placeholders estructurales y ausencia de CI | `basic` y `enterprise` ya crean sus dependencias; `hub` conserva inyección intencional con IDs/ARNs de formato válido para demostrar fronteras externas. Añadido CI macOS con Terraform `1.15.8`, fmt, TFLint, validate del módulo y cuatro ejemplos, y suite completa. | `606fc47` | ✅ Cerrado para el scope local/CI; apply sandbox sigue fuera de scope |
+| R1-H8 — ejemplos con placeholders estructurales y ausencia de CI | `basic` y `enterprise` crean sus dependencias. `hub` mueve IGW/EIP/TGW/Cloud WAN/Firehose a variables requeridas y validadas: no quedan IDs sintéticos en su configuración ejecutable. Añadido CI macOS con Terraform `1.15.8`, fmt, TFLint, validate del módulo y cuatro ejemplos, y suite completa. | `606fc47`, `1f91d89` | ✅ Cerrado para el scope local/CI; apply sandbox sigue fuera de scope |
 | R2-H-04 — tests no cazaban los fixes | Plan assertions cubren atributos BPA/DHCP, claves y argumentos IPAM/static secondary, subnet→association, y omisión de recursos en inyección. `expect_failures` cubre modos incompatibles, selector secondary desconocido e IDs inyectados ausentes. | `3f96aba` | ✅ Cerrado |
 | Tanda 1 — IPv6, AZ count, IDs computed, aislamiento e IGW override | Se mantiene la trazabilidad de la primera tanda: implementación `db758f7` + `0a1f424`; registro de cierre `173c9db`. | `db758f7`, `0a1f424`, `173c9db` | ✅ Cerrado |
 

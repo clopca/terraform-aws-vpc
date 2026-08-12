@@ -55,6 +55,9 @@ module "vpc" {
 
 Complete configurations are available in [`examples/basic`](examples/basic),
 [`examples/enterprise`](examples/enterprise), and [`examples/hub`](examples/hub).
+The hub example requires real IDs/ARNs for its externally managed IGW, EIPs,
+Transit Gateway, Cloud WAN Core Network, and Firehose destination; its validated
+input variables keep synthetic placeholders out of executable configuration.
 
 ## Address stability
 
