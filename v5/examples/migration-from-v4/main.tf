@@ -19,7 +19,9 @@ module "vpc" {
   source = "../.."
 
   vpc = {
-    name = "migration-example"
+    name             = "migration-example"
+    igw_name_format  = "{vpc}-igw" # v4: "${var.name}-igw"
+    eigw_name_format = "{vpc}"     # v4: var.name
   }
 
   addressing = {
@@ -33,8 +35,9 @@ module "vpc" {
 
   subnets = {
     public = {
-      role = "public"
-      ipv4 = { cidrs = ["10.42.0.0/24", "10.42.1.0/24"] }
+      role        = "public"
+      name_format = "{group}-{az}" # v4: "${name_prefix || key}-${az}"
+      ipv4        = { cidrs = ["10.42.0.0/24", "10.42.1.0/24"] }
       # Replace with the prefixes already recorded in v4 state.
       ipv6 = { cidrs = ["2600:1f18:4200:1::/64", "2600:1f18:4200:2::/64"], auto_assign = true }
       routing = {
@@ -48,9 +51,10 @@ module "vpc" {
     }
 
     app = {
-      role = "private"
-      ipv4 = { cidrs = ["10.42.16.0/20", "10.42.32.0/20"] }
-      ipv6 = { cidrs = ["2600:1f18:4200:10::/64", "2600:1f18:4200:11::/64"], auto_assign = true }
+      role        = "private"
+      name_format = "{group}-{az}"
+      ipv4        = { cidrs = ["10.42.16.0/20", "10.42.32.0/20"] }
+      ipv6        = { cidrs = ["2600:1f18:4200:10::/64", "2600:1f18:4200:11::/64"], auto_assign = true }
       routing = {
         nat_gateway          = true
         egress_only_igw      = true
@@ -62,20 +66,22 @@ module "vpc" {
     }
 
     transit_gateway = {
-      role    = "transit_gateway"
-      ipv4    = { cidrs = ["10.42.240.0/28", "10.42.240.16/28"] }
-      ipv6    = { cidrs = ["2600:1f18:4200:f0::/64", "2600:1f18:4200:f1::/64"] }
-      routing = { nat_gateway = true }
+      role        = "transit_gateway"
+      name_format = "{group}-{az}"
+      ipv4        = { cidrs = ["10.42.240.0/28", "10.42.240.16/28"] }
+      ipv6        = { cidrs = ["2600:1f18:4200:f0::/64", "2600:1f18:4200:f1::/64"] }
+      routing     = { nat_gateway = true }
       transit_gateway_options = {
         id = "tgw-0123456789abcdef0"
       }
     }
 
     core_network = {
-      role    = "core_network"
-      ipv4    = { cidrs = ["10.42.241.0/28", "10.42.241.16/28"] }
-      ipv6    = { cidrs = ["2600:1f18:4200:f2::/64", "2600:1f18:4200:f3::/64"] }
-      routing = { nat_gateway = true }
+      role        = "core_network"
+      name_format = "{group}-{az}"
+      ipv4        = { cidrs = ["10.42.241.0/28", "10.42.241.16/28"] }
+      ipv6        = { cidrs = ["2600:1f18:4200:f2::/64", "2600:1f18:4200:f3::/64"] }
+      routing     = { nat_gateway = true }
       core_network_options = {
         id  = "cnet-0123456789abcdef0"
         arn = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
@@ -86,6 +92,7 @@ module "vpc" {
   nat_gateway = {
     mode         = "all_azs"
     subnet_group = "public"
+    name_format  = "nat-{group}-{az}" # v4 EIP and NAT Name formula
   }
 
   flow_logs = {
@@ -123,4 +130,16 @@ output "subnet_ids_by_group_by_az" {
 # Keep old downstreams operational while migrating them to Tier 1.
 output "v4_private_subnet_attributes_by_az" {
   value = module.vpc.private_subnet_attributes_by_az
+}
+
+output "v4_name_compatibility" {
+  description = "Representative Name tags that must remain identical during v4 migration."
+  value = {
+    public_subnet    = module.vpc.resources.subnets["public/us-east-1a"].tags.Name
+    app_route_table  = module.vpc.resources.route_tables["app/us-east-1a"].tags.Name
+    nat_eip          = module.vpc.resources.eips["nat/us-east-1a"].tags.Name
+    nat_gateway      = module.vpc.resources.nat_gateways["nat/us-east-1a"].tags.Name
+    internet_gateway = module.vpc.resources.internet_gateway[0].tags.Name
+    egress_only_igw  = module.vpc.resources.egress_only_internet_gateway[0].tags.Name
+  }
 }

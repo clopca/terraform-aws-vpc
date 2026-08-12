@@ -1,13 +1,15 @@
 # terraform-aws-vpc migration guide: v4 to v5
 
-> Status: Phase 5 implementation. Always test against a copy of production state. The v5 module does not perform state moves automatically because `moved` addresses cannot contain variables, wildcards, or generated AZ/group keys. `v5/tests/migration.tftest.hcl` verifies representative moves against shared ephemeral state and plans the complete 63-block example with a mock provider; the CloudWatch remove/import cutover remains an explicit operator procedure because import blocks are root-module-only.
+> Status: Remediation batch 4. Always test against a copy of production state. The v5 module does not perform state moves automatically because `moved` addresses cannot contain variables, wildcards, or generated AZ/group keys. `v5/tests/migration.tftest.hcl` verifies representative moves against shared ephemeral state and plans the complete 63-block feature-union example with a mock provider. The real remediation-3 fixture selected 26 applicable moves and omitted 37 absent-feature sources. The CloudWatch remove/import cutover remains an explicit operator procedure because import blocks are root-module-only.
 
 ## Migration safety contract
 
 - Work against a copy of production state first; never combine an unreviewed provider upgrade with the v4 -> v5 module cutover.
 - The migration gate is a complete normal `terraform plan`, not `-refresh-only`. Refresh-only cannot prove convergence to the v5 configuration.
-- Preserve every durable physical ID. The default gate permits zero replacements. The only expected creates/deletes are the staged Flow Logs IAM policy conversion described below.
-- Do not run `apply` between removing the old CloudWatch log-group state address and importing the same physical group at its v5 address.
+- Preserve every durable physical ID. The default gate permits zero replacements. Expected creates are internal `terraform_data` precondition records plus the staged Flow Logs IAM policy conversion described below; `terraform_data` has no AWS API side effects.
+- Preserve v4 Name tags with the format mapping below. The remediation-3 fixture's 14 subnet/route-table/EIP/NAT updates disappear when those formats are configured.
+- Keep provider `default_tags` unchanged through the cutover. Duplicate keys resolve provider defaults < module globals < resource/group tags < generated Name.
+- Do not run an infrastructure-changing apply between removing the old CloudWatch log-group state address and importing the same physical group at its v5 address.
 
 ## Migration sequence
 
@@ -30,11 +32,11 @@
    # Required result: exit code 0.
    ```
 
-   Commit the provider lock change separately. Do not change the module source/version in this step.
+   Commit the provider lock change separately. Do not change the module source/version in this step. Configure and converge any AWS provider `default_tags` change here, while still on v4. The provider merges defaults below explicit resource tags and exposes the union as `tags_all`; changing defaults after the module switch would mix provider tag drift with migration actions.
 
 ### B. Capture v4 identity and ordering
 
-3. Record physical IDs, route destinations, optional resources, subnet keys/CIDRs, and the exact observable AZ order. `availability_zones.names` and every explicit CIDR list in v5 must use this order; do not reconstruct it from the textual v4 input:
+3. Record physical IDs, route destinations, optional resources, subnet keys/CIDRs, Name tags, tag maps, and the exact observable AZ order. `availability_zones.names` and every explicit CIDR list in v5 must use this order; do not reconstruct it from the textual v4 input:
 
    ```shell
    terraform console <<<'module.vpc.azs'
@@ -54,18 +56,31 @@
 
 ### C. Translate configuration and state
 
-5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order.
-6. Copy the active `v5/examples/migration-from-v4/moved.tf` into the caller root. Replace sample AZs, private groups, and destination-derived keys; remove every block whose source is absent. The example has 63 moves and intentionally excludes the v4 CloudWatch log group.
+5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order. Configure the exact v4 Name formats before planning: subnet groups use `"{group}-{az}"`, NAT/EIP use `"nat-{group}-{az}"`, IGW uses `"{vpc}-igw"`, and EIGW uses `"{vpc}"`.
+6. Copy the active `v5/examples/migration-from-v4/moved.tf` into the caller root. Replace sample AZs, private groups, and destination-derived keys. Treat 63 as the union of demonstrated features, not a required count: compare against `terraform state list`, remove every block whose source is absent, and repeat the private six-block pattern for each actual private group. The remediation-3 fixture retained 26 and omitted 37. The example intentionally excludes the v4 CloudWatch log group.
 7. Change the module source/version and initialize v5 without changing the already-baselined provider selection:
 
    ```shell
    terraform init
    ```
 
-8. Preserve the v4-generated CloudWatch log group by re-addressing it through remove/import. This changes state only; it does not delete the AWS log group. Take a fresh backup, perform both commands consecutively, and do not plan/apply between them:
+8. Materialize the selected `moved` blocks in state **before** importing the CloudWatch log group. A direct import against the untouched v4 state can evaluate v5 locals while `aws_eip.nat` is still keyed only by AZ and fail when v5 references `aws_eip.nat["nat/<az>"]`. Use a saved refresh-only plan solely as a state-address transition; inspect it, apply it, and verify representative final keys:
 
    ```shell
-   terraform state pull > /secure/backup/vpc-v4-before-flow-log-import.tfstate
+   terraform state pull > /secure/backup/vpc-v4-before-address-moves.tfstate
+   terraform plan -refresh-only -out=v5-address-moves.tfplan
+   terraform show -no-color v5-address-moves.tfplan > v5-address-moves.txt
+   # Required: only refresh plus the selected moved-address statements; no AWS mutation.
+   terraform apply v5-address-moves.tfplan
+   terraform state list | grep 'module.vpc.aws_eip.nat\["nat/'
+   ```
+
+   This refresh-only apply is an address-materialization step, **not** the migration acceptance gate. The gate in section D remains a complete normal plan.
+
+9. Preserve the v4-generated CloudWatch log group by re-addressing it through remove/import after the moves are materialized. This changes state only; it does not delete the AWS log group. Take a fresh backup, perform both commands consecutively, and do not plan or apply between them:
+
+   ```shell
+   terraform state pull > /secure/backup/vpc-v5-before-flow-log-import.tfstate
    terraform state rm \
      'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main'
    terraform import \
@@ -77,7 +92,7 @@
 
 ### D. Complete-plan gate
 
-9. Run and save a **complete normal plan**:
+10. Run and save a **complete normal plan**:
 
    ```shell
    terraform plan -out=v5-migration.tfplan
@@ -88,23 +103,31 @@
 
    - **Required:** zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive.
    - **Expected state-only records:** the selected `moved` pairs. Re-keyed routes whose destination is unchanged have no residual create/delete.
-   - **Allowed create:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role.
+   - **Allowed creates:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role, plus the expected built-in `terraform_data` precondition records. These records exist only in Terraform state and perform no AWS API operations. For the remediation-3 fixture the exact seven were:
+     - `module.vpc.terraform_data.attachment_contract_validation`;
+     - `module.vpc.terraform_data.cidrs_az_count_validation["private"]`;
+     - `module.vpc.terraform_data.cidrs_az_count_validation["public"]`;
+     - `module.vpc.terraform_data.cidrs_az_count_validation["workload"]`;
+     - `module.vpc.terraform_data.nat_gateway_az_validation[0]`;
+     - `module.vpc.terraform_data.nat_gateway_subnet_group_validation[0]`;
+     - `module.vpc.terraform_data.vpc_ipv4_addressing_validation[0]`.
+     Other configurations may select a different documented precondition subset; every address must correspond to a `terraform_data` block in the pinned module source.
    - **Allowed later deletes:** the old managed-policy attachment and managed policy, but only after the inline policy exists and delivery is verified.
-   - **Allowed in-place updates, when explicitly reviewed:** IAM role trust policy, description, and tags; Flow Log tags/traffic type/log format/aggregation interval; CloudWatch retention, KMS key, and tags. Keep values identical if these changes are not intended.
+   - **Allowed in-place updates, when explicitly reviewed:** IAM role trust policy, description, and tags; Flow Log tags/traffic type/log format/aggregation interval; CloudWatch retention, KMS key, and tags. Keep values identical if these changes are not intended. With the v4-compatible Name formats, subnet/route-table/EIP/NAT Name updates are not expected.
    - **Exceptional route residual:** delete/create is allowed only for a route destination deliberately changed during migration, enumerated by address and approved for a maintenance window. With frozen destinations the expected residual is zero.
 
    Any other create/delete, and every replacement, fails the gate.
 
 ### E. Ordered IAM permissions cutover
 
-10. A single graph does not order deletion of the old managed-policy attachment after creation of the new inline policy. Guarantee the order with a first targeted apply that creates only the v5 inline policy and its dependencies; the old attachment remains in state:
+11. A single graph does not order deletion of the old managed-policy attachment after creation of the new inline policy. Guarantee the order with a first targeted apply that creates only the v5 inline policy and its dependencies; the old attachment remains in state:
 
     ```shell
     terraform apply \
       -target='module.vpc.aws_iam_role_policy.flow_logs["default"]'
     ```
 
-11. Verify that `publish-vpc-flow-logs` is attached inline to the preserved role and that the existing Flow Log continues delivering new events to the preserved group. Then run a new complete plan. Only now may it retire the old attachment/managed policy plus apply the previously approved in-place updates:
+12. Verify that `publish-vpc-flow-logs` is attached inline to the preserved role and that the existing Flow Log continues delivering new events to the preserved group. Then run a new complete plan. Only now may it retire the old attachment/managed policy plus apply the previously approved in-place updates:
 
     ```shell
     terraform plan -out=v5-migration-final.tfplan
@@ -115,7 +138,7 @@
 
 ### F. Post-apply verification
 
-12. Compare the saved v4 inventory with v5 state: VPC, subnet, route-table, NAT/EIP, gateway, attachment, Flow Log, log-group, and IAM-role physical IDs must be preserved. Confirm no v4 module addresses remain:
+13. Compare the saved v4 inventory with v5 state: VPC, subnet, route-table, NAT/EIP, gateway, attachment, Flow Log, log-group, and IAM-role physical IDs must be preserved. Confirm no v4 module addresses remain:
 
     ```shell
     terraform state list | grep 'module.vpc.module.flow_logs' && exit 1 || true
@@ -124,14 +147,14 @@
     terraform state show 'module.vpc.aws_iam_role.flow_logs["default"]'
     ```
 
-13. Verify the Flow Log reports `ACTIVE` and that the preserved CloudWatch group receives events newer than the cutover. Finally require a clean complete plan:
+14. Verify the Flow Log reports `ACTIVE` and that the preserved CloudWatch group receives events newer than the cutover. Finally require a clean complete plan:
 
     ```shell
     terraform plan -detailed-exitcode
     # Required result: exit code 0.
     ```
 
-14. Migrate downstream references from Tier 2 aliases to Tier 1 handles. Retain the caller's moved file until every workspace has applied the upgrade.
+15. Migrate downstream references from Tier 2 aliases to Tier 1 handles. Retain the caller's moved file until every workspace has applied the upgrade.
 
 ## ADR-F4-1: preserve the v4 Flow Logs destination and role
 
@@ -143,7 +166,25 @@
 
 **Rejected default:** creating a new group (with create-before-destroy behavior or an accepted replacement) splits continuity at cutover. Historical logs remain in the old group only if that group is deliberately removed from Terraform ownership rather than destroyed; callers must then retain and eventually clean it up. This remains an opt-in maintenance-window fallback, not the migration default.
 
-**Consequences:** the runbook has two explicit state commands and one targeted migration apply, all protected by state backups and complete plans. The default path has zero replacement of the log group or IAM role and no delivery-permission window.
+**Consequences:** the runbook has an explicit address-materialization plan, two log-group state commands, and one targeted migration apply, all protected by state backups and complete plans. The default path has zero replacement of the log group or IAM role and no delivery-permission window.
+
+## v4 Name formula mapping
+
+| Resource | v4 formula | v5 migration setting | Result |
+|---|---|---|---|
+| VPC | `var.name` | `vpc.name = var.name` | Exact, unchanged. |
+| Subnet | `${name_prefix || key}-${az}` | `subnets.<key>.name_prefix` copied; `name_format = "{group}-{az}"` | Exact for every reserved/private group. |
+| Route table | `${name_prefix || key}-${az}` | Inherits the subnet `name_format`; leave `route_table_name_format` unset | Exact. Set the route-table field only if v4 was customized out of band. |
+| NAT EIP | `nat-${public.name_prefix || "public"}-${az}` | `nat_gateway.subnet_group = "public"`; `name_format = "nat-{group}-{az}"`; leave `eip.name_format` unset | Exact. |
+| NAT Gateway | `nat-${public.name_prefix || "public"}-${az}` | Same NAT format | Exact. |
+| Internet Gateway | `${var.name}-igw` | `vpc.igw_name_format = "{vpc}-igw"` | Exact; also the v5 default. |
+| Egress-only Internet Gateway | `var.name` | `vpc.eigw_name_format = "{vpc}"` | Exact; overrides the native v5 `"{vpc}-eigw"` default. |
+
+The default migration path therefore removes the 14 cosmetic updates observed in
+the remediation-3 two-AZ fixture: six subnets, six route tables, one EIP, and one
+NAT Gateway. As an explicit fallback, a team may omit the migration formats and
+approve exactly those address-enumerated in-place `Name` tag updates as cosmetic;
+that fallback must not broaden the allowlist to replacements or other tag changes.
 
 ## Variables
 
@@ -173,6 +214,9 @@
 | `subnets.<key>.assign_ipv6_address_on_creation` | `subnets.<key>.ipv6.auto_assign` | Copy boolean; v5 uses the typed IPv6 block. |
 | `subnets.<key>.enable_resource_name_dns_aaaa_record_on_launch` | no direct v5 equivalent | Remove. This undocumented v4 private-group passthrough is not part of the v5 contract. |
 | `subnets.<key>.name_prefix` | `subnets.<key>.name_prefix` | Copy unchanged; never rename the map key during the first migration. |
+| v4 subnet/route-table Name formula | `subnets.<key>.name_format` | Set `"{group}-{az}"`; leave `route_table_name_format` unset so both reproduce v4. |
+| v4 NAT/EIP Name formula | `nat_gateway.name_format` / `eip.name_format` | Set NAT to `"nat-{group}-{az}"`; EIP inherits it. |
+| v4 IGW/EIGW Name formulas | `vpc.igw_name_format` / `vpc.eigw_name_format` | Set `"{vpc}-igw"` / `"{vpc}"`. |
 | `subnets.<key>.tags` | `subnets.<key>.tags` | Copy unchanged. |
 | implicit key class | `subnets.<key>.role` | `public` -> `public`; `transit_gateway` -> `transit_gateway`; `core_network` -> `core_network`; every other v4 key -> normally `private` (use `isolated` only after removing all routes). |
 | `subnets.public.connect_to_igw` | `subnets.public.routing.internet_gateway` | Copy boolean; null still defaults true for the public role. |
@@ -216,7 +260,7 @@
 | `vpc_lattice.security_group_ids` | `vpc_lattice.security_group_ids` | Convert list to set semantics (ordering is ignored). |
 | `vpc_lattice.tags` | `vpc_lattice.tags` | Copy unchanged. |
 | `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
-| `tags` | `tags` | Copy unchanged. |
+| `tags` | `tags` | Copy unchanged. Keep provider `default_tags` unchanged; effective precedence is provider defaults < global tags < group/resource tags < generated Name. |
 
 ## Outputs
 
@@ -248,7 +292,7 @@
 - Flow Logs: caller key, conventionally `"default"`;
 - routes: `<group>/<az>/<target>` plus a destination suffix for TGW/CWAN.
 
-The active example contains 63 exact mappings for a two-AZ representative state. Repeat each per-AZ block for the real AZ set and each private group. Destination key suffixes use `replace(destination, "/", "-")` (for example `10.0.0.0/8` -> `10.0.0.0-8`). `aws_vpc.main[0]` and `aws_internet_gateway.main[0]` keep their address and need no block. The CloudWatch log group uses the ADR-F4-1 remove/import procedure instead of a moved block.
+The active example contains 63 exact mappings for the union of a two-AZ representative state. It is a catalog, not a required move count. Select only sources present in `terraform state list`, repeat each per-AZ block for the real AZ set and each private group, and omit entire feature sections (TGW, Core Network, EIGW, Lattice, extra NAT AZs/routes) when absent. The remediation-3 state selected 26 applicable moves and omitted 37. Destination key suffixes use `replace(destination, "/", "-")` (for example `10.0.0.0/8` -> `10.0.0.0-8`). `aws_vpc.main[0]` and `aws_internet_gateway.main[0]` keep their address and need no block. The CloudWatch log group uses the ADR-F4-1 remove/import procedure instead of a moved block.
 
 A v4 secondary association moves as follows when that mode is used:
 

@@ -151,8 +151,10 @@ dependencies; Tier 3 is for provider attributes not represented by a stable hand
 ## Migration from v4
 
 Follow the normative [v4 to v5 migration runbook](../docs/rfc/v5-migration.md).
-It includes the input/output mapping, 63 representative `moved` blocks, the
-CloudWatch log-group remove/import exception, a zero-replacement plan allowlist,
+It includes the exact v4 Name formats, input/output mapping, a 63-block
+feature-union moved catalog (the real remediation fixture selected 26 and omitted
+37 absent sources), a refresh-only state-address materialization step before the
+CloudWatch remove/import exception, the internal `terraform_data` create allowlist,
 and post-apply physical-ID checks. Always test the procedure against a copy of
 state and keep the caller-owned `moved.tf` until every workspace has upgraded.
 

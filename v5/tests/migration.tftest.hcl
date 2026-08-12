@@ -67,4 +67,16 @@ run "plan_full_migration_example" {
     condition     = keys(output.v4_private_subnet_attributes_by_az) == ["app/us-east-1a", "app/us-east-1b"]
     error_message = "The complete migration example, including all 63 moved blocks, must plan with v4-compatible private keys."
   }
+
+  assert {
+    condition = output.v4_name_compatibility == {
+      public_subnet    = "public-us-east-1a"
+      app_route_table  = "app-us-east-1a"
+      nat_eip          = "nat-public-us-east-1a"
+      nat_gateway      = "nat-public-us-east-1a"
+      internet_gateway = "migration-example-igw"
+      egress_only_igw  = "migration-example"
+    }
+    error_message = "The migration example must reproduce the v4 subnet, route-table, NAT/EIP, IGW, and EIGW Name formulas exactly."
+  }
 }
