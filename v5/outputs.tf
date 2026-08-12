@@ -287,6 +287,18 @@ output "secondary_cidr_association_ids" {
   value       = local.secondary_cidr_association_ids
 }
 
+output "gateway_endpoint_ids" {
+  description = "Gateway VPC endpoint IDs by stable caller-owned gateway_endpoints key."
+  value       = local.gateway_endpoint_ids_by_key
+}
+
+output "gateway_endpoint_route_table_association_ids" {
+  description = "Gateway endpoint route-table association IDs keyed '<group>/<az-or-injected>/gateway-endpoint/<service>'."
+  value = {
+    for key, association in aws_vpc_endpoint_route_table_association.gateway : key => association.id
+  }
+}
+
 output "vpc_block_public_access_options_id" {
   description = "VPC Block Public Access regional options ID (created or injected), or null when disabled."
   value       = local.vpc_block_public_access_options_id
@@ -503,13 +515,15 @@ output "resources" {
       network_acls    = aws_default_network_acl.this
       route_tables    = aws_default_route_table.this
     }
-    internet_gateway             = aws_internet_gateway.main
-    egress_only_internet_gateway = aws_egress_only_internet_gateway.main
-    eips                         = aws_eip.nat
-    nat_gateways                 = aws_nat_gateway.main
-    transit_gateway_attachments  = aws_ec2_transit_gateway_vpc_attachment.this
-    core_network_attachments     = aws_networkmanager_vpc_attachment.this
-    core_network_accepters       = aws_networkmanager_attachment_accepter.this
+    internet_gateway                    = aws_internet_gateway.main
+    egress_only_internet_gateway        = aws_egress_only_internet_gateway.main
+    eips                                = aws_eip.nat
+    nat_gateways                        = aws_nat_gateway.main
+    gateway_endpoints                   = aws_vpc_endpoint.gateway
+    gateway_endpoint_route_associations = aws_vpc_endpoint_route_table_association.gateway
+    transit_gateway_attachments         = aws_ec2_transit_gateway_vpc_attachment.this
+    core_network_attachments            = aws_networkmanager_vpc_attachment.this
+    core_network_accepters              = aws_networkmanager_attachment_accepter.this
     injected_attachment_ids = {
       transit_gateway = local.transit_gateway_attachment_id
       core_network    = local.core_network_attachment_id

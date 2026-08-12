@@ -78,9 +78,11 @@ run "basic_example" {
   assert {
     condition = (
       length(output.flow_log_ids) == 1 &&
-      toset(keys(output.route_tables)) == toset(["app", "database", "public"])
+      toset(keys(output.route_tables)) == toset(["app", "database", "public"]) &&
+      toset(keys(output.gateway_endpoints.ids)) == toset(["dynamodb", "s3"]) &&
+      output.gateway_endpoints.association_count == 6
     )
-    error_message = "The basic example must plan Flow Logs and route-table outputs."
+    error_message = "The basic example must plan Flow Logs, route tables, and both gateway endpoints across all application AZs."
   }
 }
 

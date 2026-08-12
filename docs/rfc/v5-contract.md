@@ -336,6 +336,21 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.4 ADR-R8-2 — explicit service plus stable endpoint key
+
+**Decision:** `gateway_endpoints` is a map keyed by caller identity; each value has
+`service = "s3" | "dynamodb"`, create-or-inject fields, optional JSON policy, and
+Name/tags. Although keys conventionally match services, keeping `service` explicit
+allows a plan-time duplicate-service validation that an object with fixed `s3` and
+`dynamodb` attributes could never exercise. Exactly one endpoint per service is
+allowed.
+
+Route-table associations are separate resources keyed
+`<group>/<az-or-injected>/gateway-endpoint/<service>`. Routing intent remains with
+the subnet group, and an injected shared route table receives only one association.
+This avoids positional churn and lets endpoint IDs be computed. Gateway endpoint
+routes bypass NAT processing; S3/DynamoDB traffic therefore avoids NAT per-GB fees.
+
 ### 3.3.3 ADR-R8-1 — default resources are adopted only by explicit opt-in
 
 **Decision:** expose independent `manage_security_group`, `manage_network_acl`, and

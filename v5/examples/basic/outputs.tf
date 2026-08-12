@@ -42,3 +42,12 @@ output "flow_log_ids" {
   description = "VPC Flow Log IDs by stable flow-log key."
   value       = module.vpc.flow_log_ids
 }
+
+
+output "gateway_endpoints" {
+  description = "Gateway endpoint IDs and route-table association count."
+  value = {
+    ids               = module.vpc.gateway_endpoint_ids
+    association_count = length(module.vpc.gateway_endpoint_route_table_association_ids)
+  }
+}

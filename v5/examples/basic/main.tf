@@ -30,9 +30,11 @@ module "vpc" {
       ipv4 = { netmask = 22 }
       ipv6 = { auto_assign = true }
       routing = {
-        nat_gateway     = true
-        egress_only_igw = true
-        dns64           = true
+        nat_gateway               = true
+        egress_only_igw           = true
+        dns64                     = true
+        s3_gateway_endpoint       = true
+        dynamodb_gateway_endpoint = true
       }
     }
 
@@ -46,6 +48,22 @@ module "vpc" {
     mode         = "single_az"
     az           = "us-east-1a"
     subnet_group = "public"
+  }
+
+  gateway_endpoints = {
+    s3 = { service = "s3" }
+    dynamodb = {
+      service = "dynamodb"
+      policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Effect    = "Allow"
+          Principal = "*"
+          Action    = "dynamodb:*"
+          Resource  = "*"
+        }]
+      })
+    }
   }
 
   # Native CloudWatch destination and VPC Flow Logs IAM role are created.

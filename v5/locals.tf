@@ -222,11 +222,13 @@ locals {
         try(cfg.routing.internet_gateway, null),
         cfg.role == "public" ? true : false
       )
-      dns64                = try(cfg.routing.dns64, false)
-      transit_gateway      = try(cfg.routing.transit_gateway, null)
-      transit_gateway_ipv6 = try(cfg.routing.transit_gateway_ipv6, null)
-      core_network         = try(cfg.routing.core_network, null)
-      core_network_ipv6    = try(cfg.routing.core_network_ipv6, null)
+      dns64                     = try(cfg.routing.dns64, false)
+      transit_gateway           = try(cfg.routing.transit_gateway, null)
+      transit_gateway_ipv6      = try(cfg.routing.transit_gateway_ipv6, null)
+      core_network              = try(cfg.routing.core_network, null)
+      core_network_ipv6         = try(cfg.routing.core_network_ipv6, null)
+      s3_gateway_endpoint       = try(cfg.routing.s3_gateway_endpoint, false)
+      dynamodb_gateway_endpoint = try(cfg.routing.dynamodb_gateway_endpoint, false)
     }
   }
 

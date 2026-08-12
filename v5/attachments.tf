@@ -83,7 +83,7 @@ data "aws_partition" "current" {
 }
 
 data "aws_region" "current" {
-  count = local.core_network_group != null || length(local.cloudwatch_roles_to_create) > 0 ? 1 : 0
+  count = local.core_network_group != null || length(local.cloudwatch_roles_to_create) > 0 || length(local.gateway_endpoints_to_create) > 0 ? 1 : 0
 }
 
 resource "terraform_data" "attachment_contract_validation" {

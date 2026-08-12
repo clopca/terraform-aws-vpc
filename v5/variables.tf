@@ -362,14 +362,16 @@ variable "subnets" {
     # [R2-H3]: internet_gateway defaults to null; auto-resolved as true for
     # role="public", false otherwise. Set explicitly to override.
     routing = optional(object({
-      nat_gateway          = optional(bool, false)
-      egress_only_igw      = optional(bool, false)
-      internet_gateway     = optional(bool)         # null = auto (true for public, false otherwise)
-      dns64                = optional(bool, false)  # Also creates 64:ff9b::/96 -> NAT GW; requires NAT
-      transit_gateway      = optional(list(string)) # list of CIDRs/prefix-list IDs to route via TGW [R1-C3]
-      transit_gateway_ipv6 = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
-      core_network         = optional(list(string)) # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
-      core_network_ipv6    = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
+      nat_gateway               = optional(bool, false)
+      egress_only_igw           = optional(bool, false)
+      internet_gateway          = optional(bool)         # null = auto (true for public, false otherwise)
+      dns64                     = optional(bool, false)  # Also creates 64:ff9b::/96 -> NAT GW; requires NAT
+      transit_gateway           = optional(list(string)) # list of CIDRs/prefix-list IDs to route via TGW [R1-C3]
+      transit_gateway_ipv6      = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
+      core_network              = optional(list(string)) # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
+      core_network_ipv6         = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
+      s3_gateway_endpoint       = optional(bool, false)
+      dynamodb_gateway_endpoint = optional(bool, false)
     }), {})
 
     # ── Public role options ──
@@ -514,7 +516,9 @@ variable "subnets" {
         try(v.routing.transit_gateway, null) == null &&
         try(v.routing.core_network, null) == null &&
         try(v.routing.transit_gateway_ipv6, null) == null &&
-        try(v.routing.core_network_ipv6, null) == null
+        try(v.routing.core_network_ipv6, null) == null &&
+        !try(v.routing.s3_gateway_endpoint, false) &&
+        !try(v.routing.dynamodb_gateway_endpoint, false)
       ) : true
     ])
     error_message = "Isolated subnets must not have routing, including DNS64/NAT64. Use role 'private' for subnets that need selective routing."
@@ -840,6 +844,77 @@ variable "nat_gateway" {
       length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
     ])
     error_message = "NAT and EIP name formats must be non-empty and may use only {vpc}, {group}, and {az}."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GATEWAY VPC ENDPOINTS — S3/DynamoDB, create-or-inject
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "gateway_endpoints" {
+  description = <<-EOT
+    Gateway VPC endpoints keyed by a stable caller-owned identifier. Each entry
+    explicitly selects service `s3` or `dynamodb`; at most one endpoint per
+    service is allowed. Conventional keys are `s3` and `dynamodb`.
+
+    Create mode owns one aws_vpc_endpoint and accepts an optional JSON policy.
+    Inject mode uses create=false plus endpoint_id and never owns endpoint policy.
+    Route-table associations are declared co-locally under subnet-group routing.
+    name_format accepts {vpc}, {service}, and {key}.
+  EOT
+  type = map(object({
+    service     = string
+    create      = optional(bool, true)
+    endpoint_id = optional(string)
+    policy      = optional(string)
+    name_format = optional(string, "{vpc}-{service}-gateway-endpoint")
+    tags        = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for key in keys(var.gateway_endpoints) : can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/")
+    ])
+    error_message = "gateway_endpoints keys must be stable lowercase identifiers without '/'."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, endpoint in var.gateway_endpoints : contains(["s3", "dynamodb"], endpoint.service)
+    ])
+    error_message = "gateway_endpoints[*].service must be s3 or dynamodb."
+  }
+
+  validation {
+    condition     = length(distinct([for endpoint in values(var.gateway_endpoints) : endpoint.service])) == length(var.gateway_endpoints)
+    error_message = "Configure at most one gateway endpoint per service; duplicate s3/dynamodb services are not allowed."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, endpoint in var.gateway_endpoints : endpoint.create ? (
+        endpoint.endpoint_id == null
+        ) : (
+        endpoint.endpoint_id != null && length(trimspace(endpoint.endpoint_id)) > 0 && endpoint.policy == null
+      )
+    ])
+    error_message = "Gateway endpoint create mode requires endpoint_id=null; inject mode requires create=false, a non-empty endpoint_id, and policy=null."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, endpoint in var.gateway_endpoints : endpoint.policy == null || can(jsondecode(endpoint.policy))
+    ])
+    error_message = "gateway_endpoints[*].policy must be null or valid JSON."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, endpoint in var.gateway_endpoints :
+      length(trimspace(endpoint.name_format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(endpoint.name_format, "{vpc}", ""), "{service}", ""), "{key}", "")))
+    ])
+    error_message = "Gateway endpoint name formats must be non-empty and may use only {vpc}, {service}, and {key}."
   }
 }
 
