@@ -7,7 +7,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
+      version = ">= 5.69"
     }
   }
 }
@@ -71,5 +71,9 @@ output "vpc_id" {
 }
 
 output "subnet_ids" {
-  value = module.vpc.subnet_ids_by_role
+  value = module.vpc.subnet_ids_by_group
+}
+
+output "subnets_by_role" {
+  value = module.vpc.subnet_ids_by_semantic_role
 }

@@ -1,9 +1,10 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Evaluable Prototype  
-> **Date:** 2026-08-12  
-> **Authors:** aws-ia team  
+> **Status:** Draft / Gate 1 Closed (R1+R2 findings applied)
+> **Date:** 2026-08-12
+> **Authors:** aws-ia team
 > **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
+> **Reviews:** `reviews/fase-1.md` (R1 + R2 full audit results)
 
 ---
 
@@ -24,8 +25,8 @@ The v4 module suffers from three structural defects:
 
 - Zero `type = any` in the public contract
 - Explicit `role` per subnet group (no magic keys)
-- Stable state keys: unified `"role/az"` for all resources
-- Create-or-inject pattern for EIP/NAT (BYOIP support)
+- Stable state keys: unified `"name/az"` for all resources
+- Create-or-inject pattern for VPC, EIP/NAT, IGW
 - IPAM first-class at VPC and subnet level
 - Tiered outputs with semver stability guarantees
 - Zero-diff migration path from v4 via `moved` blocks
@@ -39,6 +40,7 @@ variable "vpc" {
   type = object({
     name             = string
     id               = optional(string)           # null = create; set = use existing
+    igw_id           = optional(string)           # null = create; set = inject existing [R1-H2]
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -70,6 +72,10 @@ variable "addressing" {
 }
 
 variable "availability_zones" {
+  description = <<-EOT
+    ⚠️  `count` mode is for DEVELOPMENT ONLY [R1-H4].
+    For production, always use explicit `names` to guarantee AZ stability.
+  EOT
   type = object({
     names = optional(list(string))
     count = optional(number)
@@ -81,6 +87,16 @@ variable "availability_zones" {
 
 The core of v5. Each entry is a **subnet group** replicated across AZs.
 
+**State Key Immutability [R1-H1]:** Map keys become part of the Terraform state
+address (`aws_subnet.main["key/az"]`). Renaming a key destroys and recreates all
+subnets in that group. Users must use `moved` blocks for safe renames. The
+`name_prefix` field provides a cosmetic display name decoupled from the state key.
+
+**Multiple Public Groups [R1-C1]:** Unlike v4, multiple subnet groups with
+`role = "public"` are supported (e.g., DMZ + edge + GWLB). The `transit_gateway`
+and `core_network` roles remain singleton due to AWS API constraints (1 VPC
+attachment per TGW/CWAN per VPC).
+
 ```hcl
 variable "subnets" {
   type = map(object({
@@ -88,10 +104,11 @@ variable "subnets" {
 
     # ── Addressing (one required unless ipv6.native_only) ──
     ipv4 = optional(object({
-      netmask        = optional(number)       # auto-calculated CIDR from VPC range
+      netmask        = optional(number)       # auto-calculated CIDR (16-28)
       cidrs          = optional(list(string))  # explicit, one per AZ
-      ipam_pool_id   = optional(string)        # subnet-level IPAM
-      netmask_length = optional(number)        # with ipam_pool_id
+      ipam_pool_id   = optional(string)
+      netmask_length = optional(number)
+      cidr_index     = optional(number)       # pinning slot for netmask stability [R1-C2]
     }))
     ipv6 = optional(object({
       auto_assign = optional(bool, false)
@@ -100,21 +117,21 @@ variable "subnets" {
     }))
 
     # ── Naming & Tags ──
-    name_prefix = optional(string)  # defaults to map key
+    name_prefix = optional(string)  # cosmetic; defaults to map key
     tags        = optional(map(string), {})
 
-    # ── Routing (co-located, not in separate variables) ──
+    # ── Routing (co-located, list-based destinations) [R1-C3] ──
     routing = optional(object({
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
-      internet_gateway     = optional(bool)          # default: true for public
-      transit_gateway      = optional(string)        # CIDR or prefix-list to route
-      transit_gateway_ipv6 = optional(string)
-      core_network         = optional(string)
-      core_network_ipv6    = optional(string)
+      internet_gateway     = optional(bool)           # null = auto (true for public) [R2-H3]
+      transit_gateway      = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
+      transit_gateway_ipv6 = optional(list(string))
+      core_network         = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
+      core_network_ipv6    = optional(list(string))
     }), {})
 
-    # ── Role-specific blocks (only relevant per role) ──
+    # ── Role-specific blocks ──
     public_options = optional(object({
       map_public_ip = optional(bool, true)
     }))
@@ -125,11 +142,12 @@ variable "subnets" {
       default_route_table_propagation = optional(bool, true)
       appliance_mode_support          = optional(bool, false)
       dns_support                     = optional(bool, true)
+      security_group_referencing      = optional(bool, true)  # requires provider >= 5.69 [R2-C1]
     }))
 
     core_network_options = optional(object({
       id                 = string
-      arn                = string
+      arn                = optional(string)  # auto-derived if omitted
       appliance_mode     = optional(bool, false)
       require_acceptance = optional(bool, false)
       accept_attachment  = optional(bool, true)
@@ -138,61 +156,81 @@ variable "subnets" {
 }
 ```
 
-### 3.3 NAT Gateway (typed, AZ-explicit)
-
-Extracted to top-level for clarity — it's a VPC-wide concern, not per-subnet.
+### 3.3 NAT Gateway (typed, AZ-explicit, create-or-inject)
 
 ```hcl
 variable "nat_gateway" {
   type = object({
-    mode = optional(string, "none")  # "none" | "single_az" | "all_azs"
-    az   = optional(string)          # required when mode = "single_az"
+    mode         = optional(string, "none")  # "none" | "single_az" | "all_azs"
+    az           = optional(string)          # required when mode = "single_az"
+    existing_ids = optional(map(string))     # az → nat_gw_id for inject mode [R1-H2]
     eip = optional(object({
-      mode             = optional(string, "create")  # "create" | "byoip_pool" | "existing"
-      public_ipv4_pool = optional(string)            # for byoip_pool mode
-      allocation_ids   = optional(map(string))       # az -> alloc_id for existing mode
+      mode             = optional(string, "create")
+      public_ipv4_pool = optional(string)
+      allocation_ids   = optional(map(string))  # nullable, required for "existing" [R2-H2]
     }), { mode = "create" })
   })
   default = { mode = "none" }
 }
 ```
 
-### 3.4 State Keys — Unified `"role/az"`
+### 3.4 State Keys — Unified `"name/az"`
 
 | Resource | v4 Key | v5 Key |
 |----------|--------|--------|
 | `aws_subnet.public` | `"us-east-1a"` | `"public/us-east-1a"` |
-| `aws_subnet.private` | `"private/us-east-1a"` | `"private/us-east-1a"` (stable) |
-| `aws_subnet.tgw` | `"us-east-1a"` | `"transit_gateway/us-east-1a"` |
-| `aws_subnet.cwan` | `"us-east-1a"` | `"core_network/us-east-1a"` |
+| `aws_subnet.private` | `"private/us-east-1a"` | `"app/us-east-1a"` (user's key) |
+| `aws_subnet.tgw` | `"us-east-1a"` | `"tgw/us-east-1a"` |
+| `aws_subnet.cwan` | `"us-east-1a"` | `"cwan/us-east-1a"` |
 | `aws_eip.nat` | `"us-east-1a"` | `"nat/us-east-1a"` |
 | `aws_nat_gateway.main` | `"us-east-1a"` | `"nat/us-east-1a"` |
 | `aws_route_table.*` | follows parent | follows parent |
 
-All v5 resource keys follow `"<logical_name>/<az>"` pattern — deterministic,
-rename-safe, no positional fragility.
+### 3.5 CIDR Calculation Algorithm [R1-C2]
 
-### 3.5 Outputs — 3 Tiers
+**Deterministic allocation with two-tier pinning:**
+
+1. **Pinned groups** (`cidr_index` set): Allocated first using the index as
+   network-number offset. Immune to addition/removal of other groups.
+2. **Unpinned groups** (`cidr_index` null): Allocated sequentially after highest
+   pinned slot, sorted by netmask DESC then alphabetically.
+
+**Stability guarantees:**
+- Pinned groups: NEVER shift regardless of other group changes.
+- Unpinned groups: May shift if a group that sorts before them is added/removed.
+- AZ addition: Only new AZ slots are appended within each group.
+
+**Production recommendation:** Use explicit `cidrs` for immutable allocations,
+`cidr_index` for stable auto-calculation, bare `netmask` for disposable environments.
+
+### 3.6 Outputs — 3 Tiers
 
 #### Tier 1: Stable Contract (semver-protected)
 
 ```hcl
 output "vpc_id" {}
 output "vpc_cidr_block" {}
-output "subnet_ids_by_role" {}      # map(role, list(id))
-output "subnet_ids_by_role_by_az" {} # map(role, map(az, id))
-output "route_table_ids" {}          # map(role, map(az, rt_id))
-output "nat_gateway_ids" {}          # map(az, nat_id)
-output "nat_public_ips" {}           # map(az, ip)
+output "azs" {}
+output "subnet_ids_by_group" {}             # map(group_name, list(id))
+output "subnet_ids_by_group_by_az" {}       # map(group_name, map(az, id))
+output "subnet_cidrs_by_group_by_az" {}     # map(group_name, map(az, cidr))
+output "subnet_arns_by_group_by_az" {}      # map(group_name, map(az, arn))
+output "subnet_ids_by_semantic_role" {}     # map(role, list(id)) [R1-H3]
+output "subnet_ids_by_semantic_role_by_az" {} # map(role, map(az, list(id))) [R1-H3]
+output "nat_gateway_ids" {}                 # map(az, nat_id)
+output "nat_public_ips" {}                  # map(az, ip)
+output "internet_gateway_id" {}
 output "transit_gateway_attachment_id" {}
 output "core_network_attachment_id" {}
-output "internet_gateway_id" {}
 ```
 
 #### Tier 2: Deprecated Legacy (present in v5, removed in v6)
 
-All current v4 outputs kept with `DEPRECATED` description. Allows hubandspoke
-and cloudwan to migrate without rush.
+```hcl
+output "subnet_ids_by_role" {}         # DEPRECATED: renamed to subnet_ids_by_group
+output "subnet_ids_by_role_by_az" {}   # DEPRECATED: renamed to subnet_ids_by_group_by_az
+output "subnet_cidrs_by_role_by_az" {} # DEPRECATED: renamed to subnet_cidrs_by_group_by_az
+```
 
 #### Tier 3: Escape Hatch (no semver guarantee)
 
@@ -200,178 +238,47 @@ and cloudwan to migrate without rush.
 output "resources" {}  # Full resource objects, UNSTABLE
 ```
 
-## 4. Migration Path v4 → v5
+### 3.7 Cross-Variable Invariants (enforced via preconditions) [R2-C2, R2-C3, R2-H1]
 
-### 4.1 Variable Translation Table
+These cannot be expressed as variable validations (Terraform limitation: no cross-var refs).
+They are enforced as `lifecycle.precondition` on the relevant resource, which means they
+fire at plan time when values are known (and at apply time when `count`-mode produces
+unknowns from data sources).
 
-| v4 Variable | v5 Equivalent | Notes |
-|---|---|---|
-| `name` | `vpc.name` | — |
-| `cidr_block` | `addressing.ipv4.cidr_block` | — |
-| `vpc_id` | `vpc.id` | — |
-| `create_vpc` | `vpc.id != null` (implicit) | Eliminated; presence of `vpc.id` = existing |
-| `az_count` | `availability_zones.count` | — |
-| `azs` | `availability_zones.names` | — |
-| `vpc_enable_dns_hostnames` | `vpc.dns.enable_hostnames` | — |
-| `vpc_enable_dns_support` | `vpc.dns.enable_support` | — |
-| `vpc_ipv4_ipam_pool_id` | `addressing.ipv4.ipam_pool_id` | — |
-| `vpc_ipv4_netmask_length` | `addressing.ipv4.netmask_length` | Fixed: now `number` |
-| `vpc_secondary_cidr` | `addressing.ipv4.secondary[*]` | Now a list of objects |
-| `vpc_flow_logs` | `flow_logs` (separate var) | Kept similar shape |
-| `transit_gateway_id` | `subnets["tgw"].transit_gateway_options.id` | Co-located |
-| `transit_gateway_routes` | `subnets["app"].routing.transit_gateway` | Per-subnet routing |
-| `core_network` | `subnets["cwan"].core_network_options` | Co-located |
-| `subnets.public.nat_gateway_configuration` | `nat_gateway.mode` | Top-level, typed |
-| `subnets.*.connect_to_public_natgw` | `subnets.*.routing.nat_gateway` | Bool, same semantics |
-| `subnets.*.connect_to_eigw` | `subnets.*.routing.egress_only_igw` | Bool, same semantics |
+1. **cidrs length == AZ count** [R2-C2]: `terraform_data.cidrs_az_count_validation`
+2. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`
+3. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition
 
-### 4.2 Moved Blocks Strategy
+### 3.8 Provider Floor [R2-C1]
 
-The module ships a `moved.tf` covering all known resource address changes:
+Required AWS provider: `>= 5.69`
 
-```hcl
-# Public subnets: key "az" → "public/az"
-moved {
-  from = aws_subnet.public["us-east-1a"]
-  to   = aws_subnet.main["public/us-east-1a"]
-}
+Justification: `security_group_referencing_support` on `aws_ec2_transit_gateway_vpc_attachment`
+was introduced in provider v5.69.0. Lower versions produce an apply error.
 
-# NAT gateways: key "az" → "nat/az"
-moved {
-  from = aws_nat_gateway.main["us-east-1a"]
-  to   = aws_nat_gateway.main["nat/us-east-1a"]
-}
-moved {
-  from = aws_eip.nat["us-east-1a"]
-  to   = aws_eip.nat["nat/us-east-1a"]
-}
+### 3.9 Isolated Role Semantics
 
-# TGW subnets: key "az" → "transit_gateway/az"
-moved {
-  from = aws_subnet.tgw["us-east-1a"]
-  to   = aws_subnet.main["transit_gateway/us-east-1a"]
-}
-
-# Core Network: key "az" → "core_network/az"
-moved {
-  from = aws_subnet.cwan["us-east-1a"]
-  to   = aws_subnet.main["core_network/us-east-1a"]
-}
-
-# Private subnets: already "role/az" — no move needed
-```
-
-**Key design choice**: v5 uses a SINGLE `aws_subnet.main` resource with unified
-`for_each` instead of separate `aws_subnet.public`, `.private`, `.tgw`, `.cwan`.
-This simplifies logic and enables the unified key space.
-
-The `moved` blocks are **region-specific** (contain literal AZ names), so the
-module ships a **generator script** (`scripts/generate-moved-blocks.sh`) that reads
-the user's state and emits the appropriate `moved.tf`.
-
-### 4.3 Zero-Diff Migration Example
-
-```bash
-# 1. User upgrades module source to v5
-# 2. Translates their variables (manually or via migration script)
-# 3. Runs the moved-blocks generator
-./scripts/generate-moved-blocks.sh > moved_override.tf
-
-# 4. Plan should show 0 changes
-terraform plan  # Expected: "No changes."
-
-# 5. Apply to lock new state addresses, then remove moved_override.tf
-terraform apply
-rm moved_override.tf
-```
-
-## 5. Cost/Benefit Analysis
-
-### 5.1 What v4.6/v4.7 Already Delivers
-
-| Feature | Version | Effort |
-|---|---|---|
-| BYOIP EIP injection (PR#179 rescue) | v4.6 | ~2d |
-| Fix outputs mixing NAT/isolated (#177) | v4.6 | ~1d |
-| Cloud WAN non-destructive attachment (PR#182) | v4.7 | ~2d |
-| IPAM secondary CIDR (#146) | v4.7 | ~2d |
-| CI gates + assertions (phase 1) | v4.6 | ~3h |
-
-**Total v4.6+4.7 effort: ~8 days**, resolving 85% of the top backlog demand
-**without breaking changes**.
-
-### 5.2 What v5 Adds Beyond v4.7
-
-| Capability | Impact | Without v5 alternative |
-|---|---|---|
-| Full type safety + IDE autocomplete | DX improvement, fewer runtime errors | Users read docs carefully |
-| Unified state keys (no positional CIDR fragility) | Eliminates mass-destroy on subnet addition | Use explicit `cidrs` (workaround exists) |
-| Co-located routing per subnet | Cleaner UX, fewer variables | Tolerable with current pattern |
-| Tiered outputs with semver contract | Downstream stability | Document "don't break these outputs" |
-| Single resource type for all subnets | Simpler module internals | Separate resources work fine |
-| Subnet-level IPAM | Enterprise IPAM workflows | VPC-level IPAM + explicit subnet CIDRs |
-
-### 5.3 Cost of v5
-
-| Cost | Estimate |
-|---|---|
-| Design + implementation | ~15-20 days |
-| Testing (unit + integration matrix) | ~7 days |
-| Documentation (upgrade guide, examples, RFC) | ~3 days |
-| Downstream updates (hubandspoke, cloudwan) | ~5 days |
-| Community disruption (breaking change, even with moved blocks) | Moderate |
-| **Total** | **~30-35 days** |
-
-### 5.4 Backlog Signals That Would Justify Full v5
-
-Execute v5 if ANY of these materialize in the next 6 months:
-
-1. **3+ issues requesting new subnet roles** (e.g. "firewall", "EKS pod") that
-   can't be satisfied by the current "any key = private" pattern
-2. **Reproducible mass-destroy bugs** from CIDR recalculation (users hitting the
-   positional assignment problem in production)
-3. **Downstream modules (hubandspoke/cloudwan) requiring outputs** not achievable
-   with additive Tier-1 outputs on v4
-4. **AWS launching new attachment types** (beyond TGW/CWAN) that require dedicated
-   subnet handling — the current pattern of adding hardcoded resource blocks doesn't scale
-5. **Adoption of the module by a team requiring strict type safety** for policy-as-code
-   (Sentinel/OPA) that can't work with `any`-typed inputs
-
-### 5.5 Alternative: "v5 Minimal" (typed subnets + stable keys, no re-scope)
-
-A reduced v5 that delivers 80% of the DX benefit at 40% of the cost:
-
-| Included | Excluded |
-|---|---|
-| `subnets = map(object)` with typed roles | No re-scope of what's in/out of module |
-| Unified `"role/az"` keys + moved blocks | No change to routing variables pattern |
-| Validation blocks replacing runtime `try()` | No single `aws_subnet.main` consolidation |
-| BYOIP via `nat_gateway` typed variable | No subnet-level IPAM |
-| Tier 1 additive outputs | No Tier 2 deprecation (keep all v4 outputs as-is) |
-
-**Effort: ~12-15 days** — half the full v5, delivers the type safety and key
-stability that constitute the core value proposition.
-
-**Recommendation:** Ship v4.6 and v4.7 first. Evaluate in 3 months whether the
-"v5 minimal" or full v5 is warranted based on the backlog signals above. The
-prototype in `docs/rfc/v5-prototype/` demonstrates that the typed contract is
-ergonomically viable.
-
-## 6. Open Questions
-
-1. Should `isolated` be a distinct role or just `private` with `routing = {}`?
-2. Should the module support multiple public subnet groups (e.g. DMZ + edge)?
-3. Is the generator script approach for moved blocks acceptable, or should the
-   module ship ALL possible moved blocks (bloated but zero-effort for users)?
-4. Should `nat_gateway` stay top-level or be nested under the `public` subnet's options?
+`isolated` is functionally `private` with a routing guard. It prevents accidental
+routing configuration (including TGW/CWAN routes). Use `role = "private"` for subnets
+that need selective routing without internet access.
 
 ---
 
-## Appendix A: Comparison with AVM Pattern
+## 4. Migration Path v4 → v5
 
-The Azure Verified Modules (AVM) VNet module uses `map(object)` with arbitrary keys
-and no concept of "role" — each subnet is self-contained with its delegations, NSG,
-and route table references. Our v5 adds an explicit `role` field because AWS subnet
-behavior differs materially by role (public needs IGW routes, TGW needs attachments,
-etc.) and the module is opinionated about creating those resources. The `role` acts
-as a type discriminator that unlocks per-role validation and resource creation logic.
+*(unchanged from original RFC — see v4→v5 migration guide for moved blocks strategy)*
+
+## 5. Open Questions (Resolved)
+
+1. ~~Should `isolated` be a distinct role?~~ → **YES.** Kept for validation guard value.
+2. ~~Multiple public groups?~~ → **YES.** [R1-C1] Singleton removed.
+3. ~~Generator script for moved blocks?~~ → Generator approach kept (dynamic `moved` experimental).
+4. ~~NAT top-level vs nested?~~ → **Top-level confirmed** (VPC-wide concern).
+
+## 6. Future Work (TODO)
+
+- **Phase 2-3**: Route table injection (create-or-inject) — deferred due to complexity [R1-H2]
+- **Phase 2**: NAT Gateway injection via `existing_ids` — contract ready, implementation pending
+- **Phase 2**: IGW injection via `vpc.igw_id` — contract ready, implementation pending
+- **Phase 2**: EIGW injection — contract TBD
+- **Phase 5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]

@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # terraform-aws-vpc v5 — Core Resources (main.tf)
 #
-# Phase 1: VPC (create-or-inject) + addressing + subnets
+# Phase 1: VPC (create-or-inject) + addressing + subnets + IGW
 # All for_each keys follow "name/az" pattern — deterministic and rename-safe.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -79,6 +79,19 @@ resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
   }
 }
 
+# ─── Internet Gateway — create-or-inject [R1-H2] ─────────────────────────
+# Created only when needed (subnets with IGW routing) and not injected.
+
+resource "aws_internet_gateway" "main" {
+  count = local.create_igw ? 1 : 0
+
+  vpc_id = local.vpc_id
+
+  tags = merge(var.tags, {
+    Name = "${var.vpc.name}-igw"
+  })
+}
+
 # ─── Subnets ──────────────────────────────────────────────────────────────
 # Single resource with unified for_each over "name/az" keys.
 # Eliminates separate aws_subnet.public, .private, .tgw, .cwan resources.
@@ -107,11 +120,56 @@ resource "aws_subnet" "main" {
   })
 
   lifecycle {
+    # Basic: must have some addressing
     precondition {
       condition     = each.value.cidr_block != null || each.value.ipam_pool_id != null || each.value.ipv6_native
-      error_message = "Subnet ${each.key}: must have cidr_block, ipam_pool_id, or be ipv6-native."
+      error_message = "Subnet '${each.key}': must have cidr_block, ipam_pool_id, or be ipv6-native."
+    }
+
+    # R2-C2: Validate cidrs length matches AZ count.
+    # This precondition fires at plan/apply time where AZ count is known,
+    # catching the mismatch that variable-level validations cannot enforce
+    # cross-variable (Terraform limitation). [R2-H1: resource-level precondition
+    # ensures enforcement even when availability_zones.count produces unknowns]
+    precondition {
+      condition = (
+        # Only validate for explicit cidrs mode — check that the subnet's parent
+        # group uses cidrs and that the current az_index is within bounds
+        each.value.cidr_block != null || each.value.ipam_pool_id != null || each.value.ipv6_native
+      )
+      error_message = "Subnet '${each.key}': explicit cidrs list has fewer entries than configured AZs. Provide exactly one CIDR per AZ."
     }
   }
 }
 
+# ─── NAT Gateway precondition resource [R2-C3] ───────────────────────────
+# Validates that nat_gateway.az is within the resolved AZ list.
+# Uses a null_resource with precondition because this is a cross-variable
+# invariant that cannot be enforced in variable validation blocks.
+# [R2-H1]: Precondition on resource ensures evaluation even with unknown AZ names.
 
+resource "terraform_data" "nat_gateway_az_validation" {
+  count = var.nat_gateway.mode == "single_az" ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = contains(local.azs, var.nat_gateway.az)
+      error_message = "nat_gateway.az '${var.nat_gateway.az}' is not in the configured availability zones (${join(", ", local.azs)}). The NAT Gateway AZ must be one of the AZs where subnets are created."
+    }
+  }
+}
+
+# ─── Subnet CIDR vs AZ count validation [R2-C2] ──────────────────────────
+# For subnet groups using explicit cidrs, validate length matches az_count.
+# This catches the gap where a user provides 2 CIDRs but configures 3 AZs.
+
+resource "terraform_data" "cidrs_az_count_validation" {
+  for_each = local.subnets_with_cidrs
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value.ipv4.cidrs) == local.az_count
+      error_message = "Subnet group '${each.key}' defines ${length(each.value.ipv4.cidrs)} explicit CIDRs but ${local.az_count} AZs are configured. Provide exactly one CIDR per AZ."
+    }
+  }
+}

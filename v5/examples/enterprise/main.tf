@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 2: Enterprise — IPAM + Explicit CIDRs + Multiple Tiers
+# Demonstrates cidr_index pinning [R1-C2] for production stability.
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -7,7 +8,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
+      version = ">= 5.69"
     }
   }
 }
@@ -103,9 +104,13 @@ output "vpc_id" {
 }
 
 output "subnet_ids" {
-  value = module.vpc.subnet_ids_by_role_by_az
+  value = module.vpc.subnet_ids_by_group_by_az
 }
 
 output "subnet_cidrs" {
-  value = module.vpc.subnet_cidrs_by_role_by_az
+  value = module.vpc.subnet_cidrs_by_group_by_az
+}
+
+output "subnets_by_role" {
+  value = module.vpc.subnet_ids_by_semantic_role
 }

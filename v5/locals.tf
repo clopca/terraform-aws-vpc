@@ -6,14 +6,51 @@
 #   2. IPAM: ipam_pool_id + netmask_length — AWS allocates at apply time.
 #   3. NETMASK (calculated): deterministic derivation from VPC CIDR.
 #
-# Deterministic CIDR Calculation (netmask mode):
-#   - Subnet groups using `netmask` are sorted ALPHABETICALLY by map key name.
-#   - Within each group, AZs are assigned in the order defined in local.azs.
-#   - The algorithm: for each group (sorted by name), allocate N contiguous blocks
-#     (where N = number of AZs) of size /netmask from the VPC CIDR.
-#   - Result: adding/removing a subnet group ONLY affects groups that sort AFTER it.
-#   - Result: adding/removing an AZ ONLY affects the last AZ slots within each group.
-#   - NEVER positional by insertion order — always alphabetical by name.
+# ═══════════════════════════════════════════════════════════════════════════════
+# DETERMINISTIC CIDR CALCULATION — STABILITY PROOF [R1-C2]
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Algorithm (two-tier with pinning):
+#
+#   TIER 1 — PINNED GROUPS (cidr_index set):
+#     Groups with explicit `cidr_index` are allocated FIRST, using their index
+#     as the network number within their netmask's address space.
+#     These are immune to any addition/removal of other groups.
+#
+#   TIER 2 — UNPINNED GROUPS (cidr_index = null):
+#     Remaining groups are allocated after all pinned slots, sorted by:
+#       1. Netmask size DESCENDING (larger blocks = smaller netmask number first)
+#       2. Alphabetically by key name within same netmask
+#     Sequential network numbers start AFTER the highest pinned index.
+#
+# STABILITY GUARANTEES:
+#
+#   Scenario 1: Add a new group "beta" (unpinned) to existing ["alpha", "gamma"]
+#     Before: alpha=netnum 0, gamma=netnum 1
+#     After:  alpha=netnum 0, beta=netnum 1, gamma=netnum 2
+#     ⚠️ gamma's CIDR SHIFTS. This is the documented trade-off of netmask mode.
+#
+#   Scenario 2: Same setup but alpha has cidr_index=0, gamma has cidr_index=5
+#     Before: alpha=netnum 0 (pinned), gamma=netnum 5 (pinned)
+#     After:  alpha=netnum 0 (pinned), gamma=netnum 5 (pinned), beta=netnum 6 (unpinned, after max pin)
+#     ✅ Neither alpha nor gamma shifts. Beta gets the next available slot.
+#
+#   Scenario 3: Remove "beta" from ["alpha", "beta", "gamma"] (all unpinned)
+#     Before: alpha=netnum 0, beta=netnum 1, gamma=netnum 2
+#     After:  alpha=netnum 0, gamma=netnum 1
+#     ⚠️ gamma shifts. Use pinning or explicit cidrs for immutable allocations.
+#
+#   Scenario 4: Add AZ to existing 2-AZ deployment
+#     Only the NEW AZ slots are appended within each group. Existing AZ CIDRs
+#     are stable (network number = group_offset * az_count + az_index).
+#     ⚠️ If az_count changes, groups that used to fit may now overlap with the
+#     next group's space. Use explicit cidrs for production multi-AZ changes.
+#
+# PRODUCTION RECOMMENDATION:
+#   Use explicit `cidrs` for any subnet group that must never shift.
+#   Use `cidr_index` for development/staging where you want auto-calculation
+#   with guaranteed slot reservation.
+#   Use bare `netmask` only for throwaway environments where destroy is acceptable.
 #
 # State Key Format: "${subnet_group_name}/${az}" for ALL resources.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,6 +59,7 @@ locals {
   # ─── AZ Resolution ───────────────────────────────────────────────────────
   # When `names` is provided, use directly. When `count` is used, we rely on
   # the data source (defined in main.tf) to get region AZs.
+  # [R1-H4]: count mode depends on data source ordering — development only.
   azs      = coalesce(var.availability_zones.names, data.aws_availability_zones.current[0].names)
   az_count = length(local.azs)
 
@@ -47,33 +85,11 @@ locals {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.ipam_pool_id != null
   }
 
-  # ─── Deterministic CIDR Calculation (netmask mode) ──────────────────────
-  # Step 1: Build an ordered list of (name, netmask, az_index) tuples sorted by
-  #          name (alphabetical) then AZ index. This defines the allocation order.
+  # ─── Deterministic CIDR Calculation with Pinning [R1-C2] ───────────────
   #
-  # The algorithm uses `cidrsubnet()` with a sequential network number.
-  # Each subnet group consumes `az_count` consecutive slots at its netmask size.
-  #
-  # To handle mixed netmask sizes (e.g. /22 and /24), we allocate in groups
-  # sorted by netmask size DESC (larger blocks first to avoid fragmentation),
-  # then alphabetically within same size.
-
-  netmask_groups_sorted = sort([
-    for name, cfg in local.subnets_with_netmask :
-    # Composite sort key: netmask (zero-padded for proper string sort) + name
-    # Smaller netmask number = larger block = allocate first
-    format("%02d|%s", cfg.ipv4.netmask, name)
-  ])
-
-  # Step 2: Build the sequential allocation with a running offset per netmask size.
-  # Because cidrsubnet needs a uniform newbits value per call, we group by netmask.
-  # Each netmask size gets its own cidrsubnet space from the VPC CIDR.
-  #
-  # For each unique netmask, calculate:
-  #   newbits = subnet_netmask - vpc_prefix_length
-  #   max_subnets = 2^newbits
-  #
-  # Allocation order within a netmask group: alphabetical by name, then by AZ order.
+  # Two-tier allocation:
+  #   1. Pinned groups (cidr_index != null) — reserved slots, immune to changes
+  #   2. Unpinned groups — sequential after highest pinned slot, alphabetical
 
   vpc_prefix_length = tonumber(split("/", local.vpc_cidr)[1])
 
@@ -82,28 +98,101 @@ locals {
     for name, cfg in local.subnets_with_netmask : cfg.ipv4.netmask
   ]))
 
-  # For each netmask value, which subnet groups use it (sorted alphabetically)
-  groups_by_netmask = {
+  # ── Per-netmask: separate pinned from unpinned groups ──
+
+  # Pinned groups per netmask (sorted by cidr_index)
+  pinned_by_netmask = {
     for nm in local.unique_netmasks : nm => sort([
-      for name, cfg in local.subnets_with_netmask : name if cfg.ipv4.netmask == nm
+      for name, cfg in local.subnets_with_netmask :
+      format("%06d|%s", cfg.ipv4.cidr_index, name)
+      if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
     ])
   }
 
-  # Calculate CIDRs: for each netmask, assign sequential network numbers
-  # to groups (alphabetically) × AZs (in local.azs order)
-  calculated_cidrs = merge([
-    for nm in local.unique_netmasks : {
-      for pair in flatten([
-        for gi, group_name in local.groups_by_netmask[nm] : [
-          for ai, az in local.azs : {
-            key     = "${group_name}/${az}"
-            netnum  = gi * local.az_count + ai
-            newbits = nm - local.vpc_prefix_length
-          }
-        ]
-      ]) : pair.key => cidrsubnet(local.vpc_cidr, pair.newbits, pair.netnum)
+  # Unpinned groups per netmask (sorted alphabetically)
+  unpinned_by_netmask = {
+    for nm in local.unique_netmasks : nm => sort([
+      for name, cfg in local.subnets_with_netmask : name
+      if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index == null
+    ])
+  }
+
+  # Highest pinned cidr_index per netmask (to start unpinned after it)
+  max_pinned_index_by_netmask = {
+    for nm in local.unique_netmasks : nm => (
+      length([
+        for name, cfg in local.subnets_with_netmask :
+        cfg.ipv4.cidr_index
+        if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
+      ]) > 0 ?
+      max([
+        for name, cfg in local.subnets_with_netmask :
+        cfg.ipv4.cidr_index
+        if cfg.ipv4.netmask == nm && cfg.ipv4.cidr_index != null
+      ]...) : -1
+    )
+  }
+
+  # ── Calculate CIDRs ──
+  # Pinned groups: use their cidr_index directly as the group offset
+  # Unpinned groups: start after (max_pinned_index + 1), sequential
+
+  calculated_cidrs = merge(
+    # Pinned CIDRs
+    merge([
+      for nm in local.unique_netmasks : {
+        for pair in flatten([
+          for entry in local.pinned_by_netmask[nm] : [
+            for ai, az in local.azs : {
+              key     = "${split("|", entry)[1]}/${az}"
+              netnum  = tonumber(split("|", entry)[0]) * local.az_count + ai
+              newbits = nm - local.vpc_prefix_length
+            }
+          ]
+        ]) : pair.key => cidrsubnet(local.vpc_cidr, pair.newbits, pair.netnum)
+      }
+    ]...),
+    # Unpinned CIDRs
+    merge([
+      for nm in local.unique_netmasks : {
+        for pair in flatten([
+          for gi, group_name in local.unpinned_by_netmask[nm] : [
+            for ai, az in local.azs : {
+              key     = "${group_name}/${az}"
+              netnum  = (local.max_pinned_index_by_netmask[nm] + 1 + gi) * local.az_count + ai
+              newbits = nm - local.vpc_prefix_length
+            }
+          ]
+        ]) : pair.key => cidrsubnet(local.vpc_cidr, pair.newbits, pair.netnum)
+      }
+    ]...)
+  )
+
+  # ─── IGW: create-or-inject [R1-H2] ─────────────────────────────────────
+  # Determine if any subnet needs an IGW
+  needs_igw = anytrue([
+    for k, v in var.subnets :
+    v.role == "public" || try(v.routing.internet_gateway, false) == true
+  ])
+  create_igw = local.needs_igw && var.vpc.igw_id == null
+  igw_id     = local.create_igw ? try(aws_internet_gateway.main[0].id, null) : var.vpc.igw_id
+
+  # ─── Routing: resolve internet_gateway default [R2-H3] ──────────────────
+  # null = auto: true for public role, false for everything else
+  resolved_routing = {
+    for name, cfg in var.subnets : name => {
+      nat_gateway     = try(cfg.routing.nat_gateway, false)
+      egress_only_igw = try(cfg.routing.egress_only_igw, false)
+      internet_gateway = coalesce(
+        try(cfg.routing.internet_gateway, null),
+        cfg.role == "public" ? true : false
+      )
+      transit_gateway      = try(cfg.routing.transit_gateway, null)
+      transit_gateway_ipv6 = try(cfg.routing.transit_gateway_ipv6, null)
+      core_network         = try(cfg.routing.core_network, null)
+      core_network_ipv6    = try(cfg.routing.core_network_ipv6, null)
     }
-  ]...)
+  }
 
   # ─── Flat Subnet Map: "name/az" → config ────────────────────────────────
   # This is the master map that drives aws_subnet.main for_each.
@@ -135,7 +224,7 @@ locals {
         assign_ipv6 = try(cfg.ipv6.auto_assign, false)
 
         # Routing config (carried through for phases 2+)
-        routing = cfg.routing
+        routing = local.resolved_routing[name]
 
         # Role-specific
         map_public_ip           = cfg.role == "public" ? try(cfg.public_options.map_public_ip, true) : false
