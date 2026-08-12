@@ -55,6 +55,14 @@ run "plan_representative_v5_moves" {
   }
 }
 
+run "validate_root_migration_handoff_syntax" {
+  command = plan
+
+  module {
+    source = "./tests/fixtures/migration-root-handoff"
+  }
+}
+
 run "plan_full_migration_example" {
   command   = plan
   state_key = "full-migration-syntax"

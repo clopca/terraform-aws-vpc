@@ -21,9 +21,10 @@
 #   - Lattice: 1; CloudWatch Flow Log + role: 2
 #
 # aws_vpc.main[0] and aws_internet_gateway.main[0] retain their addresses. The
-# v4 CloudWatch log group deliberately has no moved block: preserve its generated
-# physical name and use the root `removed { destroy = false }` plus `import` blocks
-# shown in main.tf. The same complete normal plan evaluates all state transitions.
+# v4 CloudWatch log group, managed policy, and attachment deliberately have no
+# moved blocks: use the three root `removed { destroy = false }` blocks plus the
+# log-group `import` shown in main.tf. The same complete zero-destroy plan evaluates
+# every state transition; IAM cleanup occurs only after delivery verification.
 
 # Public subnet group — keep only when v4 state contains `aws_subnet.public`.
 moved {

@@ -106,13 +106,29 @@ module "vpc" {
 
 # Migration-only root blocks (Terraform >= 1.7).
 #
-# Copy this example into the caller root and uncomment exactly one `removed`
-# block plus one `import` block. They remain comments here because Terraform
+# Copy this example into the caller root and uncomment all three `removed`
+# blocks plus the `import` block. They remain comments here because Terraform
 # forbids import blocks when this example is loaded as a child module by native
-# plan tests.
+# plan tests. `removed.from` module segments must not contain instance keys.
 #
 # removed {
-#   from = module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main
+#   from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main
+#
+#   lifecycle {
+#     destroy = false
+#   }
+# }
+#
+# removed {
+#   from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_policy.main
+#
+#   lifecycle {
+#     destroy = false
+#   }
+# }
+#
+# removed {
+#   from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_role_policy_attachment.main
 #
 #   lifecycle {
 #     destroy = false

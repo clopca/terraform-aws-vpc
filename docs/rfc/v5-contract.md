@@ -3,7 +3,7 @@
 > **Status:** Draft / Phase 6 audited; remediation batches 1, 2, and 4 implemented (live AWS migration revalidation remains pending)
 >
 > **Remediation batch 6 (2026-08-13):**
-> - Flow Logs migration now uses one declarative removed/import handoff in the normal-plan gate.
+> - Flow Logs migration now uses three non-destructive declarative forgets plus one log-group import in the zero-destroy normal-plan gate.
 > - `nat_gateway.mode = "regional"` creates one public VPC-level NAT, supports AWS automatic IP management or manual existing/BYOIP addresses, and preserves AZ-keyed routing/output shapes.
 > - Regional NAT requires no public host subnet; private NAT remains zonal.
 >
@@ -652,9 +652,9 @@ The validateable skeleton under `v5/examples/migration-from-v4` contains a
 63-block feature union, not a required per-deployment count: the remediation-3
 fixture selected 26 applicable sources and omitted 37 absent-feature blocks. The
 v4 CloudWatch log group is intentionally excluded from moved blocks: ADR-F4-1
-configures the generated physical name and performs one declarative
-`removed { destroy=false }` plus `import` handoff in the same complete normal plan
-that serves as the acceptance gate. Static moved addresses are otherwise intentional:
+configures the generated physical name and performs three declarative
+`removed { destroy=false }` forgets plus one log-group `import` in the same
+zero-destroy normal plan that serves as the acceptance gate. Static moved addresses are otherwise intentional:
 Terraform does not permit variables or wildcards in moved addresses, so callers
 substitute their actual AZs, private group keys, route destinations, and optional
 resources.
