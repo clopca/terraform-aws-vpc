@@ -41,7 +41,7 @@
 >   IDs; attachment IDs; Flow Log IDs/destinations/roles; VPC identity; and AZs.
 > - Tier 2 reproduces every v4 output name and its outer key/scalar/full-object
 >   shape. Reserved-group AZ keys and private `<group>/<az>` keys are preserved.
-> - Tier 3 exposes complete provider resource objects and has no semver guarantee.
+> - Tier 3 exposes internal provider resource collections without a semver guarantee; `flow_log_roles` is projected to non-deprecated identity attributes.
 > - `v5-migration.md` and the `migration-from-v4` example provide exact variable/
 >   output mappings plus 64 representative `moved` blocks.
 > - Contract-closing validations enforce pinned-index uniqueness, key grammar,
@@ -415,13 +415,16 @@ require migrated groups to retain the v4 keys `public`, `transit_gateway`, and
 The pre-publication aliases `subnet_ids_by_role`, `subnet_ids_by_role_by_az`, and
 `subnet_cidrs_by_role_by_az` also remain deprecated through v5.
 
-#### Tier 3: complete-object escape hatch (no semver guarantee)
+#### Tier 3: internal-resource escape hatch (no semver guarantee)
 
-`resources` exposes complete created/existing VPC collections, subnets, route
-tables and associations, gateways, EIPs/NAT Gateways, attachments/accepter,
-Flow Logs and CloudWatch/IAM resources, Lattice associations, secondary CIDR
-associations, BPA/DHCP resources, injected handles, and every route collection.
-Its shape may change in any release.
+`resources` exposes created/existing VPC collections, subnets, route tables and
+associations, gateways, EIPs/NAT Gateways, attachments/accepter, Flow Logs and
+CloudWatch/IAM resources, Lattice associations, secondary CIDR associations,
+BPA/DHCP resources, injected handles, and every route collection. Provider
+objects are complete except `flow_log_roles`, whose entries are projected to
+`arn`, `id`, `name`, and `unique_id` so the output does not evaluate the AWS
+provider's deprecated `inline_policy` attribute. Its shape may change in any
+release.
 
 ### 3.7 Cross-Variable Invariants (enforced via preconditions) [R2-C2, R2-C3, R2-H1]
 

@@ -54,10 +54,13 @@ module "vpc" {
 ```
 
 Complete configurations are available in [`examples/basic`](examples/basic),
-[`examples/enterprise`](examples/enterprise), and [`examples/hub`](examples/hub).
-The hub example requires real IDs/ARNs for its externally managed IGW, EIPs,
-Transit Gateway, Cloud WAN Core Network, and Firehose destination; its validated
-input variables keep synthetic placeholders out of executable configuration.
+[`examples/enterprise`](examples/enterprise), [`examples/hub`](examples/hub),
+[`examples/nat_byoip`](examples/nat\_byoip), [`examples/ipam`](examples/ipam),
+[`examples/dual_stack`](examples/dual\_stack), and the state-oriented
+[`examples/migration-from-v4`](examples/migration-from-v4) skeleton. The hub and
+dedicated feature examples document the external IDs/ARNs or IPAM pools that must
+exist before apply; validated variables keep synthetic placeholders out of
+production execution.
 
 ## Address stability
 
@@ -142,15 +145,20 @@ from exactly one module instance.
   names and outer keys during v5. They are removed in v6. Keep migrated reserved
   group names (`public`, `transit_gateway`, `core_network`) and Flow Log key
   `default` for exact compatibility.
-- **Tier 3 — escape hatch:** `resources` exposes complete provider objects and has
-  no semver guarantee.
+- **Tier 3 — escape hatch:** `resources` exposes internal resource collections and
+  has no semver guarantee. Provider objects are complete except
+  `flow_log_roles`, whose entries intentionally contain only `arn`, `id`, `name`,
+  and `unique_id` so the output never evaluates deprecated IAM role attributes.
 
 Prefer Tier 1 for every new consumer. Tier 2 exists only to migrate existing v4
 dependencies; Tier 3 is for provider attributes not represented by a stable handle.
+See [How to use v5 module outputs](docs/how-to-use-outputs.md) for composition
+examples and null/empty collection conventions.
 
 ## Migration from v4
 
-Follow the normative [v4 to v5 migration runbook](../docs/rfc/v5-migration.md).
+Follow the normative [v5 upgrade guide](docs/UPGRADE-GUIDE-5.0.md). The internal
+[migration RFC](../docs/rfc/v5-migration.md) retains rationale and fixture evidence.
 It includes the exact v4 Name formats, input/output mapping, a 63-block
 feature-union moved catalog (the real remediation fixture selected 26 and omitted
 37 absent sources), a refresh-only state-address materialization step before the
@@ -160,11 +168,11 @@ state and keep the caller-owned `moved.tf` until every workspace has upgraded.
 
 ## Native tests
 
-The test suite currently has **49 passing runs** across 11 files, with 60 planned-
-attribute assertions and 21 negative runs using `expect_failures`. Regression plans
-inspect effective VPC/subnet IPv6 arguments, AZ slicing, stable secondary IPAM,
-D6 resources, create-or-inject boundaries, routing, and composition with computed
-IDs—not only output shapes. Module tests are plan-only. The migration fixture
+The complete native suite covers positive plans, negative validation contracts, and
+the seven examples. Regression plans inspect effective VPC/subnet IPv6 arguments,
+AZ slicing, stable secondary IPAM, D6 resources, create-or-inject boundaries,
+routing, computed IDs, output sentinels, and dedicated NAT/IPAM/dual-stack
+examples—not only output shapes. Module tests are plan-only. The migration fixture
 performs one apply against the mock provider solely to seed ephemeral test state,
 then verifies representative v4-to-v5 moves with a plan. Run:
 
@@ -182,14 +190,14 @@ Mock providers require Terraform `>= 1.7` when running tests.
 ## Requirements
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.29 |
 
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.29 |
 | <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
@@ -200,7 +208,7 @@ No modules.
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [aws_cloudwatch_log_group.flow_logs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
 | [aws_ec2_transit_gateway_vpc_attachment.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_transit_gateway_vpc_attachment) | resource |
 | [aws_egress_only_internet_gateway.main](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/egress_only_internet_gateway) | resource |
@@ -261,7 +269,7 @@ No modules.
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_addressing"></a> [addressing](#input\_addressing) | IPv4 and/or IPv6 addressing for the VPC. Supports static CIDR, IPAM, or<br/>Amazon-assigned IPv6. At least one of ipv4 or ipv6 must be configured.<br/>For IPv6 IPAM, provide ipam\_pool\_id plus exactly one of cidr\_block or<br/>netmask\_length. An empty IPv6 object is valid only when injecting a VPC and<br/>discovering its existing IPv6 association. | <pre>object({<br/>    ipv4 = optional(object({<br/>      cidr_block     = optional(string)<br/>      ipam_pool_id   = optional(string)<br/>      netmask_length = optional(number)<br/>      secondary = optional(map(object({<br/>        create         = optional(bool, true)<br/>        association_id = optional(string)<br/>        cidr_block     = optional(string)<br/>        ipam_pool_id   = optional(string)<br/>        netmask_length = optional(number)<br/>      })), {})<br/>    }))<br/>    ipv6 = optional(object({<br/>      amazon_assigned = optional(bool, false)<br/>      cidr_block      = optional(string)<br/>      ipam_pool_id    = optional(string)<br/>      netmask_length  = optional(number)<br/>    }))<br/>  })</pre> | n/a | yes |
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | AZ selection. Provide either an explicit list of AZ names or a count<br/>(takes first N from the region alphabetically). Exactly one is required.<br/><br/>⚠️  `count` mode is for DEVELOPMENT ONLY. For production, always use explicit<br/>`names` to guarantee AZ stability. Because `count` resolves AZ names through an<br/>AWS data source, preconditions that depend on the resolved AZ set are unknown<br/>during the initial plan and are deferred by Terraform to apply time. | <pre>object({<br/>    names = optional(list(string))<br/>    count = optional(number)<br/>  })</pre> | n/a | yes |
 | <a name="input_vpc"></a> [vpc](#input\_vpc) | VPC configuration. Set `create = false` and `id` to reference an existing VPC.<br/>The explicit boolean decides resource cardinality, so `id` may be computed by an<br/>upstream resource or module without making count/for\_each unknown.<br/><br/>Set `igw_create = false` and `igw_id` to inject an existing Internet Gateway.<br/>Set `eigw_create = false` and `eigw_id` to inject an existing egress-only<br/>Internet Gateway. Gateway resources are created only when resolved routing<br/>requires them. Gateway Name tags accept a complete format with `{vpc}`;<br/>gateway-specific tags override global tags while the generated Name wins last. | <pre>object({<br/>    name             = string<br/>    create           = optional(bool, true)<br/>    id               = optional(string)<br/>    igw_create       = optional(bool, true)<br/>    igw_id           = optional(string)<br/>    igw_name_format  = optional(string, "{vpc}-igw")<br/>    igw_tags         = optional(map(string), {})<br/>    eigw_create      = optional(bool, true)<br/>    eigw_id          = optional(string)<br/>    eigw_name_format = optional(string, "{vpc}-eigw")<br/>    eigw_tags        = optional(map(string), {})<br/>    instance_tenancy = optional(string, "default")<br/>    dns = optional(object({<br/>      enable_hostnames = optional(bool, true)<br/>      enable_support   = optional(bool, true)<br/>    }), {})<br/>    tags = optional(map(string), {})<br/>  })</pre> | n/a | yes |
@@ -276,7 +284,7 @@ No modules.
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_azs"></a> [azs](#output\_azs) | List of Availability Zones where subnets were created. |
 | <a name="output_core_network_attachment"></a> [core\_network\_attachment](#output\_core\_network\_attachment) | DEPRECATED: v4-compatible full Cloud WAN attachment object. Use core\_network\_attachment\_id. Removed in v6. |
 | <a name="output_core_network_attachment_accepter_id"></a> [core\_network\_attachment\_accepter\_id](#output\_core\_network\_attachment\_accepter\_id) | Cloud WAN attachment accepter ID (created or injected), or null when acceptance is not managed. |
@@ -299,7 +307,7 @@ No modules.
 | <a name="output_natgw_id_per_az"></a> [natgw\_id\_per\_az](#output\_natgw\_id\_per\_az) | DEPRECATED: v4-compatible map(az, object({id=string})); duplicates the selected ID in single\_az mode. Use nat\_gateway\_ids. Removed in v6. |
 | <a name="output_private_subnet_attributes_by_az"></a> [private\_subnet\_attributes\_by\_az](#output\_private\_subnet\_attributes\_by\_az) | DEPRECATED: v4-compatible map of full private subnet objects keyed '<group>/<az>'. Use Tier 1 subnet outputs. Removed in v6. |
 | <a name="output_public_subnet_attributes_by_az"></a> [public\_subnet\_attributes\_by\_az](#output\_public\_subnet\_attributes\_by\_az) | DEPRECATED: v4-compatible map of full public subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6. |
-| <a name="output_resources"></a> [resources](#output\_resources) | UNSTABLE: complete internal resource objects for advanced composition. Shape may change in any release; prefer Tier 1. |
+| <a name="output_resources"></a> [resources](#output\_resources) | UNSTABLE: internal resource collections for advanced composition. Provider objects are complete except flow\_log\_roles (arn/id/name/unique\_id only). Shape may change in any release; prefer Tier 1. |
 | <a name="output_route_table_ids_by_group"></a> [route\_table\_ids\_by\_group](#output\_route\_table\_ids\_by\_group) | Route table IDs by subnet group. Shape: map(group\_name, list(route\_table\_id)). |
 | <a name="output_route_table_ids_by_group_by_az"></a> [route\_table\_ids\_by\_group\_by\_az](#output\_route\_table\_ids\_by\_group\_by\_az) | Route table IDs by subnet group and AZ. Shape: map(group\_name, map(az, route\_table\_id)). |
 | <a name="output_route_table_ids_by_semantic_role"></a> [route\_table\_ids\_by\_semantic\_role](#output\_route\_table\_ids\_by\_semantic\_role) | Route table IDs by semantic role. Shape: map(role, list(route\_table\_id)). |
@@ -318,7 +326,7 @@ No modules.
 | <a name="output_subnet_ids_by_role_by_az"></a> [subnet\_ids\_by\_role\_by\_az](#output\_subnet\_ids\_by\_role\_by\_az) | DEPRECATED: prototype alias keyed by group name. Use subnet\_ids\_by\_group\_by\_az. Removed in v6. |
 | <a name="output_subnet_ids_by_semantic_role"></a> [subnet\_ids\_by\_semantic\_role](#output\_subnet\_ids\_by\_semantic\_role) | Subnet IDs by semantic role. Shape: map(role, list(subnet\_id)). |
 | <a name="output_subnet_ids_by_semantic_role_by_az"></a> [subnet\_ids\_by\_semantic\_role\_by\_az](#output\_subnet\_ids\_by\_semantic\_role\_by\_az) | Subnet IDs by semantic role and AZ. Shape: map(role, map(az, list(subnet\_id))). |
-| <a name="output_subnet_ipv6_cidrs_by_group_by_az"></a> [subnet\_ipv6\_cidrs\_by\_group\_by\_az](#output\_subnet\_ipv6\_cidrs\_by\_group\_by\_az) | Subnet IPv6 CIDRs by group and AZ. Shape: map(group\_name, map(az, cidr\|null)). |
+| <a name="output_subnet_ipv6_cidrs_by_group_by_az"></a> [subnet\_ipv6\_cidrs\_by\_group\_by\_az](#output\_subnet\_ipv6\_cidrs\_by\_group\_by\_az) | Subnet IPv6 CIDRs by group and AZ. Shape: map(group\_name, map(az, cidr\|null)); the value is null when a subnet has no IPv6 association. |
 | <a name="output_tgw_subnet_attributes_by_az"></a> [tgw\_subnet\_attributes\_by\_az](#output\_tgw\_subnet\_attributes\_by\_az) | DEPRECATED: v4-compatible map of full TGW subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6. |
 | <a name="output_transit_gateway_attachment_id"></a> [transit\_gateway\_attachment\_id](#output\_transit\_gateway\_attachment\_id) | Transit Gateway VPC attachment ID, or null when the role is absent. |
 | <a name="output_vpc_arn"></a> [vpc\_arn](#output\_vpc\_arn) | The ARN of the VPC (created or referenced). |

@@ -9,7 +9,7 @@ This example is a **state-migration skeleton**, not a new-network template. It d
 - the exceptional remove/import cutover for a v4-created CloudWatch log group;
 - an ordered Flow Logs IAM policy transition with no delivery-permission gap.
 
-Follow the user-facing [v5 upgrade guide](../../../docs/UPGRADE-GUIDE-5.0.md). The detailed [migration RFC](../../../docs/rfc/v5-migration.md) records rationale and fixture evidence.
+Follow the user-facing [v5 upgrade guide](../../docs/UPGRADE-GUIDE-5.0.md). The detailed [migration RFC](../../../docs/rfc/v5-migration.md) records rationale and fixture evidence.
 
 ## State transition
 

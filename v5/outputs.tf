@@ -9,8 +9,9 @@
 # object values. These aliases exist for downstream migration during v5 and are
 # removed in v6. Provider object attributes are controlled by the AWS provider.
 #
-# Tier 3 — Escape hatch: complete internal resource objects. No semver guarantee;
-# use only when no Tier 1 handle covers the integration.
+# Tier 3 — Escape hatch: internal resource collections with no semver guarantee.
+# Provider objects are complete except flow_log_roles, which is projected to
+# arn/id/name/unique_id to avoid evaluating deprecated provider attributes.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -438,7 +439,7 @@ output "subnet_cidrs_by_role_by_az" {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 output "resources" {
-  description = "UNSTABLE: complete internal resource objects for advanced composition. Shape may change in any release; prefer Tier 1."
+  description = "UNSTABLE: internal resource collections for advanced composition. Provider objects are complete except flow_log_roles (arn/id/name/unique_id only). Shape may change in any release; prefer Tier 1."
   value = {
     vpc = {
       created  = aws_vpc.main

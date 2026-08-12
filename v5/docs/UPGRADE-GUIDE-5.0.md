@@ -1,6 +1,8 @@
-# terraform-aws-vpc migration guide: v4 to v5
+# Upgrade guide: terraform-aws-vpc v4 to v5
 
-> **Internal design and evidence reference.** End users should follow the polished [v5 upgrade guide](../../v5/docs/UPGRADE-GUIDE-5.0.md). This RFC retains implementation rationale, fixture evidence, and ADRs. Always rehearse against copied production state; caller-specific `moved` blocks cannot contain variables, wildcards, or generated keys.
+> **Production migration runbook.** Rehearse every step against a copy of production state and keep a recoverable state backup before each address transition. The v5 module cannot generate caller-specific `moved` blocks because Terraform addresses cannot contain variables or wildcards.
+>
+> The implementation rationale, test-fixture evidence, and accepted design decisions remain in the internal [migration RFC](../../docs/rfc/v5-migration.md). The executable catalog is [`examples/migration-from-v4/moved.tf`](../examples/migration-from-v4/moved.tf).
 
 ## Migration safety contract
 
