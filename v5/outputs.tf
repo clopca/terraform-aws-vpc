@@ -81,10 +81,12 @@ output "subnet_cidrs_by_group_by_az" {
 }
 
 output "subnet_ipv6_cidrs_by_group_by_az" {
-  description = "Subnet IPv6 CIDRs by group and AZ. Shape: map(group_name, map(az, cidr|null))."
+  description = "Subnet IPv6 CIDRs by group and AZ. Shape: map(group_name, map(az, cidr|null)); the value is null when a subnet has no IPv6 association."
   value = {
     for name in sort(keys(var.subnets)) : name => {
-      for az in local.azs : az => local.subnet_ipv6_cidrs["${name}/${az}"]
+      for az in local.azs : az => (
+        local.subnet_ipv6_cidrs["${name}/${az}"] == "" ? null : local.subnet_ipv6_cidrs["${name}/${az}"]
+      )
     }
   }
 }
@@ -465,10 +467,17 @@ output "resources" {
       core_network    = local.core_network_attachment_id
       core_accepter   = local.core_network_accepter_id
     }
-    flow_logs                          = aws_flow_log.this
-    injected_flow_log_ids              = local.flow_log_ids
-    flow_log_destinations              = aws_cloudwatch_log_group.flow_logs
-    flow_log_roles                     = aws_iam_role.flow_logs
+    flow_logs             = aws_flow_log.this
+    injected_flow_log_ids = local.flow_log_ids
+    flow_log_destinations = aws_cloudwatch_log_group.flow_logs
+    flow_log_roles = {
+      for key, role in aws_iam_role.flow_logs : key => {
+        arn       = role.arn
+        id        = role.id
+        name      = role.name
+        unique_id = role.unique_id
+      }
+    }
     flow_log_role_policies             = aws_iam_role_policy.flow_logs
     vpc_lattice_associations           = aws_vpclattice_service_network_vpc_association.this
     vpc_lattice_association_id         = local.vpc_lattice_association_id

@@ -22,8 +22,9 @@ mock_provider "aws" {
 
   mock_resource "aws_subnet" {
     defaults = {
-      id  = "subnet-mock"
-      arn = "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-mock"
+      id              = "subnet-mock"
+      arn             = "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-mock"
+      ipv6_cidr_block = ""
     }
   }
 
@@ -54,6 +55,15 @@ mock_provider "aws" {
 
   mock_resource "aws_flow_log" {
     defaults = { id = "fl-mock" }
+  }
+
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn       = "arn:aws:iam::123456789012:role/shape-test-flow-logs"
+      id        = "shape-test-flow-logs"
+      name      = "shape-test-flow-logs"
+      unique_id = "mock-role-unique-id"
+    }
   }
 
   mock_resource "aws_vpclattice_service_network_vpc_association" {
@@ -113,8 +123,6 @@ run "tier_1_and_tier_2_shapes" {
         destination_type   = "cloudwatch"
         create_destination = false
         destination_arn    = "arn:aws:logs:us-east-1:123456789012:log-group:shape-test"
-        create_iam_role    = false
-        iam_role_arn       = "arn:aws:iam::123456789012:role/shape-test-flow-logs"
       }
     }
 
@@ -159,6 +167,8 @@ run "tier_1_and_tier_2_shapes" {
       output.transit_gateway_attachment_id == "tgw-attach-mock" &&
       output.core_network_attachment_id == "cwan-attach-mock" &&
       toset(keys(output.flow_log_ids)) == toset(["default"]) && output.flow_log_ids.default == "fl-mock" &&
+      toset(keys(output.resources.flow_log_roles.default)) == toset(["arn", "id", "name", "unique_id"]) &&
+      output.resources.flow_log_roles.default.arn == "arn:aws:iam::123456789012:role/shape-test-flow-logs" &&
       output.vpc_lattice_service_network_association_id == "snva-mock"
     )
     error_message = "Tier 1 gateway, attachment, Flow Log, or Lattice handles changed."
@@ -236,7 +246,8 @@ run "absent_optional_resources" {
     condition = (
       length(output.nat_gateway_ids) == 0 && output.internet_gateway_id == null && output.egress_only_igw_id == null &&
       output.transit_gateway_attachment_id == null && output.core_network_attachment_id == null &&
-      length(output.flow_log_ids) == 0 && output.vpc_lattice_service_network_association_id == null
+      length(output.flow_log_ids) == 0 && output.vpc_lattice_service_network_association_id == null &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs_by_group_by_az.data) : cidr == null])
     )
     error_message = "Tier 1 optional handles must be empty or null when resources are absent."
   }

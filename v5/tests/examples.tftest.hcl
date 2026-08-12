@@ -28,6 +28,14 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_subnet" {
+    defaults = {
+      id              = "subnet-mock"
+      arn             = "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-mock"
+      ipv6_cidr_block = ""
+    }
+  }
+
   mock_resource "aws_vpclattice_service_network" {
     defaults = { id = "sn-mock" }
   }
@@ -45,7 +53,8 @@ run "basic_example" {
       toset(keys(output.subnet_ids)) == toset(["app", "database", "public"]) &&
       length(output.subnet_ids.public) == 3 &&
       alltrue([for cidr in values(output.subnet_ipv6_cidrs.public) : cidr != null && cidr != ""]) &&
-      alltrue([for cidr in values(output.subnet_ipv6_cidrs.app) : cidr != null && cidr != ""])
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.app) : cidr != null && cidr != ""]) &&
+      alltrue([for cidr in values(output.subnet_ipv6_cidrs.database) : cidr == null])
     )
     error_message = "The basic example must select exactly three AZs and plan real dual-stack subnets."
   }
