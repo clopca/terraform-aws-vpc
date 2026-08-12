@@ -86,10 +86,10 @@ module "vpc" {
       traffic_type     = "ALL"
 
       # Replace both values with the exact v4 state values before planning.
-      # The log group is imported at the v5 address; the role uses a moved block.
+      # The log group uses the root declarative handoff below; the role uses a moved block.
       role_name_prefix = "migration-example-cw-access-role-"
       cloudwatch_options = {
-        name = "migration-example-vpc-flow-logs-20260812123456789000000001"
+        name = var.v4_flow_log_group_name
       }
     }
   }
@@ -103,3 +103,23 @@ module "vpc" {
     ManagedBy = "terraform"
   }
 }
+
+# Migration-only root blocks (Terraform >= 1.7).
+#
+# Copy this example into the caller root and uncomment exactly one `removed`
+# block plus one `import` block. They remain comments here because Terraform
+# forbids import blocks when this example is loaded as a child module by native
+# plan tests.
+#
+# removed {
+#   from = module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main
+#
+#   lifecycle {
+#     destroy = false
+#   }
+# }
+#
+# import {
+#   to = module.vpc.aws_cloudwatch_log_group.flow_logs["default"]
+#   id = var.v4_flow_log_group_name
+# }

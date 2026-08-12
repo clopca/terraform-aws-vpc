@@ -22,8 +22,8 @@
 #
 # aws_vpc.main[0] and aws_internet_gateway.main[0] retain their addresses. The
 # v4 CloudWatch log group deliberately has no moved block: preserve its generated
-# physical name, materialize the applicable moves with the documented refresh-only
-# state step, then remove/import the group. See docs/rfc/v5-migration.md.
+# physical name and use the root `removed { destroy = false }` plus `import` blocks
+# shown in main.tf. The same complete normal plan evaluates all state transitions.
 
 # Public subnet group — keep only when v4 state contains `aws_subnet.public`.
 moved {

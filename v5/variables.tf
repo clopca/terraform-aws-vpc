@@ -802,9 +802,9 @@ variable "flow_logs" {
     are external resources: destination_arn is required so their lifecycle, KMS,
     retention, and ownership policies remain outside this VPC module.
 
-    Migration note: `cloudwatch_options.name` preserves the physical name only when
-    the v4 log group is removed from its old state address and imported at the v5
-    address. A moved block from v4 `name_prefix` to v5 `name` is replacement-prone.
+    Migration note: use the exact v4 physical name with a root declarative
+    `removed { destroy=false }` plus `import` handoff. Provider import records the
+    observed name and a computed name_prefix; omitting name_prefix in v5 avoids drift.
   EOT
   type = map(object({
     enabled                        = optional(bool, true)
