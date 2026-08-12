@@ -5,9 +5,12 @@
 # Remove any block whose source is absent. Keep the file until every workspace
 # has applied the upgrade. Terraform moved blocks do not support wildcards.
 #
-# 64 active moved blocks. aws_vpc.main[0] and aws_internet_gateway.main[0]
-# retain their addresses. See docs/rfc/v5-migration.md for secondary CIDR, S3,
-# IAM policy-type changes, injected resources, and other non-movable cases.
+# 63 active moved blocks. aws_vpc.main[0] and aws_internet_gateway.main[0]
+# retain their addresses. The v4 CloudWatch log group deliberately has no
+# moved block: preserve its generated physical name, remove only its old state
+# address, and import it at aws_cloudwatch_log_group.flow_logs["default"]. See
+# docs/rfc/v5-migration.md for that cutover, secondary CIDR, S3, IAM policy-type
+# changes, injected resources, and other non-movable cases.
 
 moved {
   from = module.vpc.aws_subnet.public["us-east-1a"]
@@ -317,11 +320,6 @@ moved {
 moved {
   from = module.vpc.module.flow_logs[0].aws_flow_log.main
   to   = module.vpc.aws_flow_log.this["default"]
-}
-
-moved {
-  from = module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main
-  to   = module.vpc.aws_cloudwatch_log_group.flow_logs["default"]
 }
 
 moved {

@@ -57,7 +57,7 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
 resource "aws_iam_role" "flow_logs" {
   for_each = local.cloudwatch_roles_to_create
 
-  name_prefix = substr(coalesce(each.value.role_name_prefix, "${local.resource_name_base}-${each.key}-flow-"), 0, 38)
+  name_prefix = each.value.role_name_prefix != null ? each.value.role_name_prefix : substr("${local.resource_name_base}-${each.key}-flow-", 0, 38)
   description = "Allows VPC Flow Logs to publish ${var.vpc.name}/${each.key} logs"
 
   assume_role_policy = jsonencode({

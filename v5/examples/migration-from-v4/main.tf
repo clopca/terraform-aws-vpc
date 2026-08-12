@@ -92,6 +92,13 @@ module "vpc" {
     default = {
       destination_type = "cloudwatch"
       traffic_type     = "ALL"
+
+      # Replace both values with the exact v4 state values before planning.
+      # The log group is imported at the v5 address; the role uses a moved block.
+      role_name_prefix = "migration-example-cw-access-role-"
+      cloudwatch_options = {
+        name = "migration-example-vpc-flow-logs-20260812123456789000000001"
+      }
     }
   }
 

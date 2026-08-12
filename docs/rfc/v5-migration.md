@@ -2,15 +2,148 @@
 
 > Status: Phase 4 implementation. Always test against a copy of production state. The v5 module does not perform state moves automatically because `moved` addresses cannot contain variables, wildcards, or generated AZ/group keys.
 
+## Migration safety contract
+
+- Work against a copy of production state first; never combine an unreviewed provider upgrade with the v4 -> v5 module cutover.
+- The migration gate is a complete normal `terraform plan`, not `-refresh-only`. Refresh-only cannot prove convergence to the v5 configuration.
+- Preserve every durable physical ID. The default gate permits zero replacements. The only expected creates/deletes are the staged Flow Logs IAM policy conversion described below.
+- Do not run `apply` between removing the old CloudWatch log-group state address and importing the same physical group at its v5 address.
+
 ## Migration sequence
 
-1. Pin the current v4 version and save `terraform state pull` outside the repository.
-2. Record the exact AZs, subnet group keys/CIDRs, route destinations, NAT mode, and optional resources in state.
-3. Translate inputs using the tables below. Keep all v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name.
-4. Copy `v5/examples/migration-from-v4/moved.tf.example` into the caller root as `moved.tf`. Replace the sample AZs, private group, and destination-derived keys; remove blocks whose source is absent.
-5. Upgrade the module source/version and run `terraform init -upgrade`.
-6. Run `terraform plan -refresh-only`. Expect only `has moved to` records. Any create/destroy or replacement is a migration defect to resolve before apply.
-7. Run the normal plan, apply, then migrate downstream references from Tier 2 aliases to Tier 1 handles.
+### A. Baseline Terraform and the AWS provider while still on v4
+
+1. Pin the current v4 module version and back up state outside the repository:
+
+   ```shell
+   terraform state pull > /secure/backup/vpc-v4-before-provider-upgrade.tfstate
+   terraform state list > /secure/backup/vpc-v4-addresses.txt
+   ```
+
+2. Still using v4 configuration, upgrade only the intended Terraform/AWS provider versions. Run a **normal** plan, review/apply provider-only changes, and repeat until clean:
+
+   ```shell
+   terraform init -upgrade
+   terraform plan -out=v4-provider-upgrade.tfplan
+   terraform apply v4-provider-upgrade.tfplan
+   terraform plan -detailed-exitcode
+   # Required result: exit code 0.
+   ```
+
+   Commit the provider lock change separately. Do not change the module source/version in this step.
+
+### B. Capture v4 identity and ordering
+
+3. Record physical IDs, route destinations, optional resources, subnet keys/CIDRs, and the exact observable AZ order. `availability_zones.names` and every explicit CIDR list in v5 must use this order; do not reconstruct it from the textual v4 input:
+
+   ```shell
+   terraform console <<<'module.vpc.azs'
+   terraform state list
+   ```
+
+4. For a v4-created CloudWatch Flow Logs destination, capture the generated physical log-group name and the IAM role's configured `name_prefix` **before** changing module versions:
+
+   ```shell
+   terraform state show \
+     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main'
+   terraform state show \
+     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_role.main'
+   ```
+
+   Copy the log group's `name` value to `flow_logs.default.cloudwatch_options.name`. Copy the role's `name_prefix` value (not its generated `name`) to `flow_logs.default.role_name_prefix`. Both are ForceNew naming inputs; exact preservation is required for a zero-replacement cutover.
+
+### C. Translate configuration and state
+
+5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order.
+6. Copy the active `v5/examples/migration-from-v4/moved.tf` into the caller root. Replace sample AZs, private groups, and destination-derived keys; remove every block whose source is absent. The example has 63 moves and intentionally excludes the v4 CloudWatch log group.
+7. Change the module source/version and initialize v5 without changing the already-baselined provider selection:
+
+   ```shell
+   terraform init
+   ```
+
+8. Preserve the v4-generated CloudWatch log group by re-addressing it through remove/import. This changes state only; it does not delete the AWS log group. Take a fresh backup, perform both commands consecutively, and do not plan/apply between them:
+
+   ```shell
+   terraform state pull > /secure/backup/vpc-v4-before-flow-log-import.tfstate
+   terraform state rm \
+     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main'
+   terraform import \
+     'module.vpc.aws_cloudwatch_log_group.flow_logs["default"]' \
+     "$V4_FLOW_LOG_GROUP_NAME"
+   ```
+
+   Keep the IAM role moved block active and the exact `role_name_prefix` configured. The role's generated physical `name` and ID must remain unchanged.
+
+### D. Complete-plan gate
+
+9. Run and save a **complete normal plan**:
+
+   ```shell
+   terraform plan -out=v5-migration.tfplan
+   terraform show -no-color v5-migration.tfplan > v5-migration.txt
+   ```
+
+   The gate criteria are:
+
+   - **Required:** zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive.
+   - **Expected state-only records:** the selected `moved` pairs. Re-keyed routes whose destination is unchanged have no residual create/delete.
+   - **Allowed create:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role.
+   - **Allowed later deletes:** the old managed-policy attachment and managed policy, but only after the inline policy exists and delivery is verified.
+   - **Allowed in-place updates, when explicitly reviewed:** IAM role trust policy, description, and tags; Flow Log tags/traffic type/log format/aggregation interval; CloudWatch retention, KMS key, and tags. Keep values identical if these changes are not intended.
+   - **Exceptional route residual:** delete/create is allowed only for a route destination deliberately changed during migration, enumerated by address and approved for a maintenance window. With frozen destinations the expected residual is zero.
+
+   Any other create/delete, and every replacement, fails the gate.
+
+### E. Ordered IAM permissions cutover
+
+10. A single graph does not order deletion of the old managed-policy attachment after creation of the new inline policy. Guarantee the order with a first targeted apply that creates only the v5 inline policy and its dependencies; the old attachment remains in state:
+
+    ```shell
+    terraform apply \
+      -target='module.vpc.aws_iam_role_policy.flow_logs["default"]'
+    ```
+
+11. Verify that `publish-vpc-flow-logs` is attached inline to the preserved role and that the existing Flow Log continues delivering new events to the preserved group. Then run a new complete plan. Only now may it retire the old attachment/managed policy plus apply the previously approved in-place updates:
+
+    ```shell
+    terraform plan -out=v5-migration-final.tfplan
+    terraform apply v5-migration-final.tfplan
+    ```
+
+    The targeted apply is a migration-only ordering barrier, not a normal operating practice.
+
+### F. Post-apply verification
+
+12. Compare the saved v4 inventory with v5 state: VPC, subnet, route-table, NAT/EIP, gateway, attachment, Flow Log, log-group, and IAM-role physical IDs must be preserved. Confirm no v4 module addresses remain:
+
+    ```shell
+    terraform state list | grep 'module.vpc.module.flow_logs' && exit 1 || true
+    terraform state show 'module.vpc.aws_flow_log.this["default"]'
+    terraform state show 'module.vpc.aws_cloudwatch_log_group.flow_logs["default"]'
+    terraform state show 'module.vpc.aws_iam_role.flow_logs["default"]'
+    ```
+
+13. Verify the Flow Log reports `ACTIVE` and that the preserved CloudWatch group receives events newer than the cutover. Finally require a clean complete plan:
+
+    ```shell
+    terraform plan -detailed-exitcode
+    # Required result: exit code 0.
+    ```
+
+14. Migrate downstream references from Tier 2 aliases to Tier 1 handles. Retain the caller's moved file until every workspace has applied the upgrade.
+
+## ADR-F4-1: preserve the v4 Flow Logs destination and role
+
+**Status:** accepted for the v4 -> v5 migration gate.
+
+**Decision:** preserve the existing CloudWatch log group by configuring its exact generated physical `name`, removing only its old state address, and importing it at the v5 fixed-name address. Preserve the IAM role with a moved block plus the exact v4 `name_prefix`. Convert the managed policy to the v5 inline policy in two applies: create and verify inline permissions first, then retire the old attachment/policy in the complete apply.
+
+**Rationale:** v4 configures the log group with `name_prefix`; v5 configures it with `name`. Both provider attributes are ForceNew, so a moved block alone still proposes replacement even when the resulting physical name is known. Remove/import normalizes state to the v5 naming argument while retaining the same group, history, ARN, and Flow Log destination. The IAM role uses `name_prefix` on both versions and can be moved without replacement when its exact prefix is preserved. The two-stage policy cutover is the only deterministic way to avoid a permissions gap because Terraform has no dependency edge from deletion of the old attachment to creation of the new inline policy.
+
+**Rejected default:** creating a new group (with create-before-destroy behavior or an accepted replacement) splits continuity at cutover. Historical logs remain in the old group only if that group is deliberately removed from Terraform ownership rather than destroyed; callers must then retain and eventually clean it up. This remains an opt-in maintenance-window fallback, not the migration default.
+
+**Consequences:** the runbook has two explicit state commands and one targeted migration apply, all protected by state backups and complete plans. The default path has zero replacement of the log group or IAM role and no delivery-permission window.
 
 ## Variables
 
@@ -65,7 +198,8 @@
 | `core_network_routes.<group>` | `subnets.<group>.routing.core_network` | Wrap the single destination in a list. |
 | `core_network_ipv6_routes.<group>` | `subnets.<group>.routing.core_network_ipv6` | Wrap the single destination in a list. |
 | `vpc_flow_logs` | `flow_logs.default` | Use stable key `default`; the remaining rows map every field. |
-| `vpc_flow_logs.name_override` | `flow_logs.default.cloudwatch_options.name` | For CloudWatch, set the exact desired log-group name. Other destination names are externally managed. |
+| `vpc_flow_logs.name_override` or v4 generated log-group name | `flow_logs.default.cloudwatch_options.name` | Set the exact physical `name` reported by `terraform state show`, not merely the old prefix. Preserve the group with remove/import; do not use a moved block from `name_prefix` to `name`. |
+| v4 generated CloudWatch IAM role `name_prefix` | `flow_logs.default.role_name_prefix` | Copy the exact `name_prefix` reported by state (not the generated role `name`) before applying the IAM role moved block. |
 | `vpc_flow_logs.log_destination` | `flow_logs.default.destination_arn` | Rename; required for externally managed S3/Firehose. |
 | `vpc_flow_logs.iam_role_arn` | `flow_logs.default.iam_role_arn` | Copy for CloudWatch; omit to create the v5 role. |
 | `vpc_flow_logs.kms_key_id` | `flow_logs.default.cloudwatch_options.kms_key_id` | Copy for CloudWatch. S3/Firehose encryption belongs to the external destination. |
@@ -114,7 +248,7 @@
 - Flow Logs: caller key, conventionally `"default"`;
 - routes: `<group>/<az>/<target>` plus a destination suffix for TGW/CWAN.
 
-The example contains all exact mappings for a two-AZ representative state. Repeat each per-AZ block for the real AZ set and each private group. Destination key suffixes use `replace(destination, "/", "-")` (for example `10.0.0.0/8` -> `10.0.0.0-8`). `aws_vpc.main[0]` and `aws_internet_gateway.main[0]` keep their address and need no block.
+The active example contains 63 exact mappings for a two-AZ representative state. Repeat each per-AZ block for the real AZ set and each private group. Destination key suffixes use `replace(destination, "/", "-")` (for example `10.0.0.0/8` -> `10.0.0.0-8`). `aws_vpc.main[0]` and `aws_internet_gateway.main[0]` keep their address and need no block. The CloudWatch log group uses the ADR-F4-1 remove/import procedure instead of a moved block.
 
 A v4 secondary association moves as follows when that mode is used:
 
@@ -129,8 +263,10 @@ moved {
 
 | v4 state | v5 disposition | Why / workaround |
 |---|---|---|
-| `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main` | `module.vpc.aws_iam_role_policy.flow_logs["default"]` | Resource type changes from managed `aws_iam_policy` to inline `aws_iam_role_policy`; neither `moved` nor `terraform state mv` can change type. Let v5 create the inline policy, then detach/destroy the old managed policy. If an equivalent inline policy already exists, import it as `ROLE_NAME:POLICY_NAME` before plan. |
-| `...aws_iam_role_policy_attachment.main` | no v5 resource | v5 attaches no managed policy. Let Terraform remove the attachment after the inline policy exists; remove the orphaned policy explicitly if lifecycle ownership was transferred. |
+| `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main` | `module.vpc.aws_cloudwatch_log_group.flow_logs["default"]` | Both resources have the same type, but v4 `name_prefix` -> v5 `name` is ForceNew and therefore unsafe with `moved`. Capture the generated `name`, configure it as `cloudwatch_options.name`, remove only the old state address, and import the same group at the v5 address as specified by ADR-F4-1. |
+| `...aws_iam_role.main` | `module.vpc.aws_iam_role.flow_logs["default"]` | Keep the moved block, but first configure `role_name_prefix` with the exact v4 state `name_prefix`. Trust policy, description, and tags may update in place; the role ID and generated name must not change. |
+| `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main` | `module.vpc.aws_iam_role_policy.flow_logs["default"]` | Resource type changes from managed `aws_iam_policy` to inline `aws_iam_role_policy`; neither `moved` nor `terraform state mv` can change type. After the complete-plan gate, target-create the inline policy first and verify delivery. Only a later complete apply may destroy the old managed policy. If an equivalent inline policy already exists, import it as `ROLE_NAME:POLICY_NAME` before plan. |
+| `...aws_iam_role_policy_attachment.main` | no v5 resource | v5 attaches no managed policy. Keep the attachment through the targeted inline-policy apply; remove it only in the subsequent reviewed complete apply after delivery verification. |
 | v4-created S3 Flow Log bucket and its public-access, encryption, and lifecycle resources | caller-owned logging module/resource | v5 intentionally does not own durable S3/Firehose destinations. Move same-type resources with `terraform state mv` into a new caller-owned logging resource/module address, or import them there, then pass the bucket ARN as `flow_logs.default.destination_arn`. Do not allow Terraform to destroy a log archive. |
 | Any address whose destination is an injected ID (`vpc.id`, `vpc.igw_id`, `nat_gateway.existing_ids`, `subnets[*].route_table_id`) | no managed destination resource | Injection removes lifecycle ownership. Use `terraform state rm` only after the target is represented in another state, or first `terraform state mv`/import it into its new owning configuration. |
 | Route whose v4 destination or v5 route list changed during migration | no safe one-to-one block | Freeze destinations for the migration. If already changed, import the AWS route into the final v5 address where supported, or allow a reviewed delete/create during a maintenance window. |

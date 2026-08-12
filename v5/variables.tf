@@ -578,9 +578,16 @@ variable "flow_logs" {
 
     destination_type accepts cloudwatch, s3, or kinesis (Kinesis Data Firehose).
     CloudWatch supports create-or-inject for both the log group and the VPC Flow
-    Logs IAM role. S3 buckets and Firehose delivery streams are external resources:
-    destination_arn is required so their lifecycle, KMS, retention, and ownership
-    policies remain outside this VPC module.
+    Logs IAM role. `cloudwatch_options.name` is the fixed physical log-group name;
+    set it to the exact imported v4 name during migration. `role_name_prefix` is
+    passed through exactly (maximum 38 characters) so a moved v4 IAM role keeps its
+    original prefix and is not replaced. S3 buckets and Firehose delivery streams
+    are external resources: destination_arn is required so their lifecycle, KMS,
+    retention, and ownership policies remain outside this VPC module.
+
+    Migration note: `cloudwatch_options.name` preserves the physical name only when
+    the v4 log group is removed from its old state address and imported at the v5
+    address. A moved block from v4 `name_prefix` to v5 `name` is replacement-prone.
   EOT
   type = map(object({
     enabled                        = optional(bool, true)
@@ -654,6 +661,22 @@ variable "flow_logs" {
       for name, cfg in var.flow_logs : cfg.destination_arn == null || length(trimspace(cfg.destination_arn)) > 0
     ])
     error_message = "flow_logs[*].destination_arn must be null or a non-empty ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : cfg.cloudwatch_options.name == null || length(trimspace(cfg.cloudwatch_options.name)) > 0
+    ])
+    error_message = "flow_logs[*].cloudwatch_options.name must be null or a non-empty fixed log-group name."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : cfg.role_name_prefix == null || (
+        length(trimspace(cfg.role_name_prefix)) > 0 && length(cfg.role_name_prefix) <= 38
+      )
+    ])
+    error_message = "flow_logs[*].role_name_prefix must be null or a non-empty IAM role name prefix of at most 38 characters."
   }
 
   validation {
