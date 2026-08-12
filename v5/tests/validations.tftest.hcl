@@ -129,8 +129,9 @@ run "reject_nat_az_outside_vpc_azs" {
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets            = {}
     nat_gateway = {
-      mode = "single_az"
-      az   = "us-east-1c"
+      mode   = "single_az"
+      az     = "us-east-1c"
+      create = false
       existing_ids = {
         us-east-1c = "nat-0123456789abcdef0"
       }
@@ -168,14 +169,16 @@ run "reject_shared_route_table_with_all_az_nat" {
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
-        role           = "private"
-        route_table_id = "rtb-existing"
-        ipv4           = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
-        routing        = { nat_gateway = true }
+        role               = "private"
+        manage_route_table = false
+        route_table_id     = "rtb-existing"
+        ipv4               = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        routing            = { nat_gateway = true }
       }
     }
     nat_gateway = {
-      mode = "all_azs"
+      mode   = "all_azs"
+      create = false
       existing_ids = {
         us-east-1a = "nat-aaa"
         us-east-1b = "nat-bbb"
@@ -219,4 +222,52 @@ run "reject_overlapping_pins_across_netmasks" {
   }
 
   expect_failures = [terraform_data.cidr_pinning_validation[0]]
+}
+
+run "reject_isolated_dns64" {
+  command = plan
+
+  variables {
+    vpc                = { name = "negative-test" }
+    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role    = "isolated"
+        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv6    = { auto_assign = true }
+        routing = { dns64 = true }
+      }
+    }
+    nat_gateway = {
+      mode         = "single_az"
+      az           = "us-east-1a"
+      create       = false
+      existing_ids = { us-east-1a = "nat-0123456789abcdef0" }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "public_can_disable_internet_gateway" {
+  command = plan
+
+  variables {
+    vpc                = { name = "no-igw-test" }
+    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      edge = {
+        role    = "public"
+        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        routing = { internet_gateway = false }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_internet_gateway.main) == 0 && length(aws_route.igw_ipv4) == 0
+    error_message = "internet_gateway=false on a public group must suppress both the IGW and default route."
+  }
 }

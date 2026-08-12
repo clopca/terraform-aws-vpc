@@ -28,8 +28,9 @@ module "vpc" {
   source = "../.."
 
   vpc = {
-    name   = "network-hub-vpc"
-    igw_id = "igw-existing123" # Inject existing IGW [R1-H2]
+    name       = "network-hub-vpc"
+    igw_create = false
+    igw_id     = "igw-existing123" # Inject existing IGW [R1-H2]
   }
 
   addressing = {

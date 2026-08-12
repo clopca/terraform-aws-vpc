@@ -24,7 +24,7 @@ output "vpc_id" {
 
 output "vpc_arn" {
   description = "The ARN of the VPC (created or referenced)."
-  value       = local.create_vpc ? aws_vpc.main[0].arn : data.aws_vpc.existing[0].arn
+  value       = var.vpc.create ? aws_vpc.main[0].arn : data.aws_vpc.existing[0].arn
 }
 
 output "vpc_cidr_block" {
@@ -323,15 +323,15 @@ output "rt_attributes_by_type_by_az" {
     }
     public = contains(keys(var.subnets), "public") ? {
       for az in local.azs : az => aws_route_table.main["public/${az}"]
-      if var.subnets.public.route_table_id == null
+      if var.subnets.public.manage_route_table
     } : {}
     transit_gateway = contains(keys(var.subnets), "transit_gateway") ? {
       for az in local.azs : az => aws_route_table.main["transit_gateway/${az}"]
-      if var.subnets.transit_gateway.route_table_id == null
+      if var.subnets.transit_gateway.manage_route_table
     } : {}
     core_network = contains(keys(var.subnets), "core_network") ? {
       for az in local.azs : az => aws_route_table.main["core_network/${az}"]
-      if var.subnets.core_network.route_table_id == null
+      if var.subnets.core_network.manage_route_table
     } : {}
   }
 }
@@ -422,7 +422,7 @@ output "resources" {
     route_tables                = aws_route_table.main
     injected_route_table_ids = {
       for name, cfg in var.subnets : name => cfg.route_table_id
-      if cfg.route_table_id != null
+      if !cfg.manage_route_table
     }
     route_table_associations     = aws_route_table_association.main
     internet_gateway             = aws_internet_gateway.main

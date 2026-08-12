@@ -110,13 +110,16 @@ run "tier_1_and_tier_2_shapes" {
 
     flow_logs = {
       default = {
-        destination_type = "cloudwatch"
-        destination_arn  = "arn:aws:logs:us-east-1:123456789012:log-group:shape-test"
-        iam_role_arn     = "arn:aws:iam::123456789012:role/shape-test-flow-logs"
+        destination_type   = "cloudwatch"
+        create_destination = false
+        destination_arn    = "arn:aws:logs:us-east-1:123456789012:log-group:shape-test"
+        create_iam_role    = false
+        iam_role_arn       = "arn:aws:iam::123456789012:role/shape-test-flow-logs"
       }
     }
 
     vpc_lattice = {
+      enabled                    = true
       service_network_identifier = "sn-0123456789abcdef0"
     }
   }

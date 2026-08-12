@@ -3,7 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_vpclattice_service_network_vpc_association" "this" {
-  for_each = var.vpc_lattice == null ? {} : { vpc = var.vpc_lattice }
+  for_each = var.vpc_lattice.enabled ? { vpc = var.vpc_lattice } : {}
 
   vpc_identifier             = local.vpc_id
   service_network_identifier = each.value.service_network_identifier

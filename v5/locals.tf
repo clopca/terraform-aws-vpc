@@ -67,7 +67,7 @@ locals {
   az_count = length(local.azs)
 
   # ─── VPC Identity ───────────────────────────────────────────────────────
-  create_vpc = var.vpc.id == null
+  create_vpc = var.vpc.create
   vpc_id     = local.create_vpc ? aws_vpc.main[0].id : var.vpc.id
 
   # Primary CIDRs — needed for deterministic subnet calculation.
@@ -90,10 +90,6 @@ locals {
   subnets_with_cidrs = {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs != null
   }
-  subnets_with_ipam = {
-    for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.ipam_pool_id != null
-  }
-
   # ─── Deterministic CIDR Calculation with Pinning [R1-C2] ───────────────
   #
   # Two-tier allocation:
@@ -186,7 +182,7 @@ locals {
   # packing of unpinned groups after the highest pin.
   subnets_with_calculated_ipv6 = {
     for name, cfg in var.subnets : name => cfg
-    if cfg.ipv6 != null && cfg.ipv6.cidrs == null && cfg.ipv6.ipam_pool_id == null && cfg.ipv6.auto_assign
+    if cfg.ipv6 != null && cfg.ipv6.cidrs == null && cfg.ipv6.netmask_length == null && cfg.ipv6.auto_assign
   }
 
   ipv6_pinned_group_start = {
@@ -219,15 +215,6 @@ locals {
     }
   ]...)
 
-  # ─── IGW: create-or-inject [R1-H2] ─────────────────────────────────────
-  # Determine if any subnet needs an IGW
-  needs_igw = anytrue([
-    for k, v in var.subnets :
-    v.role == "public" || try(v.routing.internet_gateway, false) == true
-  ])
-  create_igw = local.needs_igw && var.vpc.igw_id == null
-  igw_id     = local.create_igw ? try(aws_internet_gateway.main[0].id, null) : var.vpc.igw_id
-
   # ─── Routing: resolve internet_gateway default [R2-H3] ──────────────────
   # null = auto: true for public role, false for everything else
   resolved_routing = {
@@ -246,6 +233,18 @@ locals {
     }
   }
 
+  # ─── IGW: plan-known create-or-inject ───────────────────────────────────
+  # Public role is only the default for resolved routing; an explicit false is
+  # authoritative. A public NAT created by this module still requires an IGW.
+  needs_igw = (
+    anytrue([for name, routing in local.resolved_routing : routing.internet_gateway]) ||
+    (var.nat_gateway.mode != "none" && var.nat_gateway.create && var.nat_gateway.connectivity_type == "public")
+  )
+  create_igw = local.needs_igw && var.vpc.igw_create
+  igw_id = !local.needs_igw ? null : (
+    local.create_igw ? try(aws_internet_gateway.main[0].id, null) : var.vpc.igw_id
+  )
+
   # ─── Flat Subnet Map: "name/az" → config ────────────────────────────────
   # This is the master map that drives aws_subnet.main for_each.
   # Every subnet instance has a unique key "subnet_name/az".
@@ -253,12 +252,13 @@ locals {
   subnet_map = merge([
     for name, cfg in var.subnets : {
       for ai, az in local.azs : "${name}/${az}" => {
-        name           = name
-        az             = az
-        role           = cfg.role
-        name_prefix    = coalesce(cfg.name_prefix, name)
-        tags           = cfg.tags
-        route_table_id = cfg.route_table_id
+        name               = name
+        az                 = az
+        role               = cfg.role
+        name_prefix        = coalesce(cfg.name_prefix, name)
+        tags               = cfg.tags
+        manage_route_table = cfg.manage_route_table
+        route_table_id     = cfg.route_table_id
 
         # CIDR resolution: explicit > calculated > IPAM (null, resolved at apply)
         cidr_block = (
@@ -311,7 +311,7 @@ locals {
   )
 
   # Are we injecting existing NAT GWs?
-  nat_inject_mode = var.nat_gateway.existing_ids != null
+  nat_inject_mode = !var.nat_gateway.create
 
   # ─── NAT Gateway ID map (unified: created or injected) ──────────────────
   # Shape: map(az, nat_gw_id) — used by routing locals to wire routes.
@@ -386,12 +386,12 @@ locals {
       az          = s.az
       name_prefix = s.name_prefix
       tags        = s.tags
-    } if s.route_table_id == null
+    } if s.manage_route_table
   }
 
   route_table_id_by_subnet = {
     for key, s in local.subnet_map : key => (
-      s.route_table_id != null ? s.route_table_id : aws_route_table.main[key].id
+      s.manage_route_table ? aws_route_table.main[key].id : s.route_table_id
     )
   }
 
@@ -399,7 +399,7 @@ locals {
   # for an injected shared RT. This avoids duplicate routes to the same injected
   # table when a subnet group spans multiple AZs.
   route_table_targets = merge([
-    for name, cfg in var.subnets : cfg.route_table_id == null ? {
+    for name, cfg in var.subnets : cfg.manage_route_table ? {
       for az in local.azs : "${name}/${az}" => {
         name           = name
         az             = az

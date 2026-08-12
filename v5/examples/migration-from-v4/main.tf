@@ -103,6 +103,7 @@ module "vpc" {
   }
 
   vpc_lattice = {
+    enabled                    = true
     service_network_identifier = "sn-0123456789abcdef0"
   }
 

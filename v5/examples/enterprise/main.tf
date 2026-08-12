@@ -121,6 +121,7 @@ module "vpc" {
   }
 
   vpc_lattice = {
+    enabled                    = true
     service_network_identifier = aws_vpclattice_service_network.enterprise.id
     private_dns_enabled        = true
     tags                       = { Tier = "service-network" }

@@ -19,7 +19,7 @@ data "aws_availability_zones" "current" {
 
 # For inject mode: read existing VPC to get its CIDR
 data "aws_vpc" "existing" {
-  count = var.vpc.id != null ? 1 : 0
+  count = var.vpc.create ? 0 : 1
   id    = var.vpc.id
 }
 
@@ -87,6 +87,17 @@ resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
 
 # ─── Internet Gateway — create-or-inject [R1-H2] ─────────────────────────
 # Created only when needed (subnets with IGW routing) and not injected.
+
+resource "terraform_data" "igw_injection_validation" {
+  count = local.needs_igw && !var.vpc.igw_create ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.vpc.igw_id != null && length(trimspace(var.vpc.igw_id)) > 0
+      error_message = "Internet routing requires either vpc.igw_create=true or vpc.igw_create=false with an injected igw_id."
+    }
+  }
+}
 
 resource "aws_internet_gateway" "main" {
   count = local.create_igw ? 1 : 0
@@ -282,7 +293,7 @@ resource "terraform_data" "dns64_requires_nat_gateway" {
 resource "terraform_data" "injected_route_table_all_az_nat_validation" {
   for_each = var.nat_gateway.mode == "all_azs" ? {
     for name, cfg in var.subnets : name => cfg
-    if cfg.route_table_id != null && (
+    if !cfg.manage_route_table && (
       try(cfg.routing.nat_gateway, false) || try(cfg.routing.dns64, false)
     )
   } : {}

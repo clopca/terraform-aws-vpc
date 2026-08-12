@@ -11,17 +11,19 @@
 
 variable "vpc" {
   description = <<-EOT
-    VPC configuration. Set `id` to reference an existing VPC instead of creating one.
-    When `id` is set, the module manages subnets/routes within that VPC but does not
-    create or modify the VPC resource itself.
+    VPC configuration. Set `create = false` and `id` to reference an existing VPC.
+    The explicit boolean decides resource cardinality, so `id` may be computed by an
+    upstream resource or module without making count/for_each unknown.
 
-    Set `igw_id` to reference an existing Internet Gateway instead of creating one
-    (create-or-inject pattern for IGW). [R1-H2]
+    Set `igw_create = false` and `igw_id` to inject an existing Internet Gateway.
+    The IGW is created only when resolved routing or a created public NAT requires it.
   EOT
   type = object({
     name             = string
-    id               = optional(string) # null = create new VPC; set = inject existing
-    igw_id           = optional(string) # null = create IGW if needed; set = use existing [R1-H2]
+    create           = optional(bool, true)
+    id               = optional(string)
+    igw_create       = optional(bool, true)
+    igw_id           = optional(string)
     instance_tenancy = optional(string, "default")
     dns = optional(object({
       enable_hostnames = optional(bool, true)
@@ -38,6 +40,20 @@ variable "vpc" {
   validation {
     condition     = length(var.vpc.name) > 0
     error_message = "vpc.name must not be empty."
+  }
+
+  validation {
+    condition = var.vpc.create ? var.vpc.id == null : (
+      var.vpc.id != null && length(trimspace(var.vpc.id)) > 0
+    )
+    error_message = "vpc.create=true requires id=null; vpc.create=false requires a non-empty id (which may be computed)."
+  }
+
+  validation {
+    condition = var.vpc.igw_create ? var.vpc.igw_id == null : (
+      var.vpc.igw_id == null || length(trimspace(var.vpc.igw_id)) > 0
+    )
+    error_message = "vpc.igw_create=true requires igw_id=null; injection uses igw_create=false with a non-empty igw_id."
   }
 }
 
@@ -241,9 +257,10 @@ variable "subnets" {
     }))
 
     # ── Naming, Tags, and Route Table Injection ──
-    name_prefix    = optional(string)
-    tags           = optional(map(string), {})
-    route_table_id = optional(string) # one existing shared RT for all AZs in this group
+    name_prefix        = optional(string)
+    tags               = optional(map(string), {})
+    manage_route_table = optional(bool, true)
+    route_table_id     = optional(string) # required when manage_route_table=false
 
     # ── Routing (co-located per subnet group) ──
     # [R1-C3]: transit_gateway and core_network accept lists of destinations
@@ -292,10 +309,11 @@ variable "subnets" {
 
   validation {
     condition = alltrue([
-      for k, v in var.subnets :
-      v.route_table_id == null ? true : length(trimspace(v.route_table_id)) > 0
+      for k, v in var.subnets : v.manage_route_table ? v.route_table_id == null : (
+        v.route_table_id != null && length(trimspace(v.route_table_id)) > 0
+      )
     ])
-    error_message = "subnets[*].route_table_id must be null or a non-empty route table ID."
+    error_message = "manage_route_table=true requires route_table_id=null; manage_route_table=false requires a non-empty route_table_id (which may be computed)."
   }
 
   validation {
@@ -372,6 +390,7 @@ variable "subnets" {
       v.role == "isolated" ? (
         !try(v.routing.nat_gateway, false) &&
         !try(v.routing.egress_only_igw, false) &&
+        !try(v.routing.dns64, false) &&
         try(v.routing.internet_gateway, null) != true &&
         try(v.routing.transit_gateway, null) == null &&
         try(v.routing.core_network, null) == null &&
@@ -379,7 +398,7 @@ variable "subnets" {
         try(v.routing.core_network_ipv6, null) == null
       ) : true
     ])
-    error_message = "Isolated subnets must not have any routing (nat_gateway, egress_only_igw, internet_gateway, transit_gateway, core_network). Use role 'private' for subnets that need selective routing."
+    error_message = "Isolated subnets must not have routing, including DNS64/NAT64. Use role 'private' for subnets that need selective routing."
   }
 
   validation {
@@ -576,6 +595,7 @@ variable "nat_gateway" {
   EOT
   type = object({
     mode              = optional(string, "none")
+    create            = optional(bool, true)
     az                = optional(string)
     connectivity_type = optional(string, "public") # "public" | "private"
     subnet_group      = optional(string)           # explicit NAT host group; null = first compatible group
@@ -616,12 +636,11 @@ variable "nat_gateway" {
     error_message = "nat_gateway.eip.mode must be: create, byoip_pool, or existing."
   }
 
-  # Existing NAT GWs: only valid when mode != "none"
   validation {
-    condition = var.nat_gateway.existing_ids == null ? true : (
-      var.nat_gateway.mode != "none"
+    condition = var.nat_gateway.mode == "none" ? var.nat_gateway.existing_ids == null : (
+      var.nat_gateway.create ? var.nat_gateway.existing_ids == null : var.nat_gateway.existing_ids != null
     )
-    error_message = "nat_gateway.existing_ids is only valid when mode is 'single_az' or 'all_azs'."
+    error_message = "NAT create mode requires existing_ids=null; inject mode requires create=false and existing_ids with the selected AZ keys."
   }
 
   validation {
@@ -655,7 +674,9 @@ variable "flow_logs" {
   type = map(object({
     enabled                        = optional(bool, true)
     destination_type               = optional(string, "cloudwatch")
+    create_destination             = optional(bool, true)
     destination_arn                = optional(string)
+    create_iam_role                = optional(bool, true)
     iam_role_arn                   = optional(string)
     deliver_cross_account_role_arn = optional(string)
     traffic_type                   = optional(string, "ALL")
@@ -721,9 +742,24 @@ variable "flow_logs" {
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : cfg.destination_arn == null || length(trimspace(cfg.destination_arn)) > 0
+      for name, cfg in var.flow_logs : cfg.destination_type != "cloudwatch" ? (
+        cfg.destination_arn != null && length(trimspace(cfg.destination_arn)) > 0
+        ) : cfg.create_destination ? cfg.destination_arn == null : (
+        cfg.destination_arn != null && length(trimspace(cfg.destination_arn)) > 0
+      )
     ])
-    error_message = "flow_logs[*].destination_arn must be null or a non-empty ARN."
+    error_message = "CloudWatch destination creation requires destination_arn=null; injection requires create_destination=false and a non-empty destination_arn. S3/Firehose always require an ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : cfg.destination_type != "cloudwatch" ? true : (
+        cfg.create_iam_role ? cfg.iam_role_arn == null : (
+          cfg.iam_role_arn != null && length(trimspace(cfg.iam_role_arn)) > 0
+        )
+      )
+    ])
+    error_message = "CloudWatch role creation requires iam_role_arn=null; injection requires create_iam_role=false and a non-empty iam_role_arn."
   }
 
   validation {
@@ -740,13 +776,6 @@ variable "flow_logs" {
       )
     ])
     error_message = "flow_logs[*].role_name_prefix must be null or a non-empty IAM role name prefix of at most 38 characters."
-  }
-
-  validation {
-    condition = alltrue([
-      for name, cfg in var.flow_logs : contains(["s3", "kinesis"], cfg.destination_type) ? cfg.destination_arn != null : true
-    ])
-    error_message = "flow_logs[*].destination_arn is required for S3 and Kinesis Data Firehose destinations; those resources are externally managed."
   }
 
   validation {
@@ -772,22 +801,24 @@ variable "flow_logs" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "vpc_lattice" {
-  description = "VPC Lattice Service Network association. Null disables the association."
+  description = "VPC Lattice association. enabled is the plan-known cardinality selector; identifiers may be computed."
   type = object({
-    service_network_identifier = string
+    enabled                    = optional(bool, false)
+    service_network_identifier = optional(string)
     security_group_ids         = optional(set(string), [])
     private_dns_enabled        = optional(bool, false)
     tags                       = optional(map(string), {})
   })
-  default = null
+  default = {}
 
   validation {
-    condition = var.vpc_lattice == null ? true : (
+    condition = !var.vpc_lattice.enabled ? true : (
+      var.vpc_lattice.service_network_identifier != null &&
       length(trimspace(var.vpc_lattice.service_network_identifier)) > 0 &&
       alltrue([for id in var.vpc_lattice.security_group_ids : length(trimspace(id)) > 0]) &&
       length(var.vpc_lattice.security_group_ids) <= 5
     )
-    error_message = "vpc_lattice requires a non-empty service_network_identifier and at most five non-empty security_group_ids."
+    error_message = "Enabled vpc_lattice requires a non-empty service_network_identifier and at most five non-empty security_group_ids."
   }
 }
 
