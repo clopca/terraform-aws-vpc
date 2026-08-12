@@ -72,3 +72,5 @@ terraform fmt -check -recursive v5: PASS
 git diff --check: PASS
 AWS provider selected: 6.58.0; recorded constraint: >= 6.32.0
 ```
+
+> **Corrección posterior (fase-3 verificación):** el floor real es `>= 6.29` — los argumentos IPAM de `aws_subnet` se publicaron en 6.29, no 6.32. Corregido en módulo, ejemplos y RFC.

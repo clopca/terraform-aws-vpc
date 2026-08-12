@@ -335,7 +335,7 @@ Required AWS provider: `>= 6.29`.
 
 The limiting feature is subnet IPAM: the v5 implementation sets
 `ipv4_ipam_pool_id` and `ipv4_netmask_length` on `aws_subnet`, including null in
-non-IPAM paths, and those schema arguments require AWS provider 6.32. The other
+non-IPAM paths, and those schema arguments require AWS provider 6.29. The other
 Phase 3 additions have lower floors: `private_dns_enabled` on the VPC Lattice
 association requires 6.27, while TGW `security_group_referencing_support` requires
 5.69. A consumer locked to provider 5.x can satisfy neither the published schema

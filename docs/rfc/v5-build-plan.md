@@ -35,7 +35,7 @@
   destinos externos inyectados para mantener fuera del módulo retención, KMS y
   lifecycle de datos.
 - VPC Lattice usa set de hasta cinco security groups y DNS privado opt-in.
-- El provider floor real es `>= 6.32` por los atributos IPAM de `aws_subnet`.
+- El provider floor real es `>= 6.29` por los atributos IPAM de `aws_subnet`.
 - Tier 1 incorpora IDs de attachments/flow logs/Lattice y ARNs de destinos/roles.
 - Los tres ejemplos ejercitan la sintaxis de fase 3; los tests de apply/races
   permanecen en la fase 5 según ADR del gate.
@@ -72,7 +72,7 @@
 5. `terraform fmt` + `init -backend=false` + `validate` en verde antes de cada commit.
 6. Sin dependencias de módulos externos con deprecations activas.
 7. Commits pequeños y descriptivos por fase; no push (rama local hasta decisión con Pablo).
-8. Provider floor >= 6.32 (por `aws_subnet.ipv4_ipam_pool_id` y `ipv4_netmask_length` — R2-H2).
+8. Provider floor >= 6.29 (por `aws_subnet.ipv4_ipam_pool_id` y `ipv4_netmask_length` — R2-H2).
 9. Cross-variable invariants via preconditions en recursos, no solo en variables (R2-H1).
 
 ## Registro de revisiones
@@ -91,5 +91,5 @@
 - `nat_gateway.existing_ids`: inject-or-create para NAT GW [R1-H2]
 - `allocation_ids`: default null (no `{}`) [R2-H2]
 - Outputs renombrados: `*_by_role` → `*_by_group` + nuevo `*_by_semantic_role` [R1-H3]
-- Provider floor: `>= 6.32` [R2-H2]; 5.69 queda supersedido por el schema IPAM de subnet.
+- Provider floor: `>= 6.29` [R2-H2]; 5.69 queda supersedido por el schema IPAM de subnet.
 - Preconditions: cidrs↔AZs, nat_gateway.az∈AZs [R2-C2, R2-C3]
