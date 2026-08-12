@@ -19,7 +19,22 @@
 | 1-gate | Cierre findings R1+R2: C1 multi-public, C2 pinning, C3 list routing, H1-H4 docs+inject+outputs, R2-C1/C2/C3 provider+preconditions | ✅ e434caf |
 | 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | ✅ 89eba29 |
 | 2-gate | Cierre R1+R2: claves CIDR estables, placement NAT explícito, RT injection, NAT64, coverage y docs de unknowns | ✅ 97c89ee |
-| 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | pendiente |
+| 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | ✅ implementada; gate R1+R2 pendiente |
+
+### Entrega fase 3
+
+- TGW y Cloud WAN usan una dirección singleton estable (`["vpc"]`) y referencias
+  escalares. Cloud WAN construye el ARN del VPC sin propagar el objeto completo de
+  `data.aws_vpc` y conserva `ignore_changes = [vpc_arn]` como defensa v4.6.
+- Flow Logs son nativos y tipados: CloudWatch, S3 y Kinesis Data Firehose, con
+  create-or-inject de destino y roles aplicables; políticas IAM separadas, sin
+  módulos externos ni `inline_policy`.
+- VPC Lattice Service Network association queda tipada.
+- Los tres ejemplos ejercitan fase 3; `hub` instancia attachments TGW y CWAN.
+- Tier 1 incorpora IDs de ambos attachments, mapa de IDs de flow logs e ID de la
+  asociación Lattice.
+- Implementación validada con `fmt`, `init -backend=false` y `validate`; el cierre
+  de fase requiere todavía los dos revisores y `docs/rfc/reviews/fase-3.md`.
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | pendiente |
 | 5 | Tests: unit plan-only del motor de subnets + asserts + 3 examples + terraform-docs | pendiente |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |

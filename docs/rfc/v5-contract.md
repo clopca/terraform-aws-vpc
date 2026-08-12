@@ -1,6 +1,33 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Gate 2 Closed (R1+R2 findings applied)
+> **Status:** Draft / Phase 3 Implemented (R1+R2 gate pending)
+>
+> **Phase 3 implementation (2026-08-12):**
+> - A subnet group with `role = "transit_gateway"` creates one
+>   `aws_ec2_transit_gateway_vpc_attachment`, keyed by the constant `"vpc"` and
+>   configured from typed booleans for default association/propagation,
+>   appliance mode, DNS, IPv6, and security-group referencing. The provider
+>   floor remains `>= 5.69`.
+> - A subnet group with `role = "core_network"` creates one
+>   `aws_networkmanager_vpc_attachment` plus an optional
+>   `aws_networkmanager_attachment_accepter`. Its VPC ARN is constructed from
+>   partition, region, account, and the scalar VPC ID; it never consumes the
+>   full `data.aws_vpc` object. `lifecycle.ignore_changes = [vpc_arn]` closes the
+>   destructive replacement path fixed in v4.6.
+> - `flow_logs` is a typed map with stable caller-owned keys. CloudWatch, S3,
+>   and Kinesis Data Firehose destinations support create-or-inject. Created
+>   resources are native AWS resources (`aws_flow_log`, log group, S3 bucket,
+>   Firehose, IAM role, and separate `aws_iam_role_policy`); no external module
+>   and no deprecated `inline_policy` block is used.
+> - `vpc_lattice` is a typed nullable contract that creates one
+>   `aws_vpclattice_service_network_vpc_association`, including security groups,
+>   private DNS, and tags.
+> - New Tier 1 outputs are `transit_gateway_attachment_id`,
+>   `core_network_attachment_id`, `flow_log_ids`, and
+>   `vpc_lattice_service_network_association_id`.
+> - Cross-resource preconditions reject TGW/Cloud WAN routes without their
+>   corresponding attachment subnet role and reject Core Network ARN/ID
+>   mismatches.
 > **Date:** 2026-08-12
 > **Authors:** aws-ia team
 > **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
