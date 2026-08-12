@@ -187,6 +187,7 @@ locals {
         try(cfg.routing.internet_gateway, null),
         cfg.role == "public" ? true : false
       )
+      dns64                = try(cfg.routing.dns64, false)
       transit_gateway      = try(cfg.routing.transit_gateway, null)
       transit_gateway_ipv6 = try(cfg.routing.transit_gateway_ipv6, null)
       core_network         = try(cfg.routing.core_network, null)
@@ -238,4 +239,187 @@ locals {
   secondary_cidrs = var.addressing.ipv4 != null ? {
     for idx, sec in var.addressing.ipv4.secondary : tostring(idx) => sec
   } : {}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 2 — NAT GATEWAYS, EIGW, ROUTING
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── NAT Gateway — AZ resolution ────────────────────────────────────────
+  # Determine which AZs get a NAT gateway based on mode.
+  nat_az_set = (
+    var.nat_gateway.mode == "none" ? toset([]) :
+    var.nat_gateway.mode == "single_az" ? toset([var.nat_gateway.az]) :
+    toset(local.azs) # all_azs
+  )
+
+  # Are we injecting existing NAT GWs?
+  nat_inject_mode = var.nat_gateway.existing_ids != null
+
+  # ─── NAT Gateway ID map (unified: created or injected) ──────────────────
+  # Shape: map(az, nat_gw_id) — used by routing locals to wire routes.
+  nat_gateway_ids = (
+    local.nat_inject_mode ? var.nat_gateway.existing_ids : {
+      for az in local.nat_az_set : az => aws_nat_gateway.main["nat/${az}"].id
+    }
+  )
+
+  # ─── First public subnet per AZ (for NAT gateway placement) ─────────────
+  # Public NAT GWs must be placed in a public subnet.
+  # Private NAT GWs can be placed in any subnet — we use the first private group.
+  first_public_group = try(sort([
+    for name, cfg in var.subnets : name if cfg.role == "public"
+  ])[0], null)
+
+  first_private_group = try(sort([
+    for name, cfg in var.subnets : name if cfg.role == "private"
+  ])[0], null)
+
+  nat_host_group = (
+    var.nat_gateway.connectivity_type == "private"
+    ? local.first_private_group
+    : local.first_public_group
+  )
+
+  # ─── EIPs to create ─────────────────────────────────────────────────────
+  # Only when: creating NAT GWs (not inject), public connectivity, eip.mode != "existing"
+  nat_eips_to_create = (
+    !local.nat_inject_mode &&
+    var.nat_gateway.connectivity_type == "public" &&
+    try(var.nat_gateway.eip.mode, "create") != "existing"
+    ) ? {
+    for az in local.nat_az_set : "nat/${az}" => { az = az }
+  } : {}
+
+  # ─── NAT Gateways to create ─────────────────────────────────────────────
+  # Not created when existing_ids are injected.
+  nat_gateways_to_create = !local.nat_inject_mode ? {
+    for az in local.nat_az_set : "nat/${az}" => {
+      az                = az
+      connectivity_type = var.nat_gateway.connectivity_type
+      subnet_id         = local.nat_host_group != null ? aws_subnet.main["${local.nat_host_group}/${az}"].id : null
+      allocation_id = (
+        var.nat_gateway.connectivity_type == "private" ? null :
+        try(var.nat_gateway.eip.mode, "create") == "existing" ?
+        var.nat_gateway.eip.allocation_ids[az] :
+        aws_eip.nat["nat/${az}"].id
+      )
+    }
+  } : {}
+
+  # ─── EIGW ───────────────────────────────────────────────────────────────
+  needs_eigw = anytrue([
+    for k, v in var.subnets : try(v.routing.egress_only_igw, false)
+  ])
+  create_eigw = local.needs_eigw
+  eigw_id     = local.create_eigw ? aws_egress_only_internet_gateway.main[0].id : null
+
+  # ─── Route Table Map ────────────────────────────────────────────────────
+  # One route table per subnet group per AZ. Key = "name/az".
+  route_table_map = {
+    for key, s in local.subnet_map : key => {
+      name        = s.name
+      az          = s.az
+      name_prefix = s.name_prefix
+      tags        = s.tags
+    }
+  }
+
+  # ─── TGW ID resolution (from subnet group with role = transit_gateway) ──
+  tgw_id = try([
+    for name, cfg in var.subnets : cfg.transit_gateway_options.id
+    if cfg.role == "transit_gateway"
+  ][0], null)
+
+  # ─── Core Network ARN resolution ────────────────────────────────────────
+  core_network_arn = try([
+    for name, cfg in var.subnets : coalesce(
+      try(cfg.core_network_options.arn, null),
+      "arn:aws:networkmanager::${data.aws_caller_identity.current[0].account_id}:core-network/${cfg.core_network_options.id}"
+    )
+    if cfg.role == "core_network"
+  ][0], null)
+
+  # ─── Route Sets ─────────────────────────────────────────────────────────
+  # Each route set is a flat map keyed by "group/az[/suffix]" for for_each.
+
+  # IGW IPv4 routes: subnets with internet_gateway = true
+  routes_igw = {
+    for key, s in local.subnet_map : "${key}/igw" => {
+      rt_key = key
+    } if s.routing.internet_gateway
+  }
+
+  # IGW IPv6 routes: public subnets with IGW get IPv6 default route too
+  routes_igw_ipv6 = {
+    for key, s in local.subnet_map : "${key}/igw6" => {
+      rt_key = key
+    } if s.routing.internet_gateway && try(var.subnets[s.name].ipv6, null) != null
+  }
+
+  # NAT routes: subnets with nat_gateway = true, resolved to correct NAT GW
+  routes_nat = var.nat_gateway.mode != "none" ? {
+    for key, s in local.subnet_map : "${key}/nat" => {
+      rt_key = key
+      nat_gw_id = (
+        var.nat_gateway.mode == "single_az"
+        ? local.nat_gateway_ids[var.nat_gateway.az]
+        : local.nat_gateway_ids[s.az]
+      )
+    } if s.routing.nat_gateway
+  } : {}
+
+  # EIGW routes: subnets with egress_only_igw = true
+  routes_eigw = {
+    for key, s in local.subnet_map : "${key}/eigw" => {
+      rt_key = key
+    } if s.routing.egress_only_igw
+  }
+
+  # Transit Gateway IPv4 routes: expand list destinations
+  routes_tgw = local.tgw_id != null ? merge([
+    for key, s in local.subnet_map : {
+      for idx, dest in coalesce(s.routing.transit_gateway, []) :
+      "${key}/tgw/${idx}" => {
+        rt_key      = key
+        destination = dest
+        tgw_id      = local.tgw_id
+      }
+    } if s.routing.transit_gateway != null
+  ]...) : {}
+
+  # Transit Gateway IPv6 routes
+  routes_tgw_ipv6 = local.tgw_id != null ? merge([
+    for key, s in local.subnet_map : {
+      for idx, dest in coalesce(s.routing.transit_gateway_ipv6, []) :
+      "${key}/tgw6/${idx}" => {
+        rt_key      = key
+        destination = dest
+        tgw_id      = local.tgw_id
+      }
+    } if s.routing.transit_gateway_ipv6 != null
+  ]...) : {}
+
+  # Core Network IPv4 routes
+  routes_cwan = local.core_network_arn != null ? merge([
+    for key, s in local.subnet_map : {
+      for idx, dest in coalesce(s.routing.core_network, []) :
+      "${key}/cwan/${idx}" => {
+        rt_key           = key
+        destination      = dest
+        core_network_arn = local.core_network_arn
+      }
+    } if s.routing.core_network != null
+  ]...) : {}
+
+  # Core Network IPv6 routes
+  routes_cwan_ipv6 = local.core_network_arn != null ? merge([
+    for key, s in local.subnet_map : {
+      for idx, dest in coalesce(s.routing.core_network_ipv6, []) :
+      "${key}/cwan6/${idx}" => {
+        rt_key           = key
+        destination      = dest
+        core_network_arn = local.core_network_arn
+      }
+    } if s.routing.core_network_ipv6 != null
+  ]...) : {}
 }

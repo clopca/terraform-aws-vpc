@@ -233,6 +233,7 @@ variable "subnets" {
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
       internet_gateway     = optional(bool)         # null = auto (true for public, false otherwise)
+      dns64                = optional(bool, false)  # Enable DNS64 on the subnet (NAT64 via NAT GW)
       transit_gateway      = optional(list(string)) # list of CIDRs/prefix-list IDs to route via TGW [R1-C3]
       transit_gateway_ipv6 = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
       core_network         = optional(list(string)) # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
@@ -402,11 +403,15 @@ variable "nat_gateway" {
 
     Set `existing_ids` to inject existing NAT Gateways (create-or-inject pattern).
     When set, the module uses the referenced NAT GWs instead of creating new ones.
+
+    `connectivity_type` controls whether the NAT is public (internet-facing, needs EIP)
+    or private (inter-VPC, no EIP). Default: "public".
   EOT
   type = object({
-    mode         = optional(string, "none")
-    az           = optional(string)
-    existing_ids = optional(map(string)) # az → nat_gateway_id, for inject mode [R1-H2]
+    mode              = optional(string, "none")
+    az                = optional(string)
+    connectivity_type = optional(string, "public") # "public" | "private"
+    existing_ids      = optional(map(string))      # az → nat_gateway_id, for inject mode [R1-H2]
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
@@ -449,6 +454,11 @@ variable "nat_gateway" {
       var.nat_gateway.mode != "none"
     )
     error_message = "nat_gateway.existing_ids is only valid when mode is 'single_az' or 'all_azs'."
+  }
+
+  validation {
+    condition     = contains(["public", "private"], var.nat_gateway.connectivity_type)
+    error_message = "nat_gateway.connectivity_type must be 'public' or 'private'."
   }
 }
 

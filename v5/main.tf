@@ -23,6 +23,11 @@ data "aws_vpc" "existing" {
   id    = var.vpc.id
 }
 
+# For core_network_arn auto-derivation when arn is not explicitly provided
+data "aws_caller_identity" "current" {
+  count = length([for k, v in var.subnets : k if v.role == "core_network" && try(v.core_network_options.arn, null) == null]) > 0 ? 1 : 0
+}
+
 # ─── VPC ───────────────────────────────────────────────────────────────────
 # create-or-inject: vpc.id == null → create; vpc.id set → use existing
 
@@ -115,6 +120,9 @@ resource "aws_subnet" "main" {
   # Public IP auto-assignment (public role only)
   map_public_ip_on_launch = each.value.map_public_ip
 
+  # DNS64 support for NAT64 (IPv6 → IPv4 translation via NAT GW)
+  enable_dns64 = each.value.routing.dns64
+
   tags = merge(var.tags, each.value.tags, {
     Name = "${var.vpc.name}-${each.value.name_prefix}-${each.value.az}"
   })
@@ -155,6 +163,35 @@ resource "terraform_data" "nat_gateway_az_validation" {
     precondition {
       condition     = contains(local.azs, var.nat_gateway.az)
       error_message = "nat_gateway.az '${var.nat_gateway.az}' is not in the configured availability zones (${join(", ", local.azs)}). The NAT Gateway AZ must be one of the AZs where subnets are created."
+    }
+  }
+}
+
+# ─── Precondition: routing.nat_gateway=true requires nat_gateway.mode != none ─
+# Catches the misconfiguration where a subnet requests NAT routing but no NAT
+# Gateways are configured. Fires at plan time.
+
+resource "terraform_data" "nat_routing_requires_nat_gateway" {
+  count = var.nat_gateway.mode == "none" && anytrue([
+    for k, v in var.subnets : try(v.routing.nat_gateway, false)
+  ]) ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.nat_gateway.mode != "none"
+      error_message = "One or more subnet groups have routing.nat_gateway = true, but nat_gateway.mode = 'none'. Set nat_gateway.mode to 'single_az' or 'all_azs', or remove the NAT routing from subnets: ${join(", ", [for k, v in var.subnets : k if try(v.routing.nat_gateway, false)])}."
+    }
+  }
+}
+
+# ─── Precondition: routing.egress_only_igw requires IPv6 on VPC ───────────
+resource "terraform_data" "eigw_requires_ipv6" {
+  count = local.needs_eigw && var.addressing.ipv6 == null ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.addressing.ipv6 != null
+      error_message = "One or more subnet groups have routing.egress_only_igw = true, but no IPv6 addressing is configured on the VPC. Configure addressing.ipv6 or remove the EIGW routing."
     }
   }
 }
