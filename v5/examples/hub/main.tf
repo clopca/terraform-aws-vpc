@@ -30,7 +30,7 @@ module "vpc" {
   vpc = {
     name       = "network-hub-vpc"
     igw_create = false
-    igw_id     = "igw-existing123" # Inject existing IGW [R1-H2]
+    igw_id     = "igw-0123456789abcdef0" # Inject existing IGW [R1-H2]
   }
 
   addressing = {
@@ -135,9 +135,9 @@ module "vpc" {
     eip = {
       mode = "existing"
       allocation_ids = {
-        "us-west-2a" = "eipalloc-aaa111"
-        "us-west-2b" = "eipalloc-bbb222"
-        "us-west-2c" = "eipalloc-ccc333"
+        "us-west-2a" = "eipalloc-01111111111111111"
+        "us-west-2b" = "eipalloc-02222222222222222"
+        "us-west-2c" = "eipalloc-03333333333333333"
       }
     }
   }

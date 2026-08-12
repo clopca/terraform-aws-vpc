@@ -1,0 +1,71 @@
+name: v5 Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - "v5/**"
+      - ".github/workflows/ci-v5.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "v5/**"
+      - ".github/workflows/ci-v5.yml"
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  quality:
+    name: fmt, TFLint, and tests
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform 1.15.8
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Set up TFLint 0.63.1
+        uses: terraform-linters/setup-tflint@v5
+        with:
+          tflint_version: v0.63.1
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive v5
+
+      - name: Initialize TFLint plugins
+        run: tflint --chdir=v5 --init
+
+      - name: Run TFLint
+        run: tflint --chdir=v5 --recursive
+
+      - name: Initialize module
+        working-directory: v5
+        run: terraform init -backend=false -lockfile=readonly
+
+      - name: Validate module
+        working-directory: v5
+        run: terraform validate -no-color
+
+      - name: Validate examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          for example in basic enterprise hub migration-from-v4; do
+            terraform -chdir="v5/examples/${example}" init -backend=false -lockfile=readonly
+            terraform -chdir="v5/examples/${example}" validate -no-color
+          done
+
+      - name: Run complete plan-only test suite
+        working-directory: v5
+        run: terraform test -no-color

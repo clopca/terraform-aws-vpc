@@ -57,20 +57,15 @@ module "vpc" {
     }
 
     database = {
-      role               = "isolated"
-      manage_route_table = false
-      route_table_id     = "rtb-existing123" # Inject one existing shared RT for this group
-      ipv4               = { netmask = 24 }
+      role = "isolated"
+      ipv4 = { netmask = 24 }
     }
   }
 
   nat_gateway = {
-    mode   = "single_az"
-    az     = "us-east-1a"
-    create = false
-    existing_ids = {
-      "us-east-1a" = "nat-0123456789abcdef0"
-    }
+    mode         = "single_az"
+    az           = "us-east-1a"
+    subnet_group = "public"
   }
 
   # Native CloudWatch destination and VPC Flow Logs IAM role are created.
