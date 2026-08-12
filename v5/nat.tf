@@ -31,7 +31,8 @@ resource "aws_eip" "nat" {
 
 # ─── NAT Gateways ─────────────────────────────────────────────────────────
 # Created only when existing_ids is not set (create mode).
-# Placed in the FIRST public subnet group for each AZ.
+# Placed in nat_gateway.subnet_group, or the documented first compatible
+# group fallback when subnet_group is null.
 
 resource "aws_nat_gateway" "main" {
   for_each = local.nat_gateways_to_create

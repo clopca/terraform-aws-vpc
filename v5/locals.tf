@@ -202,11 +202,12 @@ locals {
   subnet_map = merge([
     for name, cfg in var.subnets : {
       for ai, az in local.azs : "${name}/${az}" => {
-        name        = name
-        az          = az
-        role        = cfg.role
-        name_prefix = coalesce(cfg.name_prefix, name)
-        tags        = cfg.tags
+        name           = name
+        az             = az
+        role           = cfg.role
+        name_prefix    = coalesce(cfg.name_prefix, name)
+        tags           = cfg.tags
+        route_table_id = cfg.route_table_id
 
         # CIDR resolution: explicit > calculated > IPAM (null, resolved at apply)
         cidr_block = (
@@ -263,9 +264,10 @@ locals {
     }
   )
 
-  # ─── First public subnet per AZ (for NAT gateway placement) ─────────────
-  # Public NAT GWs must be placed in a public subnet.
-  # Private NAT GWs can be placed in any subnet — we use the first private group.
+  # ─── NAT Gateway subnet placement ──────────────────────────────────────
+  # Explicit subnet_group is the production-safe contract. The null fallback is
+  # retained for convenience and documented as the first compatible group sorted
+  # alphabetically; adding a group can therefore relocate a created NAT Gateway.
   first_public_group = try(sort([
     for name, cfg in var.subnets : name if cfg.role == "public"
   ])[0], null)
@@ -274,10 +276,15 @@ locals {
     for name, cfg in var.subnets : name if cfg.role == "private"
   ])[0], null)
 
-  nat_host_group = (
+  nat_default_host_group = (
     var.nat_gateway.connectivity_type == "private"
     ? local.first_private_group
     : local.first_public_group
+  )
+  nat_host_group = (
+    var.nat_gateway.subnet_group != null
+    ? var.nat_gateway.subnet_group
+    : local.nat_default_host_group
   )
 
   # ─── EIPs to create ─────────────────────────────────────────────────────
@@ -296,7 +303,7 @@ locals {
     for az in local.nat_az_set : "nat/${az}" => {
       az                = az
       connectivity_type = var.nat_gateway.connectivity_type
-      subnet_id         = local.nat_host_group != null ? aws_subnet.main["${local.nat_host_group}/${az}"].id : null
+      subnet_id         = local.nat_host_group != null ? try(aws_subnet.main["${local.nat_host_group}/${az}"].id, null) : null
       allocation_id = (
         var.nat_gateway.connectivity_type == "private" ? null :
         try(var.nat_gateway.eip.mode, "create") == "existing" ?
@@ -313,16 +320,46 @@ locals {
   create_eigw = local.needs_eigw
   eigw_id     = local.create_eigw ? aws_egress_only_internet_gateway.main[0].id : null
 
-  # ─── Route Table Map ────────────────────────────────────────────────────
-  # One route table per subnet group per AZ. Key = "name/az".
+  # ─── Route Tables: create-or-inject ────────────────────────────────────
+  # Create one route table per group/AZ unless the subnet group injects one
+  # shared route_table_id. Associations and outputs consume the unified ID map.
   route_table_map = {
     for key, s in local.subnet_map : key => {
       name        = s.name
       az          = s.az
       name_prefix = s.name_prefix
       tags        = s.tags
-    }
+    } if s.route_table_id == null
   }
+
+  route_table_id_by_subnet = {
+    for key, s in local.subnet_map : key => (
+      s.route_table_id != null ? s.route_table_id : aws_route_table.main[key].id
+    )
+  }
+
+  # Route declarations are materialized once per created RT, or once per group
+  # for an injected shared RT. This avoids duplicate routes to the same injected
+  # table when a subnet group spans multiple AZs.
+  route_table_targets = merge([
+    for name, cfg in var.subnets : cfg.route_table_id == null ? {
+      for az in local.azs : "${name}/${az}" => {
+        name           = name
+        az             = az
+        route_table_id = aws_route_table.main["${name}/${az}"].id
+        routing        = local.resolved_routing[name]
+        has_ipv6       = cfg.ipv6 != null
+      }
+      } : {
+      "${name}/injected" = {
+        name           = name
+        az             = null
+        route_table_id = cfg.route_table_id
+        routing        = local.resolved_routing[name]
+        has_ipv6       = cfg.ipv6 != null
+      }
+    }
+  ]...)
 
   # ─── TGW ID resolution (from subnet group with role = transit_gateway) ──
   tgw_id = try([
@@ -340,86 +377,97 @@ locals {
   ][0], null)
 
   # ─── Route Sets ─────────────────────────────────────────────────────────
-  # Each route set is a flat map keyed by "group/az[/suffix]" for for_each.
+  # Each route set is keyed by stable route-table identity plus destination.
 
-  # IGW IPv4 routes: subnets with internet_gateway = true
+  # IGW IPv4 routes: route tables whose subnet group requests internet access.
   routes_igw = {
-    for key, s in local.subnet_map : "${key}/igw" => {
-      rt_key = key
-    } if s.routing.internet_gateway
+    for key, rt in local.route_table_targets : "${key}/igw" => {
+      route_table_id = rt.route_table_id
+    } if rt.routing.internet_gateway
   }
 
-  # IGW IPv6 routes: public subnets with IGW get IPv6 default route too
+  # IGW IPv6 routes: dual-stack public groups also get an IPv6 default route.
   routes_igw_ipv6 = {
-    for key, s in local.subnet_map : "${key}/igw6" => {
-      rt_key = key
-    } if s.routing.internet_gateway && try(var.subnets[s.name].ipv6, null) != null
+    for key, rt in local.route_table_targets : "${key}/igw6" => {
+      route_table_id = rt.route_table_id
+    } if rt.routing.internet_gateway && rt.has_ipv6
   }
 
-  # NAT routes: subnets with nat_gateway = true, resolved to correct NAT GW
+  # NAT routes: resolve single-AZ or per-AZ targets. Injected shared route
+  # tables are limited by precondition to single_az mode.
   routes_nat = var.nat_gateway.mode != "none" ? {
-    for key, s in local.subnet_map : "${key}/nat" => {
-      rt_key = key
+    for key, rt in local.route_table_targets : "${key}/nat" => {
+      route_table_id = rt.route_table_id
       nat_gw_id = (
         var.nat_gateway.mode == "single_az"
         ? local.nat_gateway_ids[var.nat_gateway.az]
-        : local.nat_gateway_ids[s.az]
+        : local.nat_gateway_ids[coalesce(rt.az, local.azs[0])]
       )
-    } if s.routing.nat_gateway
+    } if rt.routing.nat_gateway
   } : {}
 
-  # EIGW routes: subnets with egress_only_igw = true
+  # NAT64 routes: DNS64 synthesis requires 64:ff9b::/96 to reach a NAT GW.
+  routes_nat64 = var.nat_gateway.mode != "none" ? {
+    for key, rt in local.route_table_targets : "${key}/nat64" => {
+      route_table_id = rt.route_table_id
+      nat_gw_id = (
+        var.nat_gateway.mode == "single_az"
+        ? local.nat_gateway_ids[var.nat_gateway.az]
+        : local.nat_gateway_ids[coalesce(rt.az, local.azs[0])]
+      )
+    } if rt.routing.dns64
+  } : {}
+
+  # EIGW routes: subnets with egress_only_igw = true.
   routes_eigw = {
-    for key, s in local.subnet_map : "${key}/eigw" => {
-      rt_key = key
-    } if s.routing.egress_only_igw
+    for key, rt in local.route_table_targets : "${key}/eigw" => {
+      route_table_id = rt.route_table_id
+    } if rt.routing.egress_only_igw
   }
 
-  # Transit Gateway IPv4 routes: expand list destinations
+  # Destination CIDRs, not list positions, form route keys. Reordering a list
+  # therefore produces no resource churn; adding/removing affects one route.
   routes_tgw = local.tgw_id != null ? merge([
-    for key, s in local.subnet_map : {
-      for idx, dest in coalesce(s.routing.transit_gateway, []) :
-      "${key}/tgw/${idx}" => {
-        rt_key      = key
-        destination = dest
-        tgw_id      = local.tgw_id
+    for key, rt in local.route_table_targets : {
+      for dest in coalesce(rt.routing.transit_gateway, []) :
+      "${key}/tgw/${replace(dest, "/", "-")}" => {
+        route_table_id = rt.route_table_id
+        destination    = dest
+        tgw_id         = local.tgw_id
       }
-    } if s.routing.transit_gateway != null
+    } if rt.routing.transit_gateway != null
   ]...) : {}
 
-  # Transit Gateway IPv6 routes
   routes_tgw_ipv6 = local.tgw_id != null ? merge([
-    for key, s in local.subnet_map : {
-      for idx, dest in coalesce(s.routing.transit_gateway_ipv6, []) :
-      "${key}/tgw6/${idx}" => {
-        rt_key      = key
-        destination = dest
-        tgw_id      = local.tgw_id
+    for key, rt in local.route_table_targets : {
+      for dest in coalesce(rt.routing.transit_gateway_ipv6, []) :
+      "${key}/tgw6/${replace(dest, "/", "-")}" => {
+        route_table_id = rt.route_table_id
+        destination    = dest
+        tgw_id         = local.tgw_id
       }
-    } if s.routing.transit_gateway_ipv6 != null
+    } if rt.routing.transit_gateway_ipv6 != null
   ]...) : {}
 
-  # Core Network IPv4 routes
   routes_cwan = local.core_network_arn != null ? merge([
-    for key, s in local.subnet_map : {
-      for idx, dest in coalesce(s.routing.core_network, []) :
-      "${key}/cwan/${idx}" => {
-        rt_key           = key
+    for key, rt in local.route_table_targets : {
+      for dest in coalesce(rt.routing.core_network, []) :
+      "${key}/cwan/${replace(dest, "/", "-")}" => {
+        route_table_id   = rt.route_table_id
         destination      = dest
         core_network_arn = local.core_network_arn
       }
-    } if s.routing.core_network != null
+    } if rt.routing.core_network != null
   ]...) : {}
 
-  # Core Network IPv6 routes
   routes_cwan_ipv6 = local.core_network_arn != null ? merge([
-    for key, s in local.subnet_map : {
-      for idx, dest in coalesce(s.routing.core_network_ipv6, []) :
-      "${key}/cwan6/${idx}" => {
-        rt_key           = key
+    for key, rt in local.route_table_targets : {
+      for dest in coalesce(rt.routing.core_network_ipv6, []) :
+      "${key}/cwan6/${replace(dest, "/", "-")}" => {
+        route_table_id   = rt.route_table_id
         destination      = dest
         core_network_arn = local.core_network_arn
       }
-    } if s.routing.core_network_ipv6 != null
+    } if rt.routing.core_network_ipv6 != null
   ]...) : {}
 }

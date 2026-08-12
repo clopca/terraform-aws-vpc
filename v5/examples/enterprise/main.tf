@@ -88,7 +88,8 @@ module "vpc" {
   }
 
   nat_gateway = {
-    mode = "all_azs"
+    mode         = "all_azs"
+    subnet_group = "public"
     eip = {
       mode             = "byoip_pool"
       public_ipv4_pool = "ipv4pool-ec2-012345678"

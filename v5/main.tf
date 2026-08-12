@@ -167,6 +167,29 @@ resource "terraform_data" "nat_gateway_az_validation" {
   }
 }
 
+# ─── NAT Gateway placement validation [R1-H2 Phase 2] ────────────────────
+# Only created NAT Gateways need a host subnet. Explicit subnet_group is
+# validated for existence and semantic compatibility; null uses the documented
+# first-compatible-group fallback.
+
+resource "terraform_data" "nat_gateway_subnet_group_validation" {
+  count = var.nat_gateway.mode != "none" && !local.nat_inject_mode ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = local.nat_host_group != null && try(contains(keys(var.subnets), local.nat_host_group), false)
+      error_message = "nat_gateway.subnet_group must reference an existing subnet group. No compatible default group was found for connectivity_type='${var.nat_gateway.connectivity_type}'."
+    }
+
+    precondition {
+      condition = try(var.subnets[local.nat_host_group].role, null) == (
+        var.nat_gateway.connectivity_type == "private" ? "private" : "public"
+      )
+      error_message = "nat_gateway.subnet_group '${local.nat_host_group}' must have role '${var.nat_gateway.connectivity_type == "private" ? "private" : "public"}' for connectivity_type='${var.nat_gateway.connectivity_type}'."
+    }
+  }
+}
+
 # ─── Precondition: routing.nat_gateway=true requires nat_gateway.mode != none ─
 # Catches the misconfiguration where a subnet requests NAT routing but no NAT
 # Gateways are configured. Fires at plan time.
@@ -180,6 +203,37 @@ resource "terraform_data" "nat_routing_requires_nat_gateway" {
     precondition {
       condition     = var.nat_gateway.mode != "none"
       error_message = "One or more subnet groups have routing.nat_gateway = true, but nat_gateway.mode = 'none'. Set nat_gateway.mode to 'single_az' or 'all_azs', or remove the NAT routing from subnets: ${join(", ", [for k, v in var.subnets : k if try(v.routing.nat_gateway, false)])}."
+    }
+  }
+}
+
+# ─── Precondition: DNS64 requires a NAT Gateway for NAT64 ────────────────
+resource "terraform_data" "dns64_requires_nat_gateway" {
+  count = var.nat_gateway.mode == "none" && anytrue([
+    for k, v in var.subnets : try(v.routing.dns64, false)
+  ]) ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.nat_gateway.mode != "none"
+      error_message = "One or more subnet groups enable routing.dns64, but nat_gateway.mode = 'none'. DNS64 requires a NAT Gateway and the managed 64:ff9b::/96 NAT64 route."
+    }
+  }
+}
+
+# ─── Shared injected route table cannot select a per-AZ NAT target ────────
+resource "terraform_data" "injected_route_table_all_az_nat_validation" {
+  for_each = var.nat_gateway.mode == "all_azs" ? {
+    for name, cfg in var.subnets : name => cfg
+    if cfg.route_table_id != null && (
+      try(cfg.routing.nat_gateway, false) || try(cfg.routing.dns64, false)
+    )
+  } : {}
+
+  lifecycle {
+    precondition {
+      condition     = var.nat_gateway.mode != "all_azs"
+      error_message = "Subnet group '${each.key}' injects one shared route_table_id but requests NAT/NAT64 with nat_gateway.mode='all_azs'. A shared route table cannot select a different NAT Gateway per AZ; use single_az mode or module-created per-AZ route tables."
     }
   }
 }

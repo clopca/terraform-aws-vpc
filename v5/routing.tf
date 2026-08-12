@@ -1,9 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # terraform-aws-vpc v5 — Route Tables + Routes (Phase 2)
 #
-# Design: one route table per subnet group per AZ. Key = "name/az".
-# Routes are co-located: each subnet group declares its routing intent in the
-# `routing` block, and resources are materialized here from that declaration.
+# Design: create one route table per subnet group/AZ, or inject one existing
+# shared table for a group. Routes are co-located: each subnet group declares
+# its routing intent and resources are materialized here from that declaration.
 #
 # Route keys follow the pattern: "name/az/destination" for stable identity.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ resource "aws_route_table_association" "main" {
   for_each = local.subnet_map
 
   subnet_id      = aws_subnet.main[each.key].id
-  route_table_id = aws_route_table.main[each.key].id
+  route_table_id = local.route_table_id_by_subnet[each.key]
 }
 
 # ─── Internet Gateway Routes ──────────────────────────────────────────────
@@ -36,7 +36,7 @@ resource "aws_route_table_association" "main" {
 resource "aws_route" "igw_ipv4" {
   for_each = local.routes_igw
 
-  route_table_id         = aws_route_table.main[each.value.rt_key].id
+  route_table_id         = each.value.route_table_id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = local.igw_id
 }
@@ -44,7 +44,7 @@ resource "aws_route" "igw_ipv4" {
 resource "aws_route" "igw_ipv6" {
   for_each = local.routes_igw_ipv6
 
-  route_table_id              = aws_route_table.main[each.value.rt_key].id
+  route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = "::/0"
   gateway_id                  = local.igw_id
 }
@@ -54,9 +54,18 @@ resource "aws_route" "igw_ipv6" {
 resource "aws_route" "nat" {
   for_each = local.routes_nat
 
-  route_table_id         = aws_route_table.main[each.value.rt_key].id
+  route_table_id         = each.value.route_table_id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = each.value.nat_gw_id
+}
+
+# DNS64 requires this more-specific NAT64 route in addition to enable_dns64.
+resource "aws_route" "nat64" {
+  for_each = local.routes_nat64
+
+  route_table_id              = each.value.route_table_id
+  destination_ipv6_cidr_block = "64:ff9b::/96"
+  nat_gateway_id              = each.value.nat_gw_id
 }
 
 # ─── Egress-Only IGW Routes (IPv6) ────────────────────────────────────────
@@ -64,7 +73,7 @@ resource "aws_route" "nat" {
 resource "aws_route" "eigw" {
   for_each = local.routes_eigw
 
-  route_table_id              = aws_route_table.main[each.value.rt_key].id
+  route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = "::/0"
   egress_only_gateway_id      = local.eigw_id
 }
@@ -74,7 +83,7 @@ resource "aws_route" "eigw" {
 resource "aws_route" "tgw" {
   for_each = local.routes_tgw
 
-  route_table_id         = aws_route_table.main[each.value.rt_key].id
+  route_table_id         = each.value.route_table_id
   destination_cidr_block = each.value.destination
   transit_gateway_id     = each.value.tgw_id
 }
@@ -82,7 +91,7 @@ resource "aws_route" "tgw" {
 resource "aws_route" "tgw_ipv6" {
   for_each = local.routes_tgw_ipv6
 
-  route_table_id              = aws_route_table.main[each.value.rt_key].id
+  route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = each.value.destination
   transit_gateway_id          = each.value.tgw_id
 }
@@ -92,7 +101,7 @@ resource "aws_route" "tgw_ipv6" {
 resource "aws_route" "cwan" {
   for_each = local.routes_cwan
 
-  route_table_id         = aws_route_table.main[each.value.rt_key].id
+  route_table_id         = each.value.route_table_id
   destination_cidr_block = each.value.destination
   core_network_arn       = each.value.core_network_arn
 }
@@ -100,7 +109,7 @@ resource "aws_route" "cwan" {
 resource "aws_route" "cwan_ipv6" {
   for_each = local.routes_cwan_ipv6
 
-  route_table_id              = aws_route_table.main[each.value.rt_key].id
+  route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = each.value.destination
   core_network_arn            = each.value.core_network_arn
 }

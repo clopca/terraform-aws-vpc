@@ -125,7 +125,9 @@ variable "availability_zones" {
     (takes first N from the region alphabetically). Exactly one is required.
 
     ⚠️  `count` mode is for DEVELOPMENT ONLY. For production, always use explicit
-    `names` to guarantee AZ stability. See R1-H4 for rationale.
+    `names` to guarantee AZ stability. Because `count` resolves AZ names through an
+    AWS data source, preconditions that depend on the resolved AZ set are unknown
+    during the initial plan and are deferred by Terraform to apply time.
   EOT
   type = object({
     names = optional(list(string))
@@ -195,6 +197,12 @@ variable "subnets" {
         NOTE: if AWS adds multi-attachment support, this constraint will be relaxed
         as a non-breaking change.
       - core_network: limited to 1 group (same AWS API constraint)
+
+    Set `route_table_id` to inject one existing route table for the whole subnet
+    group. The module will not create route tables for that group; it associates
+    every AZ subnet with the injected table and adds all routes declared in
+    `routing` to it. A shared injected table cannot provide per-AZ NAT targets, so
+    `nat_gateway.mode = "all_azs"` is rejected when that group requests NAT/NAT64.
   EOT
   type = map(object({
     role = string
@@ -220,9 +228,10 @@ variable "subnets" {
       native_only = optional(bool, false)
     }))
 
-    # ── Naming & Tags ──
-    name_prefix = optional(string)
-    tags        = optional(map(string), {})
+    # ── Naming, Tags, and Route Table Injection ──
+    name_prefix    = optional(string)
+    tags           = optional(map(string), {})
+    route_table_id = optional(string) # one existing shared RT for all AZs in this group
 
     # ── Routing (co-located per subnet group) ──
     # [R1-C3]: transit_gateway and core_network accept lists of destinations
@@ -233,7 +242,7 @@ variable "subnets" {
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
       internet_gateway     = optional(bool)         # null = auto (true for public, false otherwise)
-      dns64                = optional(bool, false)  # Enable DNS64 on the subnet (NAT64 via NAT GW)
+      dns64                = optional(bool, false)  # Also creates 64:ff9b::/96 -> NAT GW; requires NAT
       transit_gateway      = optional(list(string)) # list of CIDRs/prefix-list IDs to route via TGW [R1-C3]
       transit_gateway_ipv6 = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
       core_network         = optional(list(string)) # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
@@ -268,6 +277,14 @@ variable "subnets" {
   default = {}
 
   # ── Validations ──
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets :
+      v.route_table_id == null ? true : length(trimspace(v.route_table_id)) > 0
+    ])
+    error_message = "subnets[*].route_table_id must be null or a non-empty route table ID."
+  }
 
   validation {
     condition = alltrue([
@@ -406,11 +423,18 @@ variable "nat_gateway" {
 
     `connectivity_type` controls whether the NAT is public (internet-facing, needs EIP)
     or private (inter-VPC, no EIP). Default: "public".
+
+    `subnet_group` explicitly selects the subnet group that hosts created NAT
+    Gateways. It must reference a public group for public NAT or a private group
+    for private NAT. Default null preserves convenience behavior by selecting the
+    first compatible group alphabetically; set it explicitly in production so
+    adding another group cannot relocate the NAT Gateway.
   EOT
   type = object({
     mode              = optional(string, "none")
     az                = optional(string)
     connectivity_type = optional(string, "public") # "public" | "private"
+    subnet_group      = optional(string)           # explicit NAT host group; null = first compatible group
     existing_ids      = optional(map(string))      # az → nat_gateway_id, for inject mode [R1-H2]
     eip = optional(object({
       mode             = optional(string, "create")

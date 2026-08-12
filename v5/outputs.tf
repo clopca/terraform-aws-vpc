@@ -205,7 +205,7 @@ output "route_table_ids_by_group_by_az" {
   EOT
   value = {
     for name in keys(var.subnets) : name => {
-      for az in local.azs : az => aws_route_table.main["${name}/${az}"].id
+      for az in local.azs : az => local.route_table_id_by_subnet["${name}/${az}"]
     }
   }
 }
@@ -219,7 +219,7 @@ output "route_table_ids_by_semantic_role" {
     for role in ["public", "private", "isolated", "transit_gateway", "core_network"] :
     role => flatten([
       for name, cfg in var.subnets : [
-        for az in local.azs : aws_route_table.main["${name}/${az}"].id
+        for az in local.azs : local.route_table_id_by_subnet["${name}/${az}"]
       ] if cfg.role == role
     ])
   }
@@ -276,8 +276,9 @@ output "resources" {
       }
     }
     route_tables = {
-      for key, rt in aws_route_table.main : key => {
-        id = rt.id
+      for key, id in local.route_table_id_by_subnet : key => {
+        id       = id
+        injected = local.subnet_map[key].route_table_id != null
       }
     }
     secondary_cidr_associations = {

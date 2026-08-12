@@ -117,15 +117,16 @@ variable "subnets" {
     }))
 
     # ── Naming & Tags ──
-    name_prefix = optional(string)  # cosmetic; defaults to map key
-    tags        = optional(map(string), {})
+    name_prefix   = optional(string)  # cosmetic; defaults to map key
+    tags          = optional(map(string), {})
+    route_table_id = optional(string) # inject one existing shared RT for the group
 
     # ── Routing (co-located, list-based destinations) [R1-C3] ──
     routing = optional(object({
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
       internet_gateway     = optional(bool)           # null = auto (true for public) [R2-H3]
-      dns64                = optional(bool, false)    # Enable DNS64 on subnet (NAT64 via NAT GW)
+      dns64                = optional(bool, false)    # Creates 64:ff9b::/96 -> NAT GW; NAT required
       transit_gateway      = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
       transit_gateway_ipv6 = optional(list(string))
       core_network         = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
@@ -165,7 +166,8 @@ variable "nat_gateway" {
     mode              = optional(string, "none")  # "none" | "single_az" | "all_azs"
     az                = optional(string)          # required when mode = "single_az"
     connectivity_type = optional(string, "public") # "public" | "private" (private NAT, no EIP)
-    existing_ids      = optional(map(string))     # az → nat_gw_id for inject mode [R1-H2]
+    subnet_group      = optional(string)           # explicit host group; null = first compatible group
+    existing_ids      = optional(map(string))      # az → nat_gw_id for inject mode [R1-H2]
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
@@ -175,6 +177,23 @@ variable "nat_gateway" {
   default = { mode = "none" }
 }
 ```
+
+### 3.3.1 Route Table and NAT Placement Injection Semantics
+
+- `subnets.<group>.route_table_id` injects one existing route table shared by every
+  AZ subnet in the group. The module skips `aws_route_table` creation, associates
+  those subnets to the injected table, and adds the routes declared in `routing`
+  to that existing table. Callers must avoid destination conflicts with routes
+  managed outside the module.
+- Because a single shared route table cannot select a different NAT Gateway per AZ,
+  injected tables that request `nat_gateway` or `dns64` require
+  `nat_gateway.mode = "single_az"`. Use module-created tables for per-AZ NAT.
+- `nat_gateway.subnet_group` pins placement of created NAT Gateways. It must name a
+  `public` group for public NAT or a `private` group for private NAT. Null defaults
+  to the first compatible group alphabetically for convenience; production callers
+  should always set it to prevent relocation when subnet groups are added.
+- `dns64 = true` creates both the subnet DNS64 flag and the required
+  `64:ff9b::/96 -> NAT Gateway` route. It fails early when NAT is disabled.
 
 ### 3.4 State Keys — Unified `"name/az"`
 
@@ -247,8 +266,10 @@ output "resources" {}  # Full resource objects, UNSTABLE
 
 These cannot be expressed as variable validations (Terraform limitation: no cross-var refs).
 They are enforced as `lifecycle.precondition` on the relevant resource, which means they
-fire at plan time when values are known (and at apply time when `count`-mode produces
-unknowns from data sources).
+fire at plan time when values are known. With `availability_zones.count`, the selected
+AZ names come from `data.aws_availability_zones`; preconditions that depend on that set
+are unknown during the initial plan and Terraform defers them to apply time. Production
+callers should use explicit `names` for stable AZ identity and plan-time diagnostics.
 
 1. **cidrs length == AZ count** [R2-C2]: `terraform_data.cidrs_az_count_validation`
 2. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`
@@ -282,7 +303,7 @@ that need selective routing without internet access.
 
 ## 6. Future Work (TODO)
 
-- **Phase 2-3**: Route table injection (create-or-inject) — deferred due to complexity [R1-H2]
+- **Phase 2**: Route table injection via `subnets[*].route_table_id` — ✅ DONE
 - **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
 - **Phase 2**: IGW injection via `vpc.igw_id` — ✅ DONE (Phase 1)
 - **Phase 2**: EIGW creation + routing — ✅ DONE

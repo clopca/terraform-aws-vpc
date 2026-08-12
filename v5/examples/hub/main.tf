@@ -32,6 +32,7 @@ module "vpc" {
 
   addressing = {
     ipv4 = { cidr_block = "10.1.0.0/16" }
+    ipv6 = { amazon_assigned = true }
   }
 
   availability_zones = {
@@ -73,11 +74,15 @@ module "vpc" {
       ipv4 = {
         cidrs = ["10.1.16.0/28", "10.1.16.16/28", "10.1.16.32/28"]
       }
+      ipv6 = { auto_assign = true }
       routing = {
         nat_gateway = true
-        # Multiple TGW destinations [R1-C3]:
-        # Route corporate + shared-services + partner CIDRs via TGW
-        transit_gateway = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+        # Multiple TGW destinations [R1-C3], including IPv6.
+        transit_gateway      = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+        transit_gateway_ipv6 = ["2001:db8:100::/48"]
+        # Route workload traffic to Cloud WAN from a non-attachment group.
+        core_network      = ["100.64.0.0/10"]
+        core_network_ipv6 = ["2001:db8:200::/48"]
       }
       tags = { Purpose = "network-firewall-endpoints" }
     }
@@ -118,7 +123,8 @@ module "vpc" {
   }
 
   nat_gateway = {
-    mode = "all_azs"
+    mode         = "all_azs"
+    subnet_group = "public"
     eip = {
       mode = "existing"
       allocation_ids = {
@@ -182,6 +188,7 @@ module "inspection_vpc" {
   nat_gateway = {
     mode              = "all_azs"
     connectivity_type = "private"
+    subnet_group      = "nat-host"
   }
 
   tags = {
