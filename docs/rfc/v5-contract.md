@@ -1,6 +1,19 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 3 Gate Closed (R1+R2)
+> **Status:** Draft / Phase 4 Implemented (gate pending)
+>
+> **Phase 4 implementation (2026-08-12, `9a4bb9c`):**
+> - Tier 1 now exposes direct IDs/CIDRs by group, semantic role, and AZ; route
+>   table IDs at the same granularities; NAT IDs/public/private IPs/allocation
+>   IDs; attachment IDs; Flow Log IDs/destinations/roles; VPC identity; and AZs.
+> - Tier 2 reproduces every v4 output name and its outer key/scalar/full-object
+>   shape. Reserved-group AZ keys and private `<group>/<az>` keys are preserved.
+> - Tier 3 exposes complete provider resource objects and has no semver guarantee.
+> - `v5-migration.md` and the `migration-from-v4` example provide exact variable/
+>   output mappings plus 64 representative `moved` blocks.
+> - Contract-closing validations enforce pinned-index uniqueness, key grammar,
+>   CIDR validity/cardinality, role-specific options, route destinations, VPC
+>   IPv4 creation, and exact NAT/EIP AZ coverage.
 >
 > **Phase 3 implementation and gate closure (2026-08-12):**
 > - Transit Gateway and Cloud WAN attachments use the constant key `"vpc"`.
@@ -248,45 +261,59 @@ variable "nat_gateway" {
 
 ### 3.6 Outputs — 3 Tiers
 
-#### Tier 1: Stable Contract (semver-protected)
+#### Tier 1: stable handles (semver-protected)
 
-```hcl
-output "vpc_id" {}
-output "vpc_cidr_block" {}
-output "azs" {}
-output "subnet_ids_by_group" {}             # map(group_name, list(id))
-output "subnet_ids_by_group_by_az" {}       # map(group_name, map(az, id))
-output "subnet_cidrs_by_group_by_az" {}     # map(group_name, map(az, cidr))
-output "subnet_arns_by_group_by_az" {}      # map(group_name, map(az, arn))
-output "subnet_ids_by_semantic_role" {}     # map(role, list(id)) [R1-H3]
-output "subnet_ids_by_semantic_role_by_az" {} # map(role, map(az, list(id))) [R1-H3]
-output "nat_gateway_ids" {}                 # map(az, nat_id)
-output "nat_public_ips" {}                  # map(az, ip)
-output "internet_gateway_id" {}
-output "egress_only_igw_id" {}              # EIGW ID (null if not created)
-output "route_table_ids_by_group_by_az" {}  # map(group, map(az, rt_id))
-output "route_table_ids_by_semantic_role" {} # map(role, list(rt_id))
-output "transit_gateway_attachment_id" {}
-output "core_network_attachment_id" {}
-output "flow_log_ids" {}                    # map(key, flow_log_id)
-output "flow_log_destination_arns" {}       # map(key, destination_arn)
-output "flow_log_role_arns" {}              # map(key, role_arn|null)
-output "vpc_lattice_service_network_association_id" {}
-```
+Tier 1 names, value types, and existing collection keys do not change without a
+major release. Minor releases may add outputs or additive map keys.
 
-#### Tier 2: Deprecated Legacy (present in v5, removed in v6)
+- VPC/AZ: `vpc_id`, `vpc_arn`, `vpc_cidr_block`, `azs`.
+- Subnet IDs: `subnet_ids_by_group`, `subnet_ids_by_group_by_az`,
+  `subnet_ids_by_semantic_role`, `subnet_ids_by_semantic_role_by_az`.
+- Subnet CIDRs/ARNs: `subnet_cidrs_by_group`,
+  `subnet_cidrs_by_group_by_az`, `subnet_cidrs_by_semantic_role`,
+  `subnet_cidrs_by_semantic_role_by_az`, `subnet_arns_by_group_by_az`.
+- Route tables: `route_table_ids_by_group`,
+  `route_table_ids_by_group_by_az`, `route_table_ids_by_semantic_role`,
+  `route_table_ids_by_semantic_role_by_az`.
+- NAT/gateways: `nat_gateway_ids`, `nat_public_ips`, `nat_private_ips`,
+  `nat_eip_allocation_ids`, `internet_gateway_id`, `egress_only_igw_id`.
+- Attachments/logging/Lattice: `transit_gateway_attachment_id`,
+  `core_network_attachment_id`, `flow_log_ids`,
+  `flow_log_destination_arns`, `flow_log_role_arns`,
+  `vpc_lattice_service_network_association_id`.
 
-```hcl
-output "subnet_ids_by_role" {}         # DEPRECATED: renamed to subnet_ids_by_group
-output "subnet_ids_by_role_by_az" {}   # DEPRECATED: renamed to subnet_ids_by_group_by_az
-output "subnet_cidrs_by_role_by_az" {} # DEPRECATED: renamed to subnet_cidrs_by_group_by_az
-```
+Per-role/per-AZ values are lists because v5 permits multiple groups sharing one
+semantic role. Consumers such as hubandspoke and cloudwan can select group or
+semantic-role handles without parsing v4 composite keys or querying subnets again.
 
-#### Tier 3: Escape Hatch (no semver guarantee)
+#### Tier 2: deprecated v4-compatible aliases (present in v5, removed in v6)
 
-```hcl
-output "resources" {}  # Full resource objects, UNSTABLE
-```
+The following reproduce the exact v4 output name and outer shape:
+
+- `vpc_attributes`, `azs`, `transit_gateway_attachment_id`,
+  `core_network_attachment`;
+- `private_subnet_attributes_by_az` with `<group>/<az>` keys;
+- `public_subnet_attributes_by_az`, `tgw_subnet_attributes_by_az`, and
+  `core_network_subnet_attributes_by_az` with AZ keys;
+- `rt_attributes_by_type_by_az` with the exact `private`, `public`,
+  `transit_gateway`, and `core_network` outer keys;
+- `nat_gateway_attributes_by_az`, `natgw_id_per_az`, `internet_gateway`,
+  `egress_only_internet_gateway`;
+- `vpc_lattice_service_network_association`, `flow_log_attributes`.
+
+Full-object attributes remain provider-controlled. Exact reserved-group aliases
+require migrated groups to retain the v4 keys `public`, `transit_gateway`, and
+`core_network`; the migrated single Flow Log uses key `default`.
+
+The pre-publication aliases `subnet_ids_by_role`, `subnet_ids_by_role_by_az`, and
+`subnet_cidrs_by_role_by_az` also remain deprecated through v5.
+
+#### Tier 3: complete-object escape hatch (no semver guarantee)
+
+`resources` exposes complete created/existing VPC collections, subnets, route
+tables and associations, gateways, EIPs/NAT Gateways, attachments/accepter,
+Flow Logs and CloudWatch/IAM resources, Lattice associations, secondary CIDR
+associations, and every route collection. Its shape may change in any release.
 
 ### 3.7 Cross-Variable Invariants (enforced via preconditions) [R2-C2, R2-C3, R2-H1]
 
@@ -382,7 +409,11 @@ retain the singleton `"vpc"` address.
 
 ## 4. Migration Path v4 → v5
 
-*(unchanged from original RFC — see v4→v5 migration guide for moved blocks strategy)*
+The normative mapping and state procedure is [v5-migration.md](v5-migration.md).
+The validateable skeleton under `v5/examples/migration-from-v4` contains 64 exact
+representative `moved` blocks. Static generation is intentional: Terraform does
+not permit variables or wildcards in moved addresses, so callers substitute their
+actual AZs, private group keys, route destinations, and optional resources.
 
 ## 5. Open Questions (Resolved)
 
@@ -400,4 +431,5 @@ retain the singleton `"vpc"` address.
 - **Phase 2**: Private NAT (connectivity_type) — ✅ DONE
 - **Phase 2**: DNS64/NAT64 support — ✅ DONE
 - **Phase 2**: Route tables co-located per group/az — ✅ DONE
+- **Phase 4**: Tiered outputs and v4 migration guide/example — ✅ DONE (`9a4bb9c`)
 - **Phase 5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]

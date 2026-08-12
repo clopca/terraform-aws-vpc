@@ -409,9 +409,9 @@ variable "subnets" {
 
   validation {
     condition = alltrue([
-      for key in keys(var.subnets) : can(regex("^[a-z0-9][a-z0-9-]*$", key))
+      for key in keys(var.subnets) : can(regex("^[a-z0-9][a-z0-9_-]*$", key))
     ])
-    error_message = "Subnet map keys must start with a lowercase letter or digit and contain only lowercase letters, digits, and hyphens."
+    error_message = "Subnet map keys must start with a lowercase letter or digit and contain only lowercase letters, digits, hyphens, and underscores."
   }
 
   validation {
@@ -467,7 +467,7 @@ variable "subnets" {
         for destination in concat(
           coalesce(try(v.routing.transit_gateway, null), []),
           coalesce(try(v.routing.core_network, null), [])
-        ) : can(cidrhost(destination, 0)) || can(regex("^pl-[0-9a-f]+$", destination))
+        ) : (can(cidrhost(destination, 0)) && !strcontains(destination, ":")) || can(regex("^pl-[0-9a-f]+$", destination))
       ]
     ]))
     error_message = "IPv4 TGW/Core Network route destinations must be valid CIDRs or managed prefix list IDs (pl-*)."

@@ -39,9 +39,29 @@
 - Tier 1 incorpora IDs de attachments/flow logs/Lattice y ARNs de destinos/roles.
 - Los tres ejemplos ejercitan la sintaxis de fase 3; los tests de apply/races
   permanecen en la fase 5 según ADR del gate.
-| 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | pendiente |
+| 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` (implementación; gate pendiente) |
 | 5 | Tests: unit plan-only del motor de subnets + asserts + 3 examples + terraform-docs | pendiente |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |
+
+### Entrega fase 4
+
+- Tier 1 publica handles directos de VPC/AZ, subnet IDs/CIDRs por grupo, rol
+  semántico y AZ, route tables con las mismas vistas, NAT IDs/IPs/EIP allocation
+  IDs, attachments, Flow Logs y Lattice.
+- Tier 2 reproduce los 15 outputs v4 con sus claves externas exactas: privadas
+  `"<grupo>/<az>"`, reservadas por AZ, route tables con los cuatro tipos y objetos
+  completos. Los tres aliases del prototipo siguen deprecated hasta v6.
+- Tier 3 expone objetos completos en `resources` y declara explícitamente que no
+  tiene garantía semver.
+- `v5-migration.md` contiene la matriz completa de inputs/outputs y los casos que
+  no admiten `moved`; `migration-from-v4/moved.tf.example` contiene 64 movimientos
+  exactos para el esqueleto de dos AZs.
+- Validaciones nuevas cierran cardinalidad IPv6, unicidad de pinning, gramática de
+  claves, CIDRs/destinos, opciones por rol, addressing IPv4 de VPC y cobertura
+  exacta de claves NAT/EIP por AZ. Los prefix-list IDs ya se materializan en
+  `destination_prefix_list_id`.
+- Gate R1+R2 de fase 4 continúa pendiente; la implementación y validación local
+  están cerradas.
 
 ## Reglas fijas del builder
 
