@@ -43,6 +43,15 @@ output "azs" {
   value       = local.azs
 }
 
+output "default_resource_ids" {
+  description = "Adopted default VPC resource IDs; values are null when management is disabled."
+  value = {
+    security_group = try(aws_default_security_group.this["default"].id, null)
+    network_acl    = try(aws_default_network_acl.this["default"].id, null)
+    route_table    = try(aws_default_route_table.this["default"].id, null)
+  }
+}
+
 # ─── Subnets by group name (the caller's stable map key) ──────────────────
 
 output "subnet_ids_by_group" {
@@ -488,7 +497,12 @@ output "resources" {
       for name, cfg in var.subnets : name => cfg.route_table_id
       if !cfg.manage_route_table
     }
-    route_table_associations     = aws_route_table_association.main
+    route_table_associations = aws_route_table_association.main
+    default_resources = {
+      security_groups = aws_default_security_group.this
+      network_acls    = aws_default_network_acl.this
+      route_tables    = aws_default_route_table.this
+    }
     internet_gateway             = aws_internet_gateway.main
     egress_only_internet_gateway = aws_egress_only_internet_gateway.main
     eips                         = aws_eip.nat

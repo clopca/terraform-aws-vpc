@@ -36,6 +36,14 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_network_acls" {
+    defaults = { ids = ["acl-default"] }
+  }
+
+  mock_data "aws_route_table" {
+    defaults = { id = "rtb-default" }
+  }
+
   mock_resource "aws_subnet" {
     defaults = {
       id              = "subnet-mock"
@@ -229,9 +237,12 @@ run "secure_isolated_example" {
       output.egress_resources.egress_only_igw_id == null &&
       output.route_counts.internet == 0 &&
       output.route_counts.nat == 0 &&
-      output.route_counts.eigw == 0
+      output.route_counts.eigw == 0 &&
+      output.default_resource_hardening.security_group_count == 1 &&
+      output.default_resource_hardening.network_acl_count == 1 &&
+      output.default_resource_hardening.route_table_count == 1
     )
-    error_message = "The secure isolated example must contain only isolated subnet groups and no Internet, NAT, EIGW, or egress-route resources."
+    error_message = "The secure isolated example must harden all default resources while retaining no Internet, NAT, EIGW, or egress-route resources."
   }
 }
 

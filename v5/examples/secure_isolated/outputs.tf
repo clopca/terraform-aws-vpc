@@ -35,3 +35,14 @@ output "route_counts" {
     eigw     = length(module.vpc.resources.routes.eigw)
   }
 }
+
+
+output "default_resource_hardening" {
+  description = "Adopted default resources and their managed collection counts."
+  value = {
+    ids                  = module.vpc.default_resource_ids
+    security_group_count = length(module.vpc.resources.default_resources.security_groups)
+    network_acl_count    = length(module.vpc.resources.default_resources.network_acls)
+    route_table_count    = length(module.vpc.resources.default_resources.route_tables)
+  }
+}

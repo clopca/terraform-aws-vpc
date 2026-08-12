@@ -45,6 +45,16 @@ module "vpc" {
     }
   }
 
+  # Adopt and harden AWS-created defaults. This is intentionally opt-in.
+  default_resources = {
+    manage_security_group = true
+    manage_network_acl    = true
+    manage_route_table    = true
+    tags = {
+      SecurityBoundary = "air-gapped"
+    }
+  }
+
   # Regional/account singleton: manage from exactly one module instance.
   vpc_block_public_access = {
     enabled                     = true

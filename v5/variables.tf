@@ -82,6 +82,43 @@ variable "vpc" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DEFAULT VPC RESOURCES — opt-in adoption and hardening
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "default_resources" {
+  description = <<-EOT
+    Opt-in management of the VPC's existing default resources. These resources
+    are adopted, never created: enabling a selector takes ownership of the
+    default security group, network ACL, or route table already created by AWS.
+
+    All selectors default false so v4 migrations and existing callers retain a
+    zero-diff plan. Enabling security-group management removes all default SG
+    ingress/egress rules. Enabling network-ACL management removes its default
+    allow rules. Enabling route-table management removes non-local routes and
+    gateway propagation. Review live workloads before adoption.
+
+    name_format controls generated Name tags with {vpc} and {resource}; resource
+    resolves to default-security-group, default-network-acl, or default-route-table.
+  EOT
+  type = object({
+    manage_security_group = optional(bool, false)
+    manage_network_acl    = optional(bool, false)
+    manage_route_table    = optional(bool, false)
+    name_format           = optional(string, "{vpc}-{resource}")
+    tags                  = optional(map(string), {})
+  })
+  default = {}
+
+  validation {
+    condition = (
+      length(trimspace(var.default_resources.name_format)) > 0 &&
+      !can(regex("\\{[^}]+\\}", replace(replace(var.default_resources.name_format, "{vpc}", ""), "{resource}", "")))
+    )
+    error_message = "default_resources.name_format must be non-empty and may use only {vpc} and {resource}."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ADDRESSING (IPv4/IPv6)
 # ─────────────────────────────────────────────────────────────────────────────
 

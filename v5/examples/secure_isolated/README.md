@@ -4,6 +4,7 @@ This example combines the v5 D6 controls into an enclave/air-gapped topology:
 
 - VPC Block Public Access in `block-bidirectional` mode;
 - a custom DHCP option set with a private domain, Amazon-provided DNS, and Amazon Time Sync;
+- opt-in adoption of the AWS-created default security group, network ACL, and route table;
 - two subnet groups whose semantic role is exclusively `isolated`;
 - no Internet Gateway, egress-only Internet Gateway, NAT Gateway, or managed egress route.
 
@@ -17,6 +18,16 @@ flowchart TB
   VPC --> Control[Control subnets\n2 AZs]
   Internet((Internet)) -. blocked / no route .-> VPC
 ```
+
+## Default-resource adoption warning
+
+`default_resources` does not create replacements. It adopts AWS-created defaults.
+On first apply, security-group rules, default NACL allow rules, non-local default
+routes, and propagated gateways are removed. Enabling it in a live VPC can break
+workloads still using those defaults; inventory dependencies and move workloads to
+explicit SGs, NACLs, and route tables first. All selectors default to `false`, so
+existing deployments and v4 migration plans remain unchanged unless explicitly
+enabled.
 
 ## Regional singleton warning
 

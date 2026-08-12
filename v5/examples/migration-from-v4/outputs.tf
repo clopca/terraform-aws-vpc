@@ -26,3 +26,14 @@ output "v4_name_compatibility" {
     log_group_has_name = contains(keys(module.vpc.resources.flow_log_destinations["default"].tags), "Name")
   }
 }
+
+
+output "default_resource_management" {
+  description = "Default-resource hardening remains opt-in and absent from the v4 migration plan."
+  value = {
+    ids                  = module.vpc.default_resource_ids
+    security_group_count = length(module.vpc.resources.default_resources.security_groups)
+    network_acl_count    = length(module.vpc.resources.default_resources.network_acls)
+    route_table_count    = length(module.vpc.resources.default_resources.route_tables)
+  }
+}

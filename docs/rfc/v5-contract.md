@@ -336,6 +336,21 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.3 ADR-R8-1 — default resources are adopted only by explicit opt-in
+
+**Decision:** expose independent `manage_security_group`, `manage_network_acl`, and
+`manage_route_table` booleans, all defaulting to false. The module uses provider
+`aws_default_*` resources, which adopt AWS-created VPC defaults by ID. Managed
+security groups have no rules; managed default NACLs have no allow entries; managed
+default route tables retain only the implicit local route and no propagation.
+
+**Rationale:** CIS 4.3 favors an empty default security group, but automatic
+adoption would violate the v4 migration zero-diff contract and could disconnect
+live workloads. Explicit opt-in makes the destructive rule/route reconciliation
+reviewable. One `{vpc}`/`{resource}` name format and stable `"default"` resource
+keys follow the module naming/state rules without pretending these objects are
+created by the module.
+
 ### 3.4 State Keys — Unified `"name/az"`
 
 | Resource | v4 Key | v5 Key |
