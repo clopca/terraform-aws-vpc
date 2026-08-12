@@ -383,15 +383,106 @@ variable "subnets" {
     error_message = "ipv4.netmask must be between 16 and 28 for AWS subnets."
   }
 
-  # cidr_index must be non-negative when provided [R1-C2]
+  # cidr_index must be a non-negative integer when provided [R1-C2]
   validation {
     condition = alltrue([
       for k, v in var.subnets :
       v.ipv4 == null ? true : (
-        v.ipv4.cidr_index == null ? true : v.ipv4.cidr_index >= 0
+        v.ipv4.cidr_index == null ? true : (
+          v.ipv4.cidr_index >= 0 && floor(v.ipv4.cidr_index) == v.ipv4.cidr_index
+        )
       )
     ])
     error_message = "ipv4.cidr_index must be a non-negative integer when provided."
+  }
+
+  validation {
+    condition = length(distinct([
+      for k, v in var.subnets : "${v.ipv4.netmask}/${v.ipv4.cidr_index}"
+      if v.ipv4 != null && v.ipv4.netmask != null && v.ipv4.cidr_index != null
+      ])) == length([
+      for k, v in var.subnets : k
+      if v.ipv4 != null && v.ipv4.netmask != null && v.ipv4.cidr_index != null
+    ])
+    error_message = "Pinned subnet groups using the same ipv4.netmask must have unique ipv4.cidr_index values."
+  }
+
+  validation {
+    condition = alltrue([
+      for key in keys(var.subnets) : can(regex("^[a-z0-9][a-z0-9-]*$", key))
+    ])
+    error_message = "Subnet map keys must start with a lowercase letter or digit and contain only lowercase letters, digits, and hyphens."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.subnets : v.ipv4 == null || v.ipv4.cidrs == null ? [true] : [
+        for cidr in v.ipv4.cidrs : can(cidrhost(cidr, 0)) && !strcontains(cidr, ":")
+      ]
+    ]))
+    error_message = "subnets[*].ipv4.cidrs must contain valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidrs == null ? [true] : [
+        for cidr in v.ipv6.cidrs : can(cidrhost(cidr, 0)) && strcontains(cidr, ":")
+      ]
+    ]))
+    error_message = "subnets[*].ipv6.cidrs must contain valid IPv6 CIDR blocks."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : !try(v.ipv6.native_only, false) || try(v.ipv6.cidrs, null) != null
+    ])
+    error_message = "IPv6-native subnet groups must provide one explicit ipv6.cidrs entry per AZ."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets :
+      (v.role == "public") == (v.public_options != null) || v.public_options == null
+    ])
+    error_message = "public_options may be set only on subnet groups with role = 'public'."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.role == "transit_gateway" || v.transit_gateway_options == null
+    ])
+    error_message = "transit_gateway_options may be set only on subnet groups with role = 'transit_gateway'."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.role == "core_network" || v.core_network_options == null
+    ])
+    error_message = "core_network_options may be set only on subnet groups with role = 'core_network'."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.subnets : [
+        for destination in concat(
+          coalesce(try(v.routing.transit_gateway, null), []),
+          coalesce(try(v.routing.core_network, null), [])
+        ) : can(cidrhost(destination, 0)) || can(regex("^pl-[0-9a-f]+$", destination))
+      ]
+    ]))
+    error_message = "IPv4 TGW/Core Network route destinations must be valid CIDRs or managed prefix list IDs (pl-*)."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.subnets : [
+        for destination in concat(
+          coalesce(try(v.routing.transit_gateway_ipv6, null), []),
+          coalesce(try(v.routing.core_network_ipv6, null), [])
+        ) : (can(cidrhost(destination, 0)) && strcontains(destination, ":")) || can(regex("^pl-[0-9a-f]+$", destination))
+      ]
+    ]))
+    error_message = "IPv6 TGW/Core Network route destinations must be valid IPv6 CIDRs or managed prefix list IDs (pl-*)."
   }
 }
 

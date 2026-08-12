@@ -265,3 +265,64 @@ resource "terraform_data" "cidrs_az_count_validation" {
     }
   }
 }
+
+# ─── Contract closure: create-mode VPC requires an IPv4 source ────────────
+# AWS VPCs always require IPv4 addressing. Existing VPC mode can discover the
+# primary IPv4 CIDR from data.aws_vpc.existing.
+resource "terraform_data" "vpc_ipv4_addressing_validation" {
+  count = local.create_vpc ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition = var.addressing.ipv4 != null && (
+        (var.addressing.ipv4.cidr_block != null ? 1 : 0) +
+        (var.addressing.ipv4.ipam_pool_id != null ? 1 : 0) == 1
+      )
+      error_message = "Creating a VPC requires exactly one IPv4 source: addressing.ipv4.cidr_block or addressing.ipv4.ipam_pool_id."
+    }
+  }
+}
+
+# ─── Contract closure: explicit IPv6 CIDRs match the AZ set ───────────────
+resource "terraform_data" "ipv6_cidrs_az_count_validation" {
+  for_each = {
+    for name, cfg in var.subnets : name => cfg
+    if try(cfg.ipv6.cidrs, null) != null
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value.ipv6.cidrs) == local.az_count
+      error_message = "Subnet group '${each.key}' defines ${length(each.value.ipv6.cidrs)} explicit IPv6 CIDRs but ${local.az_count} AZs are configured. Provide exactly one IPv6 CIDR per AZ."
+    }
+  }
+}
+
+# ─── Contract closure: injected NAT IDs cover exactly the selected AZs ────
+resource "terraform_data" "nat_gateway_existing_ids_validation" {
+  count = local.nat_inject_mode ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = toset(keys(var.nat_gateway.existing_ids)) == local.nat_az_set
+      error_message = "nat_gateway.existing_ids keys must exactly match the NAT AZ set selected by nat_gateway.mode and nat_gateway.az."
+    }
+  }
+}
+
+# ─── Contract closure: existing EIP allocations cover the selected AZs ───
+resource "terraform_data" "nat_gateway_eip_allocation_ids_validation" {
+  count = (
+    var.nat_gateway.mode != "none" &&
+    !local.nat_inject_mode &&
+    var.nat_gateway.connectivity_type == "public" &&
+    try(var.nat_gateway.eip.mode, "create") == "existing"
+  ) ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = toset(keys(var.nat_gateway.eip.allocation_ids)) == local.nat_az_set
+      error_message = "nat_gateway.eip.allocation_ids keys must exactly match the NAT AZ set selected by nat_gateway.mode and nat_gateway.az."
+    }
+  }
+}

@@ -83,9 +83,10 @@ resource "aws_route" "eigw" {
 resource "aws_route" "tgw" {
   for_each = local.routes_tgw
 
-  route_table_id         = each.value.route_table_id
-  destination_cidr_block = each.value.destination
-  transit_gateway_id     = each.value.tgw_id
+  route_table_id             = each.value.route_table_id
+  destination_cidr_block     = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id = startswith(each.value.destination, "pl-") ? each.value.destination : null
+  transit_gateway_id         = each.value.tgw_id
 
   depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
 }
@@ -94,7 +95,8 @@ resource "aws_route" "tgw_ipv6" {
   for_each = local.routes_tgw_ipv6
 
   route_table_id              = each.value.route_table_id
-  destination_ipv6_cidr_block = each.value.destination
+  destination_ipv6_cidr_block = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id  = startswith(each.value.destination, "pl-") ? each.value.destination : null
   transit_gateway_id          = each.value.tgw_id
 
   depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
@@ -105,9 +107,10 @@ resource "aws_route" "tgw_ipv6" {
 resource "aws_route" "cwan" {
   for_each = local.routes_cwan
 
-  route_table_id         = each.value.route_table_id
-  destination_cidr_block = each.value.destination
-  core_network_arn       = each.value.core_network_arn
+  route_table_id             = each.value.route_table_id
+  destination_cidr_block     = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id = startswith(each.value.destination, "pl-") ? each.value.destination : null
+  core_network_arn           = each.value.core_network_arn
 
   depends_on = [
     aws_networkmanager_vpc_attachment.this,
@@ -119,7 +122,8 @@ resource "aws_route" "cwan_ipv6" {
   for_each = local.routes_cwan_ipv6
 
   route_table_id              = each.value.route_table_id
-  destination_ipv6_cidr_block = each.value.destination
+  destination_ipv6_cidr_block = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id  = startswith(each.value.destination, "pl-") ? each.value.destination : null
   core_network_arn            = each.value.core_network_arn
 
   depends_on = [
