@@ -411,10 +411,13 @@ retain the singleton `"vpc"` address.
 ## 4. Migration Path v4 → v5
 
 The normative mapping and state procedure is [v5-migration.md](v5-migration.md).
-The validateable skeleton under `v5/examples/migration-from-v4` contains 64 exact
-representative `moved` blocks. Static generation is intentional: Terraform does
-not permit variables or wildcards in moved addresses, so callers substitute their
-actual AZs, private group keys, route destinations, and optional resources.
+The validateable skeleton under `v5/examples/migration-from-v4` contains 63 exact
+representative `moved` blocks. The v4 CloudWatch log group is intentionally excluded:
+its `name_prefix` -> v5 `name` transition is ForceNew, so ADR-F4-1 preserves it by
+configuring the generated physical name and using state remove/import. Static moved
+addresses are otherwise intentional: Terraform does not permit variables or
+wildcards in moved addresses, so callers substitute their actual AZs, private group
+keys, route destinations, and optional resources.
 
 ## 5. Open Questions (Resolved)
 

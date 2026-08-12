@@ -39,8 +39,9 @@
 - Tier 1 incorpora IDs de attachments/flow logs/Lattice y ARNs de destinos/roles.
 - Los tres ejemplos ejercitan la sintaxis de fase 3; los tests de apply/races
   permanecen en la fase 5 según ADR del gate.
-| 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` (implementación; gate pendiente) |
-| 5 | Tests: unit plan-only del motor de subnets + asserts + 3 examples + terraform-docs | pendiente |
+| 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
+| 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
+| 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | pendiente |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |
 
 ### Entrega fase 4
@@ -53,15 +54,22 @@
   completos. Los tres aliases del prototipo siguen deprecated hasta v6.
 - Tier 3 expone objetos completos en `resources` y declara explícitamente que no
   tiene garantía semver.
-- `v5-migration.md` contiene la matriz completa de inputs/outputs y los casos que
-  no admiten `moved`; `migration-from-v4/moved.tf.example` contiene 64 movimientos
-  exactos para el esqueleto de dos AZs.
+- `v5-migration.md` contiene la matriz completa de inputs/outputs, un gate de
+  `terraform plan` normal con allowlist y verificación posterior, y ADR-F4-1 para
+  Flow Logs. `migration-from-v4/moved.tf` mantiene 63 movimientos activos; el log
+  group v4 se preserva mediante nombre físico exacto + remove/import porque
+  `name_prefix` -> `name` es ForceNew.
+- El role IAM conserva el `name_prefix`; la policy inline se crea en un apply
+  dirigido antes de retirar el attachment/policy gestionado antiguo, evitando una
+  ventana sin permisos. La guía conserva el orden observable de `module.vpc.azs`.
 - Validaciones nuevas cierran cardinalidad IPv6, unicidad de pinning, gramática de
   claves, CIDRs/destinos, opciones por rol, addressing IPv4 de VPC y cobertura
   exacta de claves NAT/EIP por AZ. Los prefix-list IDs ya se materializan en
   `destination_prefix_list_id`.
-- Gate R1+R2 de fase 4 continúa pendiente; la implementación y validación local
-  están cerradas.
+- Los asserts ejecutables de shape para los 15 aliases Tier 2 y handles Tier 1, y
+  la fixture stateful de moved/import, permanecen explícitamente en Fase 5
+  (R1-M1/R2 recomendación de cobertura); no bloquean el gate documental de Fase 4.
+- Gate R1+R2 de fase 4 cerrado: 0 Critical/High abiertos.
 
 ## Reglas fijas del builder
 
@@ -80,7 +88,8 @@
 - [docs/rfc/reviews/fase-1.md](reviews/fase-1.md) — R1+R2 findings, resolución, tabla completa.
 - [docs/rfc/reviews/fase-2.md](reviews/fase-2.md) — R1+R2 gate cerrado en `97c89ee`.
 - [docs/rfc/reviews/fase-3.md](reviews/fase-3.md) — R1+R2 gate cerrado.
-- docs/rfc/reviews/fase-4.md … fase-6.md — pendientes.
+- [docs/rfc/reviews/fase-4.md](reviews/fase-4.md) — R1+R2 gate cerrado en `9834664` + `724c964`.
+- docs/rfc/reviews/fase-5.md … fase-6.md — pendientes.
 
 ## Cambios del contrato introducidos en Gate 1
 
