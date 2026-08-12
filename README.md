@@ -248,6 +248,63 @@ Terraform Plan:
 ...
 ```
 
+# BYOIP (Bring Your Own IP) for NAT Gateway EIPs
+
+You can control how Elastic IPs are sourced for NAT Gateways using the `nat_gateway_eip_configuration` variable. Three modes are available:
+
+## Default (create)
+
+When `nat_gateway_eip_configuration` is not set (or `mode = "create"`), EIPs are allocated from Amazon's default pool. This is the existing behaviour — no changes required for current users.
+
+## BYOIP Pool
+
+Allocate EIPs from a customer-owned public IPv4 address pool:
+
+```hcl
+module "vpc" {
+  source  = "aws-ia/vpc/aws"
+  version = ">= 4.6.0"
+
+  name       = "byoip-vpc"
+  cidr_block = "10.0.0.0/16"
+  az_count   = 3
+
+  subnets = {
+    public = {
+      netmask                   = 24
+      nat_gateway_configuration = "all_azs"
+    }
+    private = {
+      netmask                 = 24
+      connect_to_public_natgw = true
+    }
+  }
+
+  nat_gateway_eip_configuration = {
+    mode             = "byoip_pool"
+    public_ipv4_pool = "ipv4pool-ec2-xxxxxxxxxxxxxxxxx"
+  }
+}
+```
+
+## Existing EIPs
+
+Use pre-allocated EIP allocation IDs (e.g., managed outside this module):
+
+```hcl
+nat_gateway_eip_configuration = {
+  mode = "existing"
+  allocation_ids = {
+    "us-east-1a" = "eipalloc-0123456789abcdef0"
+    "us-east-1b" = "eipalloc-0123456789abcdef1"
+  }
+}
+```
+
+When `mode = "existing"`, the module does **not** create `aws_eip` resources — it attaches the provided allocation IDs directly to the NAT Gateways. Keys must match the AZ names where NAT Gateways will be deployed.
+
+Credit: Inspired by community PR#179 ([@hminaee-tc](https://github.com/hminaee-tc)).
+
 # Common Errors and their Fixes
 
 ## Error creating routes to Core Network
@@ -298,6 +355,28 @@ subnets = {
 
 * Alternatively, you can also not configure any subnet route (`var.core_network_routes`) to the Core Network until the attachment gets accepted.
 
+## Production Recommendation: Explicit `cidrs` over `netmask`
+
+For production deployments, prefer explicit `cidrs` over calculated `netmask` to avoid subnet replacement on changes.
+
+When using `netmask`, CIDRs are calculated positionally based on lexicographic ordering of subnet key names. Adding or removing a subnet type (e.g., adding `database = { netmask = 26 }`) can shift CIDRs assigned to existing subnets — causing Terraform to destroy and recreate them, resulting in downtime.
+
+```hcl
+# ⚠️ Development only — CIDRs shift if you add/remove subnet types
+subnets = {
+  private = { netmask = 24 }
+  public  = { netmask = 24 }
+}
+
+# ✅ Production-safe — CIDRs are pinned regardless of key changes
+subnets = {
+  private = { cidrs = ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"] }
+  public  = { cidrs = ["10.0.3.0/24", "10.0.4.0/24", "10.0.5.0/24"] }
+}
+```
+
+This is particularly important when using multiple private subnet roles (e.g., `private`, `isolated`, `database`) since alphabetical ordering determines CIDR allocation.
+
 # Contributing
 
 Please see our [developer documentation](https://github.com/aws-ia/terraform-aws-vpc/blob/main/contributing.md) for guidance on contributing to this module.
@@ -305,20 +384,20 @@ Please see our [developer documentation](https://github.com/aws-ia/terraform-aws
 ## Requirements
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0.0 |
 
 ## Providers
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.0.0 |
 
 ## Modules
 
 | Name | Source | Version |
-|------|--------|---------|
+| ---- | ------ | ------- |
 | <a name="module_calculate_subnets"></a> [calculate\_subnets](#module\_calculate\_subnets) | ./modules/calculate_subnets | n/a |
 | <a name="module_calculate_subnets_ipv6"></a> [calculate\_subnets\_ipv6](#module\_calculate\_subnets\_ipv6) | ./modules/calculate_subnets_ipv6 | n/a |
 | <a name="module_flow_logs"></a> [flow\_logs](#module\_flow\_logs) | ./modules/flow_logs | n/a |
@@ -329,7 +408,7 @@ Please see our [developer documentation](https://github.com/aws-ia/terraform-aws
 ## Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [aws_ec2_transit_gateway_vpc_attachment.tgw](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_transit_gateway_vpc_attachment) | resource |
 | [aws_egress_only_internet_gateway.eigw](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/egress_only_internet_gateway) | resource |
 | [aws_eip.nat](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eip) | resource |
@@ -372,21 +451,23 @@ Please see our [developer documentation](https://github.com/aws-ia/terraform-aws
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_name"></a> [name](#input\_name) | Name to give VPC. Note: does not effect subnet names, which get assigned name based on name\_prefix. | `string` | n/a | yes |
 | <a name="input_subnets"></a> [subnets](#input\_subnets) | Configuration of subnets to build in VPC. 1 Subnet per AZ is created. Subnet types are defined as maps with the available keys: "private", "public", "transit\_gateway", "core\_network". Each Subnet type offers its own set of available arguments detailed below. Subnets are calculated in lexicographical order of the keys in the map.<br/><br/>**Attributes shared across subnet types:**<br/>- `cidrs`            = (Optional\|list(string)) **Cannot set if `netmask` is set.** List of IPv4 CIDRs to set to subnets. Count of CIDRs defined must match quantity of azs in `az_count`.<br/>- `netmask`          = (Optional\|Int) **Cannot set if `cidrs` is set.** Netmask of the `var.cidr_block` to calculate for each subnet.<br/>- `assign_ipv6_cidr` = (Optional\|bool) **Cannot set if `ipv6_cidrs` is set.** If true, it will calculate a /64 block from the IPv6 VPC CIDR to set in the subnets.<br/>- `ipv6_cidrs`       = (Optional\|list(string)) **Cannot set if `assign_ipv6_cidr` is set.** List of IPv6 CIDRs to set to subnets. The subnet size must use a /64 prefix length. Count of CIDRs defined must match quantity of azs in `az_count`.<br/>- `name_prefix`      = (Optional\|String) A string prefix to use for the name of your subnet and associated resources. Subnet type key name is used if omitted (aka private, public, transit\_gateway). Example `name_prefix = "private"` for `var.subnets.private` is redundant.<br/>- `tags`             = (Optional\|map(string)) Tags to set on the subnet and associated resources.<br/><br/>**Any private subnet type options:**<br/>- All shared keys above<br/>- `connect_to_public_natgw` = (Optional\|bool) Determines if routes to NAT Gateways should be created. Must also set `var.subnets.public.nat_gateway_configuration` in public subnets.<br/>- `ipv6_native`             = (Optional\|bool) Indicates whether to create an IPv6-ony subnet. Either `var.assign_ipv6_cidr` or `var.ipv6_cidrs` should be defined to allocate an IPv6 CIDR block.<br/>- `connect_to_eigw`         = (Optional\|bool) Determines if routes to the Egress-only Internet gateway should be created. Must also set `var.vpc_egress_only_internet_gateway`.<br/><br/>**public subnet type options:**<br/>- All shared keys above<br/>- `nat_gateway_configuration` = (Optional\|string) Determines if NAT Gateways should be created and in how many AZs. Valid values = `"none"`, `"single_az"`, `"all_azs"`. Default = "none". Must also set `var.subnets.private.connect_to_public_natgw = true`.<br/>- `connect_to_igw`            = (Optional\|bool) Determines if the default route (0.0.0.0/0 or ::/0) is created in the public subnets with destination the Internet gateway. Defaults to `true`.<br/>- `ipv6_native`               = (Optional\|bool) Indicates whether to create an IPv6-ony subnet. Either `var.assign_ipv6_cidr` or `var.ipv6_cidrs` should be defined to allocate an IPv6 CIDR block.<br/>- `map_public_ip_on_launch`   = (Optional\|bool) Specify true to indicate that instances launched into the subnet should be assigned a public IP address. Default to `false`.<br/><br/>**transit\_gateway subnet type options:**<br/>- All shared keys above<br/>- `connect_to_public_natgw`                            = (Optional\|string) Determines if routes to NAT Gateways should be created. Specify the CIDR range or a prefix-list-id that you want routed to nat gateway. Usually `0.0.0.0/0`. Must also set `var.subnets.public.nat_gateway_configuration`.<br/>- `transit_gateway_default_route_table_association`    = (Optional\|bool) Boolean whether the VPC Attachment should be associated with the EC2 Transit Gateway association default route table. This cannot be configured or perform drift detection with Resource Access Manager shared EC2 Transit Gateways.<br/>- `transit_gateway_default_route_table_propagation`    = (Optional\|bool) Boolean whether the VPC Attachment should propagate routes with the EC2 Transit Gateway propagation default route table. This cannot be configured or perform drift detection with Resource Access Manager shared EC2 Transit Gateways.<br/>- `transit_gateway_appliance_mode_support`             = (Optional\|string) Whether Appliance Mode is enabled. If enabled, a traffic flow between a source and a destination uses the same Availability Zone for the VPC attachment for the lifetime of that flow. Valid values: `disable` (default) and `enable`.<br/>- `transit_gateway_dns_support`                        = (Optional\|string) DNS Support is used if you need the VPC to resolve public IPv4 DNS host names to private IPv4 addresses when queried from instances in another VPC attached to the transit gateway. Valid values: `enable` (default) and `disable`.<br/>- `transit_gateway_security_group_referencing_support` = (Optional\|string) Security group referencing support enables you to simplify Security group management and control of instance-to-instance traffic across VPCs that are connected by Transit gateway. Valid values: `disable` and `enable` (default).<br/><br/>**core\_network subnet type options:**<br/>- All shared keys abovce<br/>- `connect_to_public_natgw` = (Optional\|string) Determines if routes to NAT Gateways should be created. Specify the CIDR range or a prefix-list-id that you want routed to nat gateway. Usually `0.0.0.0/0`. Must also set `var.subnets.public.nat_gateway_configuration`.<br/>- `appliance_mode_support`  = (Optional\|bool) Indicates whether appliance mode is supported. If enabled, traffic flow between a source and destination use the same Availability Zone for the VPC attachment for the lifetime of that flow. Defaults to `false`.<br/>- `require_acceptance`      = (Optional\|bool) Boolean whether the core network VPC attachment to create requires acceptance or not. Defaults to `false`.<br/>- `accept_attachment`       = (Optional\|bool) Boolean whether the core network VPC attachment is accepted or not in the segment. Only valid if `require_acceptance` is set to `true`. Defaults to `true`.<br/><br/>Example:<pre>subnets = {<br/>  # Dual-stack subnet<br/>  public = {<br/>    netmask                   = 24<br/>    assign_ipv6_cidr          = true<br/>    nat_gateway_configuration = "single_az"<br/>  }<br/>  # IPv4 only subnet<br/>  private = {<br/>    netmask                  = 24<br/>    connect_to_public_natgw  = true<br/>  }<br/>  # IPv6 only subnet<br/>  ipv6 = {<br/>    ipv6_native      = true<br/>    assign_ipv6_cidr = true<br/>    connect_to_eigw  = true<br/>  }<br/>  # Transit gateway subnets (dual-stack)<br/>  transit_gateway = {<br/>    netmask                                         = 24<br/>    assign_ipv6_cidr                                = true<br/>    connect_to_public_natgw                         = true<br/>    transit_gateway_default_route_table_association = true<br/>    transit_gateway_default_route_table_propagation = true<br/>  }<br/>  # Core Network subnets (dual-stack)<br/>  core_network = {<br/>    netmask                 = 24<br/>    assign_ipv6_cidr        = true<br/>    connect_to_public_natgw = true<br/>    appliance_mode_support  = true<br/>    require_acceptance      = true<br/>    accept_attachment       = true<br/>  }<br/>}</pre> | `any` | n/a | yes |
 | <a name="input_az_count"></a> [az\_count](#input\_az\_count) | Searches region for # of AZs to use and takes a slice based on count. Assume slice is sorted a-z. Required if `azs` is not provided. | `number` | `null` | no |
-| <a name="input_azs"></a> [azs](#input\_azs) | (Optional) A list of AZs to use. e.g. `azs = ["us-east-1a","us-east-1c"]` Incompatible with `az_count` | `list(string)` | `[]` | no |
+| <a name="input_azs"></a> [azs](#input\_azs) | (Optional) A list of AZs to use. e.g. `azs = ["us-east-1a","us-east-1c"]` Incompatible with `az_count` | `list(string)` | `null` | no |
 | <a name="input_cidr_block"></a> [cidr\_block](#input\_cidr\_block) | IPv4 CIDR range to assign to VPC if creating VPC or to associate as a secondary IPv6 CIDR. Overridden by var.vpc\_id output from data.aws\_vpc. | `string` | `null` | no |
 | <a name="input_core_network"></a> [core\_network](#input\_core\_network) | AWS Cloud WAN's core network information - to create a VPC attachment. Required when `cloud_wan` subnet is defined. Two attributes are required: the `id` and `arn` of the resource. | <pre>object({<br/>    id  = string<br/>    arn = string<br/>  })</pre> | <pre>{<br/>  "arn": null,<br/>  "id": null<br/>}</pre> | no |
 | <a name="input_core_network_ipv6_routes"></a> [core\_network\_ipv6\_routes](#input\_core\_network\_ipv6\_routes) | Configuration of IPv6 route(s) to AWS Cloud WAN's core network.<br/>For each `public` and/or `private` subnets named in the `subnets` variable, optionally create routes from the subnet to the core network.<br/>You can specify either a CIDR range or a prefix-list-id that you want routed to the core network.<br/>Example:<pre>core_network_ivp6_routes = {<br/>  public  = "::/0"<br/>  private = "pl-123"<br/>}</pre> | `any` | `{}` | no |
 | <a name="input_core_network_routes"></a> [core\_network\_routes](#input\_core\_network\_routes) | Configuration of route(s) to AWS Cloud WAN's core network.<br/>For each `public` and/or `private` subnets named in the `subnets` variable, optionally create routes from the subnet to the core network.<br/>You can specify either a CIDR range or a prefix-list-id that you want routed to the core network.<br/>Example:<pre>core_network_routes = {<br/>  public  = "10.0.0.0/8"<br/>  private = "pl-123"<br/>}</pre> | `any` | `{}` | no |
 | <a name="input_create_vpc"></a> [create\_vpc](#input\_create\_vpc) | Determines whether to create the VPC or not; defaults to enabling the creation. | `bool` | `true` | no |
+| <a name="input_nat_gateway_eip_configuration"></a> [nat\_gateway\_eip\_configuration](#input\_nat\_gateway\_eip\_configuration) | Configuration for NAT Gateway Elastic IP allocation. Allows using BYOIP pools or<br/>pre-existing EIP allocation IDs instead of the default Amazon pool.<br/>Inspired by community PR#179 (credit: @hminaee-tc).<br/><br/>- `mode` = (Optional\|string) How EIPs are sourced. Valid values:<br/>  - `"create"` (default) — allocate from Amazon's default pool (current behavior).<br/>  - `"byoip_pool"` — allocate from a customer-owned public IPv4 pool.<br/>  - `"existing"` — use pre-allocated EIP allocation IDs (one per NAT GW AZ).<br/>- `public_ipv4_pool` = (Optional\|string) The EC2 public IPv4 pool ID (e.g. "ipv4pool-ec2-xxx").<br/>  Required when mode = "byoip\_pool".<br/>- `allocation_ids` = (Optional\|map(string)) Map of AZ name to existing EIP allocation ID.<br/>  Required when mode = "existing". Keys must match the AZs where NAT Gateways are deployed. | <pre>object({<br/>    mode             = optional(string, "create")<br/>    public_ipv4_pool = optional(string)<br/>    allocation_ids   = optional(map(string), {})<br/>  })</pre> | <pre>{<br/>  "mode": "create"<br/>}</pre> | no |
 | <a name="input_optimize_subnet_cidr_ranges"></a> [optimize\_subnet\_cidr\_ranges](#input\_optimize\_subnet\_cidr\_ranges) | Sort subnets to calculate by their netmask to efficiently use IP space. | `bool` | `false` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 | <a name="input_transit_gateway_id"></a> [transit\_gateway\_id](#input\_transit\_gateway\_id) | Transit gateway id to attach the VPC to. Required when `transit_gateway` subnet is defined. | `string` | `null` | no |
 | <a name="input_transit_gateway_ipv6_routes"></a> [transit\_gateway\_ipv6\_routes](#input\_transit\_gateway\_ipv6\_routes) | Configuration of IPv6 route(s) to transit gateway.<br/>For each `public` and/or `private` subnets named in the `subnets` variable,<br/>Optionally create routes from the subnet to transit gateway. Specify the CIDR range or a prefix-list-id that you want routed to the transit gateway.<br/>Example:<pre>transit_gateway_ipv6_routes = {<br/>  public  = "::/0"<br/>  private = "pl-123"<br/>}</pre> | `any` | `{}` | no |
 | <a name="input_transit_gateway_routes"></a> [transit\_gateway\_routes](#input\_transit\_gateway\_routes) | Configuration of route(s) to transit gateway.<br/>For each `public` and/or `private` subnets named in the `subnets` variable,<br/>Optionally create routes from the subnet to transit gateway. Specify the CIDR range or a prefix-list-id that you want routed to the transit gateway.<br/>Example:<pre>transit_gateway_routes = {<br/>  public  = "10.0.0.0/8"<br/>  private = "pl-123"<br/>}</pre> | `any` | `{}` | no |
+| <a name="input_vpc_arn"></a> [vpc\_arn](#input\_vpc\_arn) | VPC ARN to use for the Cloud WAN VPC attachment when `create_vpc = false`. Bypasses the data source lookup whose `(known after apply)` propagation can force-replace the attachment on unrelated VPC changes. When null (default), the ARN is read from the data source (protected by lifecycle ignore\_changes). | `string` | `null` | no |
 | <a name="input_vpc_assign_generated_ipv6_cidr_block"></a> [vpc\_assign\_generated\_ipv6\_cidr\_block](#input\_vpc\_assign\_generated\_ipv6\_cidr\_block) | Requests and Amazon-provided IPv6 CIDR block with a /56 prefix length. You cannot specify the range of IP addresses, or the size of the CIDR block. Conflicts with `vpc_ipv6_ipam_pool_id`. | `bool` | `null` | no |
 | <a name="input_vpc_egress_only_internet_gateway"></a> [vpc\_egress\_only\_internet\_gateway](#input\_vpc\_egress\_only\_internet\_gateway) | Set to use the Egress-only Internet gateway for all IPv6 traffic going to the Internet. | `bool` | `false` | no |
 | <a name="input_vpc_enable_dns_hostnames"></a> [vpc\_enable\_dns\_hostnames](#input\_vpc\_enable\_dns\_hostnames) | Indicates whether the instances launched in the VPC get DNS hostnames. If enabled, instances in the VPC get DNS hostnames; otherwise, they do not. Disabled by default for nondefault VPCs. | `bool` | `true` | no |
@@ -406,18 +487,25 @@ Please see our [developer documentation](https://github.com/aws-ia/terraform-aws
 ## Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_azs"></a> [azs](#output\_azs) | List of AZs where subnets are created. |
 | <a name="output_core_network_attachment"></a> [core\_network\_attachment](#output\_core\_network\_attachment) | AWS Cloud WAN's core network attachment. Full output of aws\_networkmanager\_vpc\_attachment. |
 | <a name="output_core_network_subnet_attributes_by_az"></a> [core\_network\_subnet\_attributes\_by\_az](#output\_core\_network\_subnet\_attributes\_by\_az) | Map of all core\_network subnets containing their attributes.<br/><br/>Example:<pre>core_network_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
 | <a name="output_egress_only_internet_gateway"></a> [egress\_only\_internet\_gateway](#output\_egress\_only\_internet\_gateway) | Egress-only Internet gateway attributes. Full output of aws\_egress\_only\_internet\_gateway. |
 | <a name="output_flow_log_attributes"></a> [flow\_log\_attributes](#output\_flow\_log\_attributes) | Flow Log information. |
 | <a name="output_internet_gateway"></a> [internet\_gateway](#output\_internet\_gateway) | Internet gateway attributes. Full output of aws\_internet\_gateway. |
+| <a name="output_isolated_subnet_ids"></a> [isolated\_subnet\_ids](#output\_isolated\_subnet\_ids) | Flat list of private subnet IDs that do NOT have a route to a NAT gateway<br/>(no outbound Internet connectivity). Use this for databases, internal services,<br/>or workloads that must not reach the Internet. Fixes #177.<br/><br/>Example:<pre>isolated_subnet_ids = ["subnet-0d4e5f6a", "subnet-0b7c8d9e"]</pre> |
+| <a name="output_nat_eip_attributes_by_az"></a> [nat\_eip\_attributes\_by\_az](#output\_nat\_eip\_attributes\_by\_az) | Map of NAT Gateway Elastic IP resource attributes by AZ. Includes public\_ip,<br/>allocation\_id, and public\_ipv4\_pool. Null when mode = "existing" (EIPs not managed by module).<br/><br/>Example:<pre>nat_eip_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "id"               = "eipalloc-0e8b20303eea88b13"<br/>    "public_ip"        = "52.1.2.3"<br/>    "public_ipv4_pool" = "amazon"<br/>    "domain"           = "vpc"<br/>  }<br/>}</pre> |
 | <a name="output_nat_gateway_attributes_by_az"></a> [nat\_gateway\_attributes\_by\_az](#output\_nat\_gateway\_attributes\_by\_az) | Map of nat gateway resource attributes by AZ.<br/><br/>Example:<pre>nat_gateway_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "allocation_id" = "eipalloc-0e8b20303eea88b13"<br/>    "connectivity_type" = "public"<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>    "network_interface_id" = "eni-0d422727088bf9a86"<br/>    "private_ip" = "10.0.3.40"<br/>    "public_ip" = <><br/>    "subnet_id" = "subnet-0f11c92e439c8ab4a"<br/>    "tags" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>    "tags_all" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>  }<br/>  "us-east-1b" = { ... }<br/>}</pre> |
+| <a name="output_nat_gateway_ids"></a> [nat\_gateway\_ids](#output\_nat\_gateway\_ids) | Map of AZ to NAT Gateway ID. Empty map when no NAT Gateways are configured. |
+| <a name="output_nat_public_ips"></a> [nat\_public\_ips](#output\_nat\_public\_ips) | Map of AZ to NAT Gateway public IP address. Empty map when no NAT Gateways are configured. |
 | <a name="output_natgw_id_per_az"></a> [natgw\_id\_per\_az](#output\_natgw\_id\_per\_az) | Map of nat gateway IDs for each resource. Will be duplicate ids if your var.subnets.public.nat\_gateway\_configuration = "single\_az".<br/><br/>Example:<pre>natgw_id_per_az = {<br/>  "us-east-1a" = {<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>  }<br/>  "us-east-1b" = {<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>   }<br/>}</pre> |
+| <a name="output_natgw_subnet_ids"></a> [natgw\_subnet\_ids](#output\_natgw\_subnet\_ids) | Flat list of private subnet IDs that have a route to a NAT gateway<br/>(connect\_to\_public\_natgw = true). Use this to safely place compute workloads<br/>that require outbound Internet access. Fixes #177.<br/><br/>Example:<pre>natgw_subnet_ids = ["subnet-0a1b2c3d", "subnet-0e4f5a6b", "subnet-0c7d8e9f"]</pre> |
 | <a name="output_private_subnet_attributes_by_az"></a> [private\_subnet\_attributes\_by\_az](#output\_private\_subnet\_attributes\_by\_az) | Map of all private subnets containing their attributes.<br/><br/>Example:<pre>private_subnet_attributes_by_az = {<br/>  "private/us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
 | <a name="output_public_subnet_attributes_by_az"></a> [public\_subnet\_attributes\_by\_az](#output\_public\_subnet\_attributes\_by\_az) | Map of all public subnets containing their attributes.<br/><br/>Example:<pre>public_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
+| <a name="output_route_table_ids_by_type_by_az"></a> [route\_table\_ids\_by\_type\_by\_az](#output\_route\_table\_ids\_by\_type\_by\_az) | Map of route table type to map of AZ to route table ID. Provides simple ID<br/>access without needing to extract .id from the full resource objects in<br/>rt\_attributes\_by\_type\_by\_az.<br/><br/>Example:<pre>route_table_ids_by_type_by_az = {<br/>  "private" = {<br/>    "private/us-east-1a" = "rtb-0a1b2c3d"<br/>    "private/us-east-1b" = "rtb-0e4f5a6b"<br/>  }<br/>  "public" = {<br/>    "us-east-1a" = "rtb-0c7d8e9f"<br/>  }<br/>  "transit_gateway" = {<br/>    "us-east-1a" = "rtb-0d4e5f6a"<br/>  }<br/>  "core_network" = {}<br/>}</pre> |
 | <a name="output_rt_attributes_by_type_by_az"></a> [rt\_attributes\_by\_type\_by\_az](#output\_rt\_attributes\_by\_type\_by\_az) | Map of route tables by type => az => route table attributes. Example usage: module.vpc.rt\_attributes\_by\_type\_by\_az.private.id<br/><br/>Example:<pre>rt_attributes_by_type_by_az = {<br/>  "private" = {<br/>    "us-east-1a" = {<br/>      "id" = "rtb-0e77040c0598df003"<br/>      "tags" = tolist([<br/>        {<br/>          "key" = "Name"<br/>          "value" = "private-us-east-1a"<br/>        },<br/>      ])<br/>      "vpc_id" = "vpc-033e054f49409592a"<br/>      ...<br/>      <all attributes of route: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table#attributes-reference><br/>    }<br/>    "us-east-1b" = { ... }<br/>  "public" = { ... }</pre> |
+| <a name="output_subnet_ids_by_role"></a> [subnet\_ids\_by\_role](#output\_subnet\_ids\_by\_role) | Map of subnet role to map of AZ to subnet ID. Distinguishes NAT-connected<br/>private subnets from isolated ones. Fixes #177, #159.<br/><br/>Example:<pre>subnet_ids_by_role = {<br/>  "private" = {<br/>    "us-east-1a" = "subnet-0a1b2c3d"<br/>    "us-east-1b" = "subnet-0e4f5a6b"<br/>  }<br/>  "isolated" = {<br/>    "us-east-1a" = "subnet-0c7d8e9f"<br/>    "us-east-1b" = "subnet-0a1b2c3d"<br/>  }<br/>  "public" = {<br/>    "us-east-1a" = "subnet-0f1a2b3c"<br/>  }<br/>  "transit_gateway" = {<br/>    "us-east-1a" = "subnet-0d4e5f6a"<br/>  }<br/>}</pre> |
 | <a name="output_tgw_subnet_attributes_by_az"></a> [tgw\_subnet\_attributes\_by\_az](#output\_tgw\_subnet\_attributes\_by\_az) | Map of all tgw subnets containing their attributes.<br/><br/>Example:<pre>tgw_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
 | <a name="output_transit_gateway_attachment_id"></a> [transit\_gateway\_attachment\_id](#output\_transit\_gateway\_attachment\_id) | Transit gateway attachment id. |
 | <a name="output_vpc_attributes"></a> [vpc\_attributes](#output\_vpc\_attributes) | VPC resource attributes. Full output of aws\_vpc. |
