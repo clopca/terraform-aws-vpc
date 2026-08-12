@@ -90,8 +90,12 @@ locals {
   # - get cidr block value from AWS IPAM
   # - create flow logs
 
-  vpc        = var.create_vpc ? aws_vpc.main[0] : data.aws_vpc.main[0]
-  cidr_block = var.cidr_block == null ? local.vpc.cidr_block : var.cidr_block
+  vpc = var.create_vpc ? aws_vpc.main[0] : data.aws_vpc.main[0]
+  cidr_block = var.cidr_block != null ? var.cidr_block : (
+    var.vpc_secondary_cidr && var.vpc_ipv4_netmask_length != null
+    ? aws_vpc_ipv4_cidr_block_association.secondary[0].cidr_block
+    : local.vpc.cidr_block
+  )
 
   create_flow_logs = (var.vpc_flow_logs == null || var.vpc_flow_logs.log_destination_type == "none") ? false : true
 

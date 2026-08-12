@@ -48,9 +48,10 @@ resource "aws_vpc" "main" {
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
   count = (var.vpc_secondary_cidr && !var.create_vpc) ? 1 : 0
 
-  vpc_id            = var.vpc_id
-  cidr_block        = local.cidr_block
-  ipv4_ipam_pool_id = var.vpc_ipv4_ipam_pool_id
+  vpc_id              = var.vpc_id
+  cidr_block          = var.vpc_ipv4_netmask_length == null ? var.cidr_block : null
+  ipv4_ipam_pool_id   = var.vpc_ipv4_ipam_pool_id
+  ipv4_netmask_length = var.vpc_ipv4_netmask_length
 }
 
 # ---------- PUBLIC SUBNET CONFIGURATION ----------
