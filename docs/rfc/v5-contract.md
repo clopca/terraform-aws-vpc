@@ -29,8 +29,9 @@
 >   and Firehose streams are external resources injected through `destination_arn`.
 > - `vpc_lattice` uses set semantics for up to five security groups. Private DNS
 >   defaults to false and remains an explicit ForceNew choice.
-> - The real AWS provider floor is `>= 6.32`, established by the
->   `aws_subnet.ipv4_ipam_pool_id` and `ipv4_netmask_length` arguments. Lattice
+> - The real AWS provider floor is `>= 6.29`, established by the
+>   `aws_subnet.ipv4_ipam_pool_id` and `ipv4_netmask_length` arguments
+>   (first released in provider 6.29 — see fase-3 verification). Lattice
 >   `private_dns_enabled` separately requires 6.27; TGW security-group referencing
 >   alone would require only 5.69.
 > - Tier 1 exposes attachment IDs, flow-log IDs, destination ARNs, role ARNs, and
@@ -330,7 +331,7 @@ callers should use explicit `names` for stable AZ identity and plan-time diagnos
 
 ### 3.8 Provider Floor [R2-H2]
 
-Required AWS provider: `>= 6.32`.
+Required AWS provider: `>= 6.29`.
 
 The limiting feature is subnet IPAM: the v5 implementation sets
 `ipv4_ipam_pool_id` and `ipv4_netmask_length` on `aws_subnet`, including null in
