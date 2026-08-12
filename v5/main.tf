@@ -26,7 +26,7 @@ data "aws_vpc" "existing" {
 # Scalar account identity for constructed Cloud WAN/VPC ARNs. The attachment
 # never consumes the full existing-VPC data object, avoiding unknown propagation.
 data "aws_caller_identity" "current" {
-  count = length([for k, v in var.subnets : k if v.role == "core_network"]) > 0 ? 1 : 0
+  count = local.core_network_group != null || length(local.cloudwatch_roles_to_create) > 0 ? 1 : 0
 }
 
 # ─── VPC ───────────────────────────────────────────────────────────────────

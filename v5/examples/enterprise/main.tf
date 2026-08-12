@@ -9,7 +9,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.69"
+      version = ">= 6.32"
     }
   }
 }
@@ -106,10 +106,11 @@ module "vpc" {
     }
   }
 
-  # Native S3 destination with parquet hourly partitions.
+  # Externally managed S3 destination with parquet hourly partitions.
   flow_logs = {
     archive = {
       destination_type = "s3"
+      destination_arn  = "arn:aws:s3:::enterprise-vpc-flow-logs"
       traffic_type     = "ALL"
       s3_options = {
         file_format                = "parquet"

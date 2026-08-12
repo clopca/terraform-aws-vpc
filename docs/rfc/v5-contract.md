@@ -1,37 +1,32 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 3 Implemented (R1+R2 gate pending)
+> **Status:** Draft / Phase 3 Gate Closed (R1+R2)
 >
-> **Phase 3 implementation (2026-08-12):**
-> - A subnet group with `role = "transit_gateway"` creates one
->   `aws_ec2_transit_gateway_vpc_attachment`, keyed by the constant `"vpc"` and
->   configured from typed booleans for default association/propagation,
->   appliance mode, DNS, IPv6, and security-group referencing. The provider
->   floor remains `>= 5.69`.
-> - A subnet group with `role = "core_network"` creates one
->   `aws_networkmanager_vpc_attachment` plus an optional
->   `aws_networkmanager_attachment_accepter`. Its VPC ARN is constructed from
->   partition, region, account, and the scalar VPC ID; it never consumes the
->   full `data.aws_vpc` object. `lifecycle.ignore_changes = [vpc_arn]` closes the
->   destructive replacement path fixed in v4.6.
-> - `flow_logs` is a typed map with stable caller-owned keys. CloudWatch, S3,
->   and Kinesis Data Firehose destinations support create-or-inject. Created
->   resources are native AWS resources (`aws_flow_log`, log group, S3 bucket,
->   Firehose, IAM role, and separate `aws_iam_role_policy`); no external module
->   and no deprecated `inline_policy` block is used.
-> - `vpc_lattice` is a typed nullable contract that creates one
->   `aws_vpclattice_service_network_vpc_association`, including security groups,
->   private DNS, and tags.
-> - New Tier 1 outputs are `transit_gateway_attachment_id`,
->   `core_network_attachment_id`, `flow_log_ids`, and
->   `vpc_lattice_service_network_association_id`.
-> - Cross-resource preconditions reject TGW/Cloud WAN routes without their
->   corresponding attachment subnet role and reject Core Network ARN/ID
->   mismatches.
+> **Phase 3 implementation and gate closure (2026-08-12):**
+> - Transit Gateway and Cloud WAN attachments use the constant key `"vpc"`.
+>   TGW routes depend only on the TGW attachment; Cloud WAN routes depend only
+>   on the VPC attachment and its optional accepter, preventing first-apply races
+>   without serializing unrelated resources.
+> - Cloud WAN constructs `vpc_arn` from scalar identity components. This removes
+>   the spurious unknown that caused unrelated replacements. No `ignore_changes`
+>   is used: changing the actual VPC identity still performs the correct replace.
+> - `flow_logs` keeps CloudWatch create-or-inject convenience. Its generated role
+>   scopes write actions to the destination, grants `DescribeLogGroups` on `*`,
+>   and protects trust with `aws:SourceAccount` plus `aws:SourceArn`. S3 buckets
+>   and Firehose streams are external resources injected through `destination_arn`.
+> - `vpc_lattice` uses set semantics for up to five security groups. Private DNS
+>   defaults to false and remains an explicit ForceNew choice.
+> - The real AWS provider floor is `>= 6.32`, established by the
+>   `aws_subnet.ipv4_ipam_pool_id` and `ipv4_netmask_length` arguments. Lattice
+>   `private_dns_enabled` separately requires 6.27; TGW security-group referencing
+>   alone would require only 5.69.
+> - Tier 1 exposes attachment IDs, flow-log IDs, destination ARNs, role ARNs, and
+>   the Lattice association ID. Tier 3 exposes created CloudWatch destinations,
+>   roles, and policies for advanced composition.
 > **Date:** 2026-08-12
 > **Authors:** aws-ia team
 > **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
-> **Reviews:** `reviews/fase-1.md`, `reviews/fase-2.md` (R1 + R2 full audit results)
+> **Reviews:** `reviews/fase-1.md`, `reviews/fase-2.md`, `reviews/fase-3.md` (R1 + R2 full audit results)
 
 ---
 
@@ -179,7 +174,7 @@ variable "subnets" {
       arn                = optional(string)  # auto-derived if omitted
       appliance_mode     = optional(bool, false)
       require_acceptance = optional(bool, false)
-      accept_attachment  = optional(bool, true)
+      accept_attachment  = optional(bool, false) # explicit true supports same-account acceptance only
     }))
   }))
 }
@@ -273,6 +268,10 @@ output "route_table_ids_by_group_by_az" {}  # map(group, map(az, rt_id))
 output "route_table_ids_by_semantic_role" {} # map(role, list(rt_id))
 output "transit_gateway_attachment_id" {}
 output "core_network_attachment_id" {}
+output "flow_log_ids" {}                    # map(key, flow_log_id)
+output "flow_log_destination_arns" {}       # map(key, destination_arn)
+output "flow_log_role_arns" {}              # map(key, role_arn|null)
+output "vpc_lattice_service_network_association_id" {}
 ```
 
 #### Tier 2: Deprecated Legacy (present in v5, removed in v6)
@@ -302,18 +301,82 @@ callers should use explicit `names` for stable AZ identity and plan-time diagnos
 2. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`
 3. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition
 
-### 3.8 Provider Floor [R2-C1]
+### 3.8 Provider Floor [R2-H2]
 
-Required AWS provider: `>= 5.69`
+Required AWS provider: `>= 6.32`.
 
-Justification: `security_group_referencing_support` on `aws_ec2_transit_gateway_vpc_attachment`
-was introduced in provider v5.69.0. Lower versions produce an apply error.
+The limiting feature is subnet IPAM: the v5 implementation sets
+`ipv4_ipam_pool_id` and `ipv4_netmask_length` on `aws_subnet`, including null in
+non-IPAM paths, and those schema arguments require AWS provider 6.32. The other
+Phase 3 additions have lower floors: `private_dns_enabled` on the VPC Lattice
+association requires 6.27, while TGW `security_group_referencing_support` requires
+5.69. A consumer locked to provider 5.x can satisfy neither the published schema
+nor validate the complete module, so v5 intentionally raises the major floor.
 
 ### 3.9 Isolated Role Semantics
 
 `isolated` is functionally `private` with a routing guard. It prevents accidental
 routing configuration (including TGW/CWAN routes). Use `role = "private"` for subnets
 that need selective routing without internet access.
+
+### 3.10 Phase 3 ADRs
+
+#### ADR-F3-1 — S3 and Firehose flow-log destinations are external
+
+**Decision:** the VPC module creates only `aws_flow_log` plus the optional
+CloudWatch log group and VPC Flow Logs role. For `destination_type = "s3"` or
+`"kinesis"`, callers must provide `destination_arn` for an externally managed
+bucket or Firehose delivery stream.
+
+**Reasoning:** owning durable log destinations would make this module responsible
+for retention, lifecycle expiration, KMS keys and grants, bucket ownership and
+policies, Firehose buffering, and cross-account governance. Those policies vary by
+organization and belong in dedicated logging modules. This is a pre-publication
+contract decision, so no compatibility shim is required.
+
+#### ADR-F3-2 — Cloud WAN acceptance and route staging
+
+`accept_attachment` defaults to false. Setting it true is supported only when the
+Core Network owner account is the same account as the module provider. A shared
+cross-account Core Network must be accepted with an owner-account provider outside
+this module. When external acceptance is required, callers first apply the
+attachment without Core Network routes, accept it externally, then set
+`require_acceptance = false` and add routes. A precondition rejects routes during
+the pending external-acceptance stage.
+
+Core Network ARNs are validated as complete
+`arn:<partition>:networkmanager::<12-digit-account>:core-network/<id>` values and
+must match the configured ID.
+
+#### ADR-F3-3 — VPC Lattice DNS and security groups
+
+`private_dns_enabled` defaults to false to avoid an implicit ForceNew DNS choice.
+Changing it replaces the association by provider design. Security groups are a
+set, because ordering is meaningless, and the contract rejects more than the AWS
+quota of five. Additional DNS preference/domain fields remain future additive
+contract work after provider behavior and migration semantics are reviewed.
+
+#### ADR-F3-4 — Flow Logs validation boundary
+
+The contract validates supported CloudWatch retention periods, non-empty optional
+ARNs, and mandatory external destination ARNs for S3/Firehose. It does not infer
+cross-account ownership from an ARN or attempt to prove IAM permissions at plan
+time; those are runtime/account-policy concerns. `deliver_cross_account_role_arn`
+is accepted as an explicit non-empty ARN and remains caller-owned.
+
+### 3.11 Import and adoption
+
+Existing resources can be adopted without adding unmanaged-resource bypasses:
+
+```shell
+terraform import 'module.vpc.aws_ec2_transit_gateway_vpc_attachment.this["vpc"]' tgw-attach-0123456789abcdef0
+terraform import 'module.vpc.aws_networkmanager_vpc_attachment.this["vpc"]' attachment-0123456789abcdef0
+terraform import 'module.vpc.aws_vpclattice_service_network_vpc_association.this["vpc"]' snva-0123456789abcdef0
+terraform import 'module.vpc.aws_flow_log.this["audit"]' fl-0123456789abcdef0
+```
+
+Use the caller-owned `flow_logs` map key in the final address. Imported attachments
+retain the singleton `"vpc"` address.
 
 ---
 

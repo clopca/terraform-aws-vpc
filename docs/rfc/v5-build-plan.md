@@ -19,22 +19,26 @@
 | 1-gate | Cierre findings R1+R2: C1 multi-public, C2 pinning, C3 list routing, H1-H4 docs+inject+outputs, R2-C1/C2/C3 provider+preconditions | ✅ e434caf |
 | 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | ✅ 89eba29 |
 | 2-gate | Cierre R1+R2: claves CIDR estables, placement NAT explícito, RT injection, NAT64, coverage y docs de unknowns | ✅ 97c89ee |
-| 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | ✅ implementada; gate R1+R2 pendiente |
+| 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | ✅ implementada |
+| 3-gate | Cierre R1+R2: dependencias attachment/accepter, floor 6.32, IAM hardened, destinos de datos externos y ADRs | ✅ cerrado |
 
 ### Entrega fase 3
 
 - TGW y Cloud WAN usan una dirección singleton estable (`["vpc"]`) y referencias
-  escalares. Cloud WAN construye el ARN del VPC sin propagar el objeto completo de
-  `data.aws_vpc` y conserva `ignore_changes = [vpc_arn]` como defensa v4.6.
-- Flow Logs son nativos y tipados: CloudWatch, S3 y Kinesis Data Firehose, con
-  create-or-inject de destino y roles aplicables; políticas IAM separadas, sin
-  módulos externos ni `inline_policy`.
-- VPC Lattice Service Network association queda tipada.
-- Los tres ejemplos ejercitan fase 3; `hub` instancia attachments TGW y CWAN.
-- Tier 1 incorpora IDs de ambos attachments, mapa de IDs de flow logs e ID de la
-  asociación Lattice.
-- Implementación validada con `fmt`, `init -backend=false` y `validate`; el cierre
-  de fase requiere todavía los dos revisores y `docs/rfc/reviews/fase-3.md`.
+  escalares. Las rutas esperan sólo al attachment correspondiente y, en Cloud WAN,
+  al accepter opcional. No hay serialización global.
+- Cloud WAN construye el ARN del VPC sin propagar el objeto completo de
+  `data.aws_vpc`. El ARN escalar elimina el unknown espurio; no se ignora `vpc_arn`,
+  por lo que un cambio real de identidad conserva el replace correcto.
+- Flow Logs crean o inyectan CloudWatch y su rol. La policy separa
+  `DescribeLogGroups`, el trust usa `SourceAccount`/`SourceArn`, y S3/Firehose son
+  destinos externos inyectados para mantener fuera del módulo retención, KMS y
+  lifecycle de datos.
+- VPC Lattice usa set de hasta cinco security groups y DNS privado opt-in.
+- El provider floor real es `>= 6.32` por los atributos IPAM de `aws_subnet`.
+- Tier 1 incorpora IDs de attachments/flow logs/Lattice y ARNs de destinos/roles.
+- Los tres ejemplos ejercitan la sintaxis de fase 3; los tests de apply/races
+  permanecen en la fase 5 según ADR del gate.
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | pendiente |
 | 5 | Tests: unit plan-only del motor de subnets + asserts + 3 examples + terraform-docs | pendiente |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | pendiente |
@@ -48,14 +52,15 @@
 5. `terraform fmt` + `init -backend=false` + `validate` en verde antes de cada commit.
 6. Sin dependencias de módulos externos con deprecations activas.
 7. Commits pequeños y descriptivos por fase; no push (rama local hasta decisión con Pablo).
-8. Provider floor >= 5.69 (por security_group_referencing — R2-C1).
+8. Provider floor >= 6.32 (por `aws_subnet.ipv4_ipam_pool_id` y `ipv4_netmask_length` — R2-H2).
 9. Cross-variable invariants via preconditions en recursos, no solo en variables (R2-H1).
 
 ## Registro de revisiones
 
 - [docs/rfc/reviews/fase-1.md](reviews/fase-1.md) — R1+R2 findings, resolución, tabla completa.
 - [docs/rfc/reviews/fase-2.md](reviews/fase-2.md) — R1+R2 gate cerrado en `97c89ee`.
-- docs/rfc/reviews/fase-3.md … fase-6.md — pendientes.
+- [docs/rfc/reviews/fase-3.md](reviews/fase-3.md) — R1+R2 gate cerrado.
+- docs/rfc/reviews/fase-4.md … fase-6.md — pendientes.
 
 ## Cambios del contrato introducidos en Gate 1
 
@@ -66,5 +71,5 @@
 - `nat_gateway.existing_ids`: inject-or-create para NAT GW [R1-H2]
 - `allocation_ids`: default null (no `{}`) [R2-H2]
 - Outputs renombrados: `*_by_role` → `*_by_group` + nuevo `*_by_semantic_role` [R1-H3]
-- Provider floor: `>= 5.69` [R2-C1]
+- Provider floor: `>= 6.32` [R2-H2]; 5.69 queda supersedido por el schema IPAM de subnet.
 - Preconditions: cidrs↔AZs, nat_gateway.az∈AZs [R2-C2, R2-C3]

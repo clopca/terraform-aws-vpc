@@ -63,11 +63,11 @@ locals {
 }
 
 data "aws_partition" "current" {
-  count = local.core_network_group == null ? 0 : 1
+  count = local.core_network_group != null || length(local.cloudwatch_roles_to_create) > 0 ? 1 : 0
 }
 
 data "aws_region" "current" {
-  count = local.core_network_group == null ? 0 : 1
+  count = local.core_network_group != null || length(local.cloudwatch_roles_to_create) > 0 ? 1 : 0
 }
 
 resource "terraform_data" "attachment_contract_validation" {
@@ -90,12 +90,30 @@ resource "terraform_data" "attachment_contract_validation" {
     precondition {
       condition = local.core_network_group == null ? true : (
         try(var.subnets[local.core_network_group].core_network_options.arn, null) == null ||
-        endswith(
-          var.subnets[local.core_network_group].core_network_options.arn,
-          "/${var.subnets[local.core_network_group].core_network_options.id}"
-        )
+        can(regex(
+          "^arn:${data.aws_partition.current[0].partition}:networkmanager::[0-9]{12}:core-network/${var.subnets[local.core_network_group].core_network_options.id}$",
+          var.subnets[local.core_network_group].core_network_options.arn
+        ))
       )
-      error_message = "core_network_options.arn must identify the same Core Network as core_network_options.id."
+      error_message = "core_network_options.arn must be a complete Network Manager Core Network ARN matching core_network_options.id."
+    }
+
+    precondition {
+      condition = local.core_network_group == null ? true : (
+        !var.subnets[local.core_network_group].core_network_options.require_acceptance ||
+        !var.subnets[local.core_network_group].core_network_options.accept_attachment ||
+        try(split(":", var.subnets[local.core_network_group].core_network_options.arn)[4], data.aws_caller_identity.current[0].account_id) == data.aws_caller_identity.current[0].account_id
+      )
+      error_message = "accept_attachment = true supports same-account Core Networks only. For a shared cross-account Core Network, set accept_attachment = false and accept it with the owner-account provider."
+    }
+
+    precondition {
+      condition = local.core_network_group == null ? true : (
+        !local.any_core_network_routes ||
+        !var.subnets[local.core_network_group].core_network_options.require_acceptance ||
+        var.subnets[local.core_network_group].core_network_options.accept_attachment
+      )
+      error_message = "Cloud WAN routes cannot be created while the attachment requires external acceptance. First apply without Core Network routes, accept the attachment externally, then set require_acceptance = false and add the routes."
     }
   }
 }
@@ -147,11 +165,6 @@ resource "aws_networkmanager_vpc_attachment" "this" {
   })
 
   lifecycle {
-    # The VPC ARN is immutable. Ignoring this ForceNew argument prevents the v4
-    # issue where unrelated existing-VPC changes propagated an unknown ARN and
-    # destructively replaced the Cloud WAN attachment.
-    ignore_changes = [vpc_arn]
-
     precondition {
       condition     = length(trimspace(each.value.options.id)) > 0
       error_message = "core_network_options.id must not be empty."

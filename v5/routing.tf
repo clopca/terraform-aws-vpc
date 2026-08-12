@@ -86,6 +86,8 @@ resource "aws_route" "tgw" {
   route_table_id         = each.value.route_table_id
   destination_cidr_block = each.value.destination
   transit_gateway_id     = each.value.tgw_id
+
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
 }
 
 resource "aws_route" "tgw_ipv6" {
@@ -94,6 +96,8 @@ resource "aws_route" "tgw_ipv6" {
   route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = each.value.destination
   transit_gateway_id          = each.value.tgw_id
+
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
 }
 
 # ─── Core Network Routes ──────────────────────────────────────────────────
@@ -104,6 +108,11 @@ resource "aws_route" "cwan" {
   route_table_id         = each.value.route_table_id
   destination_cidr_block = each.value.destination
   core_network_arn       = each.value.core_network_arn
+
+  depends_on = [
+    aws_networkmanager_vpc_attachment.this,
+    aws_networkmanager_attachment_accepter.this,
+  ]
 }
 
 resource "aws_route" "cwan_ipv6" {
@@ -112,4 +121,9 @@ resource "aws_route" "cwan_ipv6" {
   route_table_id              = each.value.route_table_id
   destination_ipv6_cidr_block = each.value.destination
   core_network_arn            = each.value.core_network_arn
+
+  depends_on = [
+    aws_networkmanager_vpc_attachment.this,
+    aws_networkmanager_attachment_accepter.this,
+  ]
 }

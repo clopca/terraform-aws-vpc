@@ -242,6 +242,16 @@ output "flow_log_ids" {
   }
 }
 
+output "flow_log_destination_arns" {
+  description = "VPC Flow Log destination ARNs indexed by the stable flow_logs map key."
+  value       = local.flow_log_destination_arns
+}
+
+output "flow_log_role_arns" {
+  description = "VPC Flow Log CloudWatch delivery role ARNs indexed by key; null for S3 and Firehose destinations."
+  value       = local.flow_log_role_arns
+}
+
 output "vpc_lattice_service_network_association_id" {
   description = "VPC Lattice Service Network VPC association ID, or null when disabled."
   value       = try(aws_vpclattice_service_network_vpc_association.this["vpc"].id, null)
@@ -296,6 +306,9 @@ output "resources" {
     transit_gateway_attachment = try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"], null)
     core_network_attachment    = try(aws_networkmanager_vpc_attachment.this["vpc"], null)
     flow_logs                  = aws_flow_log.this
+    flow_log_destinations      = aws_cloudwatch_log_group.flow_logs
+    flow_log_roles             = aws_iam_role.flow_logs
+    flow_log_role_policies     = aws_iam_role_policy.flow_logs
     vpc_lattice_association    = try(aws_vpclattice_service_network_vpc_association.this["vpc"], null)
     secondary_cidr_associations = {
       for key, assoc in aws_vpc_ipv4_cidr_block_association.secondary : key => {

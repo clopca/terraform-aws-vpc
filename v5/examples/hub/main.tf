@@ -7,7 +7,7 @@
 #   - CIDR pinning [R1-C2]: cidr_index for stable netmask allocation
 #   - Private NAT gateway (connectivity_type = "private") for inspection VPC
 #   - Real TGW + Cloud WAN attachment resources from dedicated subnet roles
-#   - Native Kinesis Data Firehose VPC Flow Logs destination
+#   - Externally managed Kinesis Data Firehose VPC Flow Logs destination
 # ─────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -15,7 +15,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.69"
+      version = ">= 6.32"
     }
   }
 }
@@ -137,17 +137,13 @@ module "vpc" {
     }
   }
 
-  # The module creates both attachment resources from the tgw/cwan subnet roles.
-  # It also creates a Firehose destination, delivery role, and private S3 sink.
+  # The module creates both attachments. The Firehose stream and its S3/IAM
+  # dependencies are externally managed and injected by ARN.
   flow_logs = {
     network = {
       destination_type = "kinesis"
+      destination_arn  = "arn:aws:firehose:us-west-2:123456789012:deliverystream/network-hub-vpc-flow-logs"
       traffic_type     = "ALL"
-      kinesis_options = {
-        buffering_interval = 60
-        buffering_size     = 5
-        compression_format = "GZIP"
-      }
     }
   }
 

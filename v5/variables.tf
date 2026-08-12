@@ -5,16 +5,6 @@
 # Every resource at the boundary supports create-or-inject pattern.
 # ─────────────────────────────────────────────────────────────────────────────
 
-terraform {
-  required_version = ">= 1.5"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.69" # R2-C1: security_group_referencing requires >= 5.69
-    }
-  }
-}
-
 # ─────────────────────────────────────────────────────────────────────────────
 # VPC CORE — create-or-inject via vpc.id
 # ─────────────────────────────────────────────────────────────────────────────
@@ -270,7 +260,7 @@ variable "subnets" {
       arn                = optional(string) # Optional: auto-derived from id if omitted
       appliance_mode     = optional(bool, false)
       require_acceptance = optional(bool, false)
-      accept_attachment  = optional(bool, true)
+      accept_attachment  = optional(bool, false)
     }))
   }))
 
@@ -496,10 +486,10 @@ variable "flow_logs" {
     identity and must not be renamed without a moved block.
 
     destination_type accepts cloudwatch, s3, or kinesis (Kinesis Data Firehose).
-    Set destination_arn to inject an existing destination; omit it to create the
-    destination natively. CloudWatch also supports create-or-inject for the VPC
-    Flow Logs IAM role through iam_role_arn. A created Firehose supports the same
-    pattern for its S3 sink and delivery role through kinesis_options.
+    CloudWatch supports create-or-inject for both the log group and the VPC Flow
+    Logs IAM role. S3 buckets and Firehose delivery streams are external resources:
+    destination_arn is required so their lifecycle, KMS, retention, and ownership
+    policies remain outside this VPC module.
   EOT
   type = map(object({
     enabled                        = optional(bool, true)
@@ -521,18 +511,6 @@ variable "flow_logs" {
       file_format                = optional(string, "plain-text")
       hive_compatible_partitions = optional(bool, false)
       per_hour_partition         = optional(bool, false)
-    }), {})
-    kinesis_options = optional(object({
-      delivery_stream_name = optional(string)
-      s3_bucket_arn        = optional(string)
-      delivery_role_arn    = optional(string)
-      role_name_prefix     = optional(string)
-      permissions_boundary = optional(string)
-      buffering_interval   = optional(number, 300)
-      buffering_size       = optional(number, 5)
-      compression_format   = optional(string, "GZIP")
-      prefix               = optional(string, "vpc-flow-logs/")
-      error_output_prefix  = optional(string, "vpc-flow-logs-errors/")
     }), {})
     tags = optional(map(string), {})
   }))
@@ -575,16 +553,40 @@ variable "flow_logs" {
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : contains(["UNCOMPRESSED", "GZIP", "ZIP", "Snappy", "HADOOP_SNAPPY"], cfg.kinesis_options.compression_format)
+      for name, cfg in var.flow_logs : cfg.destination_type == "cloudwatch" || cfg.iam_role_arn == null
     ])
-    error_message = "flow_logs[*].kinesis_options.compression_format is not supported by Kinesis Data Firehose."
+    error_message = "flow_logs[*].iam_role_arn is only valid for destination_type = cloudwatch."
   }
 
   validation {
     condition = alltrue([
-      for name, cfg in var.flow_logs : cfg.destination_type == "cloudwatch" || cfg.iam_role_arn == null
+      for name, cfg in var.flow_logs : cfg.destination_arn == null || length(trimspace(cfg.destination_arn)) > 0
     ])
-    error_message = "flow_logs[*].iam_role_arn is only valid for destination_type = cloudwatch."
+    error_message = "flow_logs[*].destination_arn must be null or a non-empty ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains(["s3", "kinesis"], cfg.destination_type) ? cfg.destination_arn != null : true
+    ])
+    error_message = "flow_logs[*].destination_arn is required for S3 and Kinesis Data Firehose destinations; those resources are externally managed."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : contains([
+        1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731,
+        1096, 1827, 2192, 2557, 2922, 3288, 3653
+      ], cfg.cloudwatch_options.retention_in_days)
+    ])
+    error_message = "flow_logs[*].cloudwatch_options.retention_in_days must be a retention period supported by CloudWatch Logs."
+  }
+
+  validation {
+    condition = alltrue([
+      for name, cfg in var.flow_logs : cfg.deliver_cross_account_role_arn == null || length(trimspace(cfg.deliver_cross_account_role_arn)) > 0
+    ])
+    error_message = "flow_logs[*].deliver_cross_account_role_arn must be null or a non-empty ARN."
   }
 }
 
@@ -596,8 +598,8 @@ variable "vpc_lattice" {
   description = "VPC Lattice Service Network association. Null disables the association."
   type = object({
     service_network_identifier = string
-    security_group_ids         = optional(list(string), [])
-    private_dns_enabled        = optional(bool, true)
+    security_group_ids         = optional(set(string), [])
+    private_dns_enabled        = optional(bool, false)
     tags                       = optional(map(string), {})
   })
   default = null
@@ -606,9 +608,9 @@ variable "vpc_lattice" {
     condition = var.vpc_lattice == null ? true : (
       length(trimspace(var.vpc_lattice.service_network_identifier)) > 0 &&
       alltrue([for id in var.vpc_lattice.security_group_ids : length(trimspace(id)) > 0]) &&
-      length(distinct(var.vpc_lattice.security_group_ids)) == length(var.vpc_lattice.security_group_ids)
+      length(var.vpc_lattice.security_group_ids) <= 5
     )
-    error_message = "vpc_lattice requires a non-empty service_network_identifier and unique, non-empty security_group_ids."
+    error_message = "vpc_lattice requires a non-empty service_network_identifier and at most five non-empty security_group_ids."
   }
 }
 
