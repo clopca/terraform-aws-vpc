@@ -1,71 +1,50 @@
-# Remediación tanda 5 — applies y documentación v5
+# Remediación tanda 5 — ejemplos, contrato de outputs e idempotencia de VPC Lattice
 
 > **Fecha:** 2026-08-13
 > **Rama:** `explore/v5-typed-contract`
-> **Baseline:** `390d670`
-> **Commits de implementación:** `b2d5485`, `26a3973`, `8075896`
-> **Estado:** ✅ hallazgos del apply real cerrados, documentación de usuario publicada y gates locales completos en verde.
+> **Commits de implementación:** `b2d5485`, `26a3973`, `8075896`, `4582076`
+> **Estado:** ✅ scope de tanda 5 cerrado; todos los gates locales pasan.
 
 ## Findings y resolución
 
 | Finding | Resolución | Commit | Estado |
 |---|---|---|---|
-| A1 — `resources.flow_log_roles` evaluaba el objeto `aws_iam_role` completo y el provider AWS 6.59 emitía cuatro warnings por `inline_policy` deprecado | Cada rol se proyecta explícitamente a `{ arn, id, name, unique_id }`; las políticas inline siguen disponibles por separado en `resources.flow_log_role_policies`. Un inventario de referencias `aws_iam_role.*` en `v5/outputs.tf` confirmó que no queda ningún otro output Tier 3 que exporte roles IAM completos. El test de shapes fija exactamente las cuatro claves y un ARN representativo. | `b2d5485` | ✅ Cerrado |
-| A2 — `subnet_ipv6_cidrs_by_group_by_az` devolvía `""` para subnets sin IPv6 | El boundary Tier 1 normaliza `""` a `null`; la descripción del output, README, guía de outputs y ejemplos documentan el sentinel. Los tests fijan `null` tanto en la shape sin recursos opcionales como en las subnets IPv4-only del ejemplo `basic`. | `b2d5485`, `8075896` | ✅ Cerrado |
-| B1 — ejemplos existentes sin estructura/documentación completa | `basic`, `enterprise`, `hub` y `migration-from-v4` separan `providers.tf`, `variables.tf` y `outputs.tf` de `main.tf`. Cada README explica features, arquitectura, prerequisitos, costes relevantes y comandos de ejecución o ensayo. | `26a3973` | ✅ Cerrado |
-| B2 — faltaban ejemplos dedicados para EIP/NAT, IPAM y dual stack | Se añadieron `nat_byoip`, `ipam` y `dual_stack`, cada uno con estructura completa, README y plan test. Los siete ejemplos se validan en `ci-v5.yml`. | `26a3973` | ✅ Cerrado |
-| B3 — guía de migración todavía orientada a RFC y sin guía de outputs v5 | Se publicó `v5/docs/UPGRADE-GUIDE-5.0.md` como runbook de usuario final; el RFC queda como evidencia interna y enlaza a la guía normativa. Se añadió `v5/docs/how-to-use-outputs.md` con los tres tiers, ejemplos de composición y contratos de `null`/colecciones vacías. | `8075896` | ✅ Cerrado |
-| B4 — README generado debía reflejar los outputs finales | `v5/README.md` se regeneró con el binario oficial `terraform-docs v0.19.0` para Darwin arm64, descargado con checksum verificado. Una segunda regeneración exacta dejó el árbol sin diff. | `8075896` | ✅ Cerrado |
+| Outputs Tier 1 devolvían `""` para IPv6 ausente y Tier 3 evaluaba `aws_iam_role.inline_policy` deprecated | El output IPv6 normaliza la ausencia a `null`; `resources.flow_log_roles` proyecta únicamente `arn`, `id`, `name` y `unique_id`. Tests de shape fijan ambos contratos y la guía de outputs documenta sentinels y niveles de estabilidad. | `b2d5485`, `8075896` | ✅ Cerrado |
+| Faltaban ejemplos completos dedicados a NAT BYOIP, IPAM y dual stack | Añadidos `nat_byoip`, `ipam` y `dual_stack`, cada uno con `README.md`, `main.tf`, `variables.tf`, `outputs.tf` y `providers.tf`. Los ejemplos preexistentes `basic`, `enterprise` y `hub` ya tenían los cuatro companions solicitados. La matriz de `.github/workflows/ci-v5.yml` ya enumera los siete ejemplos (`basic`, `enterprise`, `hub`, `migration-from-v4`, `nat_byoip`, `ipam`, `dual_stack`), por lo que no requirió cambios. | `26a3973` | ✅ Cerrado |
+| Documentación pública v5 incompleta | Publicadas la guía operativa `v5/docs/UPGRADE-GUIDE-5.0.md` y la guía `v5/docs/how-to-use-outputs.md`; README, header, RFCs y skeleton de migración enlazan la fuente correcta y describen Tier 1/2/3. | `8075896` | ✅ Cerrado |
+| **Critical — asociación VPC Lattice no idempotente tras apply real** | El apply de `enterprise` creó 78 recursos, pero el plan repetido proponía reemplazar `aws_vpclattice_service_network_vpc_association.this["vpc"]`: AWS materializa `dns_options` con `private_dns_preference = "VERIFIED_DOMAINS_ONLY"` y `private_dns_specified_domains = ["*"]`, mientras la configuración omitía el bloque. Provider AWS 6.59 marca `dns_options` y la preference como ForceNew. Se añadió un contrato tipado `dns_options`, default opinionado `VERIFIED_DOMAINS_ONLY`, validación de combinaciones y límites AWS, y un bloque dinámico que fija la preference cuando private DNS está habilitado. El dominio calculado queda `null` en configuración salvo modos specified, permitiendo que el provider absorba el sentinel de AWS sin drift. | `4582076` | ✅ Cerrado |
 
-## Inventario de ejemplos
+## ADR-R5-1 — Configurar el default AWS, no ignorar drift
 
-| Ejemplo | Features demostradas | Cobertura |
-|---|---|---|
-| `basic` | Tres AZs, subnets públicas/privadas/aisladas, dual stack parcial, NAT single-AZ, DNS64/NAT64, EIGW y Flow Logs CloudWatch | `terraform validate` + `basic_example`; fija `null` para database IPv4-only |
-| `enterprise` | CIDR secundario estable, NAT por AZ, dual stack, capas aisladas, Flow Logs, Lattice y tags | `terraform validate` + `enterprise_example` |
-| `hub` | TGW, Cloud WAN, IGW/EIP inyectados, Firehose externo, rutas múltiples y NAT privado de inspección | `terraform validate` + `hub_example` |
-| `migration-from-v4` | Identidad de nombres v4, Tier 2 temporal, catálogo `moved`, remove/import de log group y transición IAM ordenada | `terraform validate` + tests de migración stateful existentes |
-| `nat_byoip` | Los tres modos EIP: `create`, `byoip_pool` y `existing`, dos NAT por modo | `terraform validate` + `nat_byoip_example` |
-| `ipam` | CIDR primario IPv4 por IPAM, secundarios IPAM/estático, subnets por pool e IPv6 IPAM | `terraform validate` + `ipam_example` |
-| `dual_stack` | Subnets dual-stack e IPv6-native, DNS64/NAT64, IGW y EIGW | `terraform validate` + `dual_stack_example` |
+Se eligió la primitiva tipada. `private_dns_enabled` sigue siendo opt-in y ForceNew;
+cuando está habilitado, el módulo declara `dns_options.private_dns_preference` con
+el default real `VERIFIED_DOMAINS_ONLY`. Los modos
+`VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` y `SPECIFIED_DOMAINS_ONLY` exigen entre 1
+y 10 dominios no vacíos de hasta 255 caracteres; los otros modos prohíben esa
+lista conforme a la API de VPC Lattice.
 
-## Inventario de documentación
+Se rechazó `lifecycle.ignore_changes`: ocultaría cambios intencionados de preference
+y drift del servicio, repitiendo la clase de riesgo de #162 en vez de resolver su
+causa. El test `v5/tests/lattice.tftest.hcl` fija el default enviado, la propagación
+de specified domains y el rechazo de una combinación inválida.
 
-- `v5/README.md`: contrato, quick start, tiers, ejemplos, migración y referencia generada.
-- `v5/docs/UPGRADE-GUIDE-5.0.md`: runbook de producción v4 → v5, incluidos state moves, CloudWatch remove/import, gate de plan completo y transición IAM sin gap.
-- `v5/docs/how-to-use-outputs.md`: selección Tier 1/2/3, consumo por grupo/rol/AZ, sentinels opcionales y escape hatch.
-- `docs/rfc/v5-migration.md`: rationale, ADRs y evidencia interna; delega la ejecución de usuario a la guía publicada.
-- README por cada uno de los siete ejemplos: features, arquitectura, prerequisitos y ejecución.
+## Evidencia
 
-## Gates
-
-Toolchain local: Terraform `1.15.8`, TFLint `0.63.1`, AWS provider bloqueado en `6.59.0` y terraform-docs exacto `0.19.0`. Antes de validate/test se eliminó `com.apple.provenance` de los directorios locales de providers cuando estaba presente.
+La causa original queda registrada en
+`/tmp/v5-applies/enterprise/v5/examples/enterprise/terraform-idempotence.log`:
+`1 to add, 1 to destroy` por eliminación del bloque `dns_options` devuelto por AWS.
+El schema local seleccionado fue `hashicorp/aws 6.59.0`; la documentación del
+provider confirma que el bloque y sus campos son ForceNew, y la API oficial de AWS
+confirma las cuatro preferences y que specified domains sólo aplican a los dos
+modos correspondientes.
 
 | Gate | Resultado |
 |---|---|
 | `terraform fmt -check -recursive v5` | PASS |
 | `tflint --chdir=v5 --init` | PASS |
-| `tflint --chdir=v5 --recursive` con `v5/.tflint.hcl` | PASS |
-| `terraform validate -no-color` en el módulo | PASS |
-| `terraform validate -no-color` en `basic`, `enterprise`, `hub`, `migration-from-v4`, `nat_byoip`, `ipam` y `dual_stack` | **7/7 PASS** |
-| `terraform test -no-color` | **53 passed, 0 failed** |
-| Regeneración `terraform-docs v0.19.0` | PASS; árbol sin diff posterior |
-| Auditoría de exports `aws_iam_role` | PASS; sólo proyección explícita en `resources.flow_log_roles` |
-
-## Decisiones de diseño
-
-### ADR-R5-1 — Proyectar el rol IAM en vez de filtrar warnings
-
-El output no suprime ni acepta la deprecación: evita evaluar el objeto completo. Se conservan los cuatro handles útiles para composición y la política tiene su propia colección. Tier 3 sigue siendo inestable, pero deja de acoplar a consumidores y planes al atributo provider `inline_policy`.
-
-### ADR-R5-2 — `null` es el sentinel Tier 1 para ausencia de familia IP
-
-Los maps conservan todas las claves de grupo/AZ para que puedan cruzarse estructuralmente con IDs y route tables. La ausencia de IPv6 se representa con `null`, no eliminando la clave ni usando cadena vacía. Esto diferencia ausencia de un CIDR válido y evita propagar detalles del provider al contrato estable.
-
-### ADR-R5-3 — Ejemplos dedicados validables sin fingir recursos externos
-
-Los IDs de IPAM/BYOIP/EIP son placeholders con forma válida para plan mock y `terraform validate`; los README exigen sustituirlos antes de apply. El ejemplo `nat_byoip` mantiene topología idéntica entre modos para aislar la decisión de ownership de EIPs; `ipam` separa pools VPC/subnet y asociaciones secundarias; `dual_stack` concentra todos los caminos IPv6.
-
-### ADR-R5-4 — La guía de usuario gobierna el procedimiento; el RFC conserva evidencia
-
-El runbook final vive junto al módulo versionado y está escrito para operadores. El RFC no se elimina porque conserva ADRs, detalles del fixture y justificación histórica, pero enlaza explícitamente a la guía normativa para evitar dos procedimientos competidores.
+| `tflint --chdir=v5 --recursive` | PASS, 0 findings |
+| `terraform init -backend=false -lockfile=readonly` | PASS en módulo y siete ejemplos |
+| `terraform validate -no-color` | PASS en módulo y siete ejemplos |
+| `terraform test -no-color` | **56 passed, 0 failed** |
+| Test focal Lattice | **3 passed, 0 failed** |
+| Workaround macOS | `xattr -dr com.apple.provenance` aplicado a cada `.terraform/providers` antes de validate/test |
