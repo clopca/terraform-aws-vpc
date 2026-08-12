@@ -90,6 +90,19 @@ run "hub_example" {
     source = "./examples/hub"
   }
 
+  variables {
+    existing_igw_id          = "igw-0123456789abcdef0"
+    transit_gateway_id       = "tgw-0123456789abcdef0"
+    core_network_id          = "cnet-0123456789abcdef0"
+    core_network_arn         = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
+    flow_log_destination_arn = "arn:aws:firehose:us-west-2:123456789012:deliverystream/network-hub-vpc-flow-logs"
+    nat_eip_allocation_ids = {
+      us-west-2a = "eipalloc-01111111111111111"
+      us-west-2b = "eipalloc-02222222222222222"
+      us-west-2c = "eipalloc-03333333333333333"
+    }
+  }
+
   assert {
     condition = (
       toset(keys(output.subnet_ids)) == toset(["cwan", "edge", "firewall", "public", "tgw"])

@@ -30,7 +30,7 @@ module "vpc" {
   vpc = {
     name       = "network-hub-vpc"
     igw_create = false
-    igw_id     = "igw-0123456789abcdef0" # Inject existing IGW [R1-H2]
+    igw_id     = var.existing_igw_id # Inject existing IGW [R1-H2]
   }
 
   addressing = {
@@ -103,7 +103,7 @@ module "vpc" {
         nat_gateway = true
       }
       transit_gateway_options = {
-        id                              = "tgw-0123456789abcdef0"
+        id                              = var.transit_gateway_id
         default_route_table_association = false
         default_route_table_propagation = false
         appliance_mode_support          = true
@@ -120,8 +120,8 @@ module "vpc" {
       }
       ipv6 = { auto_assign = true, cidr_index = 4 }
       core_network_options = {
-        id                 = "cnet-0123456789abcdef0"
-        arn                = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
+        id                 = var.core_network_id
+        arn                = var.core_network_arn
         appliance_mode     = false
         require_acceptance = true
         accept_attachment  = true
@@ -133,12 +133,8 @@ module "vpc" {
     mode         = "all_azs"
     subnet_group = "public"
     eip = {
-      mode = "existing"
-      allocation_ids = {
-        "us-west-2a" = "eipalloc-01111111111111111"
-        "us-west-2b" = "eipalloc-02222222222222222"
-        "us-west-2c" = "eipalloc-03333333333333333"
-      }
+      mode           = "existing"
+      allocation_ids = var.nat_eip_allocation_ids
     }
   }
 
@@ -147,7 +143,7 @@ module "vpc" {
   flow_logs = {
     network = {
       destination_type = "kinesis"
-      destination_arn  = "arn:aws:firehose:us-west-2:123456789012:deliverystream/network-hub-vpc-flow-logs"
+      destination_arn  = var.flow_log_destination_arn
       traffic_type     = "ALL"
     }
   }
@@ -190,7 +186,7 @@ module "inspection_vpc" {
       role = "transit_gateway"
       ipv4 = { netmask = 28 }
       transit_gateway_options = {
-        id = "tgw-0123456789abcdef0"
+        id = var.transit_gateway_id
       }
     }
 
