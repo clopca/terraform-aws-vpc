@@ -15,6 +15,17 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_arn" {
+  description = "VPC ARN to use for the Cloud WAN VPC attachment when `create_vpc = false`. Bypasses the data source lookup whose `(known after apply)` propagation can force-replace the attachment on unrelated VPC changes. When null (default), the ARN is read from the data source (protected by lifecycle ignore_changes)."
+  default     = null
+  type        = string
+
+  validation {
+    condition     = var.vpc_arn == null || can(regex("^arn:aws[a-z-]*:ec2:[^:]*:[^:]*:vpc/vpc-", var.vpc_arn))
+    error_message = "var.vpc_arn must be a valid VPC ARN (e.g. arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0abcdef1234567890)."
+  }
+}
+
 variable "create_vpc" {
   description = "Determines whether to create the VPC or not; defaults to enabling the creation."
   default     = true

@@ -483,12 +483,28 @@ resource "aws_route" "cwan_to_nat" {
 }
 
 # AWS Cloud WAN's Core Network VPC attachment
+#
+# `vpc_arn` is sourced via `local.vpc.arn` which resolves to the data block
+# (`data.aws_vpc.main[0].arn`) when `create_vpc = false`. The Terraform planner
+# can mark the entire data-source object as `(known after apply)` whenever an
+# unrelated attribute of the VPC is updated. That propagates through
+# `local.vpc.arn`, marks `vpc_arn` as changing, and forces this attachment to be
+# replaced — disconnecting the VPC from the Cloud WAN core network (destructive).
+#
+# Ignoring drift on `vpc_arn` is safe: an attached VPC's ARN cannot change in
+# place; migrating to a different VPC is a destroy-and-recreate the user does
+# intentionally by removing the `core_network` subnet config entirely.
+#
+# Users may also pass `var.vpc_arn` explicitly to bypass the data source lookup
+# altogether when `create_vpc = false`.
+#
+# Resolves https://github.com/aws-ia/terraform-aws-vpc/issues/162
 resource "aws_networkmanager_vpc_attachment" "cwan" {
   count = contains(local.subnet_keys, "core_network") ? 1 : 0
 
   core_network_id = var.core_network.id
   subnet_arns     = values(aws_subnet.cwan)[*].arn
-  vpc_arn         = local.vpc.arn
+  vpc_arn         = local.vpc_arn
 
   options {
     ipv6_support           = local.cwan_dualstack ? true : false
@@ -500,6 +516,10 @@ resource "aws_networkmanager_vpc_attachment" "cwan" {
     module.tags.tags_aws,
     try(module.subnet_tags["core_network"].tags_aws, {})
   )
+
+  lifecycle {
+    ignore_changes = [vpc_arn]
+  }
 }
 
 # Core Network's attachment acceptance (if required)
