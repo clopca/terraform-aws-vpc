@@ -338,6 +338,14 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.8 ADR-R9-A5 — isolated means no Internet, not no routes
+
+**Decision:** isolated groups may associate S3/DynamoDB gateway endpoints while
+Internet, NAT, egress-only IGW, TGW, and Cloud WAN routing remain forbidden.
+Gateway endpoint routes target AWS services privately and do not create general
+network egress. This aligns the role with AWS/community `intra` semantics without
+weakening its public-connectivity boundary.
+
 ### 3.3.7 Cloud WAN accepter ownership is independent
 
 The accepter collection uses the constant key `"vpc"` whenever the three plan-known
@@ -526,7 +534,8 @@ callers should use explicit `names` for stable AZ identity and plan-time diagnos
 6. **Injected IDs accompany explicit ownership flags**: variable/resource preconditions.
 7. **Secondary selector exists before subnet creation**: stable-key validation plus
    subnet dependency on created associations.
-8. **isolated has no routing, including DNS64/NAT64**: `subnets` validation.
+8. **isolated has no Internet/transit routing**: IGW, NAT/NAT64, EIGW, TGW, and
+   Cloud WAN are rejected; S3/DynamoDB gateway endpoint routes are allowed.
 
 ### 3.8 Provider Floor [R2-H2]
 
@@ -542,9 +551,10 @@ nor validate the complete module, so v5 intentionally raises the major floor.
 
 ### 3.9 Isolated Role Semantics
 
-`isolated` is functionally `private` with a routing guard. It prevents every
-routing configuration, including TGW/CWAN and DNS64/NAT64. Use `role = "private"`
-for subnets that need selective routing without internet access.
+`isolated` means no route to Internet or transit connectivity. It rejects IGW,
+NAT/NAT64, EIGW, TGW, and Cloud WAN, while allowing S3 and DynamoDB gateway
+endpoints because those are private service routes and do not provide Internet
+reachability. Use `role = "private"` for broader selective routing.
 
 ### 3.10 Phase 3 ADRs
 

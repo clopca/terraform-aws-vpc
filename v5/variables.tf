@@ -298,7 +298,7 @@ variable "subnets" {
     The `role` field determines creation behavior:
       - public:          gets IGW route, optional NAT gateway hosting
       - private:         standard private subnet, optional NAT/EIGW routing
-      - isolated:        no outbound routing (databases, internal-only)
+      - isolated:        no Internet/transit routing; S3/DynamoDB gateway endpoints allowed
       - transit_gateway: dedicated small subnets for TGW ENIs
       - core_network:    dedicated small subnets for Cloud WAN attachments
 
@@ -560,12 +560,10 @@ variable "subnets" {
         try(v.routing.transit_gateway, null) == null &&
         try(v.routing.core_network, null) == null &&
         try(v.routing.transit_gateway_ipv6, null) == null &&
-        try(v.routing.core_network_ipv6, null) == null &&
-        !try(v.routing.s3_gateway_endpoint, false) &&
-        !try(v.routing.dynamodb_gateway_endpoint, false)
+        try(v.routing.core_network_ipv6, null) == null
       ) : true
     ])
-    error_message = "Isolated subnets must not have routing, including DNS64/NAT64. Use role 'private' for subnets that need selective routing."
+    error_message = "Isolated subnets must not route to Internet, NAT, EIGW, TGW, or Cloud WAN. S3/DynamoDB gateway endpoint routes remain allowed."
   }
 
   validation {

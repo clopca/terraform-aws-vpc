@@ -140,3 +140,39 @@ run "reject_gateway_endpoint_route_without_endpoint" {
 
   expect_failures = [terraform_data.gateway_endpoint_routing_validation[0]]
 }
+
+
+run "isolated_groups_allow_private_gateway_endpoints" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-endpoints" }
+    addressing         = { ipv4 = { cidr_block = "10.74.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role = "isolated"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.74.0.0/24" } }
+        routing = {
+          s3_gateway_endpoint       = true
+          dynamodb_gateway_endpoint = true
+        }
+      }
+    }
+    gateway_endpoints = {
+      s3       = { service = "s3" }
+      dynamodb = { service = "dynamodb" }
+    }
+  }
+
+  assert {
+    condition = (
+      length(aws_vpc_endpoint.gateway) == 2 &&
+      length(aws_vpc_endpoint_route_table_association.gateway) == 2 &&
+      length(aws_internet_gateway.main) == 0 &&
+      length(aws_nat_gateway.main) == 0 &&
+      length(aws_egress_only_internet_gateway.main) == 0
+    )
+    error_message = "Isolated groups must allow private S3/DynamoDB gateway routes without creating Internet egress resources."
+  }
+}

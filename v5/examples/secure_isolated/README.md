@@ -7,9 +7,9 @@ This example combines the v5 D6 controls into an enclave/air-gapped topology:
 - opt-in adoption of the AWS-created default security group, network ACL, and route table;
 - explicit per-group NACLs allowing only control-to-enclave TLS plus its stateless return path;
 - two subnet groups whose semantic role is exclusively `isolated`;
-- no Internet Gateway, egress-only Internet Gateway, NAT Gateway, or managed egress route.
+- no Internet Gateway, egress-only Internet Gateway, NAT Gateway, or Internet/transit route.
 
-Use this pattern for restricted processing zones, offline control planes, regulated data enclaves, or workloads whose ingress and egress must traverse separately governed private endpoints or inspection infrastructure. Add VPC endpoints and explicit private connectivity as separate resources; do not change an isolated group into a routed group implicitly.
+Use this pattern for restricted processing zones, offline control planes, regulated data enclaves, or workloads whose ingress and egress must traverse separately governed private endpoints or inspection infrastructure. Isolated groups may opt into S3/DynamoDB gateway endpoints without becoming Internet-routed; use `private` for TGW, Cloud WAN, NAT, or broader routing.
 
 ```mermaid
 flowchart TB
