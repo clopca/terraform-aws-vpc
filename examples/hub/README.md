@@ -7,7 +7,7 @@ This example creates a three-AZ dual-stack hub connected to two Transit Gateways
 - Caller-owned `east` and `west` keys independently identify two TGW attachments and their selected route destinations.
 - A `core_network` subnet group creates a Cloud WAN attachment and explicitly accepts it after AWS reports it pending.
 - Generic typed routes target an existing VPC peering connection without changing the attachment model.
-- Existing Elastic IPs are injected into three public NAT Gateways and remain caller-owned.
+- Existing Elastic IPs provide manual Regional NAT addresses across three AZs and remain caller-owned.
 - A second VPC demonstrates private NAT between firewall and TGW attachment subnets.
 
 ## Relevant configuration
@@ -57,6 +57,14 @@ transit_gateway_attachments = {
     security_group_referencing      = true
   }
 }
+
+nat_gateway = {
+  mode = "regional"
+  eip = {
+    mode           = "existing"
+    allocation_ids = var.nat_eip_allocation_ids
+  }
+}
 ```
 
 ## Prerequisites and cost
@@ -65,7 +73,7 @@ transit_gateway_attachments = {
 - AWS credentials with VPC, TGW attachment, Cloud WAN attachment and acceptance, NAT Gateway, Elastic IP association, and flow-log permissions.
 - Two distinct Transit Gateways, an existing Cloud WAN Core Network, an existing VPC peering connection, three unassociated Elastic IPs, and an existing Firehose delivery stream.
 - The Core Network policy must permit this VPC attachment, and the executing identity must own the acceptance action selected by `accept_attachment = true`.
-- **Cost:** five NAT Gateways, three public IPv4 addresses, three TGW attachments, one Cloud WAN attachment, flow-log delivery, processing, and cross-AZ or inter-Region transfer can incur charges.
+- **Cost:** one Regional NAT Gateway billed across three active AZs, two private NAT Gateways, three public IPv4 addresses, three TGW attachments, one Cloud WAN attachment, flow-log delivery, processing, and cross-AZ or inter-Region transfer can incur charges.
 
 ## Run
 
@@ -93,6 +101,7 @@ terraform validate
 terraform plan -out=tfplan -var-file=hub.tfvars
 terraform apply tfplan
 terraform output transit_gateway_attachment_ids
+terraform output public_nat_gateway_evidence
 terraform output core_network_attachment_id
 terraform destroy -var-file=hub.tfvars
 ```

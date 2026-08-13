@@ -8,7 +8,7 @@ This example creates public and private dual-stack subnet groups plus a private 
 - Matching `cidr_index` values assign stable IPv4 `/24` and IPv6 `/64` prefixes to the public and application groups.
 - The `ipv6-native` group sets `native_only = true`, `auto_assign = true`, and has no IPv4 configuration.
 - Public IPv6 traffic uses the Internet Gateway; private IPv6 traffic uses the egress-only Internet Gateway.
-- DNS64 is enabled only for the IPv6-native group, while IPv4 egress for the application group uses one NAT Gateway.
+- DNS64 is enabled only for the IPv6-native group, while IPv4 egress for the application group uses Regional NAT.
 
 ## Relevant configuration
 
@@ -55,15 +55,19 @@ subnets = {
     }
   }
 }
+
+nat_gateway = {
+  mode = "regional"
+}
 ```
 
 ## Prerequisites and cost
 
 - Terraform `>= 1.5` and AWS provider `>= 6.29`.
-- AWS credentials with permissions to create a VPC, an Amazon-provided IPv6 CIDR association, subnets, route tables, an Internet Gateway, an egress-only Internet Gateway, and one public NAT Gateway.
+- AWS credentials with permissions to create a VPC, an Amazon-provided IPv6 CIDR association, subnets, route tables, an Internet Gateway, an egress-only Internet Gateway, and one Regional NAT Gateway.
 - The account and selected Region must support IPv6-native subnets and DNS64.
 - The default AZs are `us-east-1a` and `us-east-1b`; override `availability_zones` together if the account exposes different AZ names.
-- **Cost:** the single public NAT Gateway incurs hourly and data-processing charges. Standard regional data-transfer and public IPv4 charges may also apply; Internet Gateways and egress-only Internet Gateways do not have hourly charges.
+- **Cost:** the Regional NAT Gateway is billed across active AZs and incurs data-processing charges. Standard regional data-transfer and public IPv4 charges may also apply; Internet Gateways and egress-only Internet Gateways do not have hourly charges.
 
 ## Run
 
@@ -74,6 +78,7 @@ terraform plan -out=tfplan
 terraform apply tfplan
 terraform output subnet_ipv4_cidrs_by_group_by_az
 terraform output subnet_ipv6_cidrs_by_group_by_az
+terraform output nat_gateway_evidence
 terraform destroy
 ```
 

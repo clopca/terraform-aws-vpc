@@ -128,8 +128,7 @@ module "vpc" {
   }
 
   nat_gateway = {
-    mode         = "all_azs"
-    subnet_group = "public"
+    mode = "regional"
     eip = {
       mode           = "existing"
       allocation_ids = var.nat_eip_allocation_ids

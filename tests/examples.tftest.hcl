@@ -117,11 +117,16 @@ run "enterprise_example" {
 
   assert {
     condition = (
-      length(output.nat_gateway_ids) == 3 && length(output.flow_log_ids) == 1 &&
+      length(output.nat_gateway_ids) == 3 &&
+      output.nat_gateway_evidence.nat_gateway_count == 1 &&
+      output.nat_gateway_evidence.availability_modes == toset(["regional"]) &&
+      output.nat_gateway_evidence.managed_eip_count == 0 &&
+      output.nat_gateway_evidence.nat_route_count == 3 &&
+      length(output.flow_log_ids) == 1 &&
       alltrue([for cidr in values(output.subnet_ipv6_cidrs.public) : cidr != null && cidr != ""]) &&
       alltrue([for cidr in values(output.subnet_ipv6_cidrs.application) : cidr != null && cidr != ""])
     )
-    error_message = "The enterprise example must plan three NAT Gateways, one S3 Flow Log, and real dual-stack subnets."
+    error_message = "The enterprise example must plan one Regional NAT Gateway, no module-owned EIPs, three NAT routes, one Flow Log, and real dual-stack subnets."
   }
 }
 
@@ -158,6 +163,10 @@ run "hub_example" {
   assert {
     condition = (
       length(output.flow_log_ids) == 1 && length(output.inspection_nat_ids) == 2 &&
+      output.public_nat_gateway_evidence.nat_gateway_count == 1 &&
+      output.public_nat_gateway_evidence.availability_modes == toset(["regional"]) &&
+      output.public_nat_gateway_evidence.managed_eip_count == 0 &&
+      output.public_nat_gateway_evidence.nat_route_count == 6 &&
       output.igw_count == 1 && output.generic_route_count == 3 &&
       toset(keys(output.transit_gateway_attachment_ids)) == toset(["east", "west"]) &&
       toset(keys(output.route_tables)) == toset(["cwan", "edge", "firewall", "public", "tgw"]) &&
@@ -165,7 +174,7 @@ run "hub_example" {
         for cidr in values(output.subnet_ipv6_cidrs[group]) : cidr != null && cidr != ""
       ]]))
     )
-    error_message = "The hub example must plan a module-owned IGW, plural TGW attachments, generic routes, dual-stack subnets, Flow Logs, route tables, and two inspection NAT Gateways."
+    error_message = "The hub example must plan one public Regional NAT Gateway with injected EIPs, six NAT routes, two private inspection NAT Gateways, and the documented hub resources."
   }
 }
 
@@ -220,9 +229,13 @@ run "dual_stack_example" {
       length(output.ipv6_native_subnet_ids) == 2 &&
       output.ipv6_route_counts.internet_gateway == 2 &&
       output.ipv6_route_counts.egress_only_igw == 4 &&
-      output.ipv6_route_counts.nat64 == 2
+      output.ipv6_route_counts.nat64 == 2 &&
+      output.nat_gateway_evidence.nat_gateway_count == 1 &&
+      output.nat_gateway_evidence.availability_modes == toset(["regional"]) &&
+      output.nat_gateway_evidence.managed_eip_count == 0 &&
+      output.nat_gateway_evidence.nat_route_count == 2
     )
-    error_message = "The dual-stack example must plan dual-stack and IPv6-native subnets plus IGW, EIGW, and NAT64 routes."
+    error_message = "The dual-stack example must plan one Regional NAT Gateway without module-owned EIPs, dual-stack and IPv6-native subnets, and the documented IPv4, EIGW, and NAT64 routes."
   }
 }
 
@@ -237,12 +250,17 @@ run "existing_vpc_example" {
     condition = (
       toset(keys(output.subnet_ids)) == toset(["application", "public"]) &&
       length(output.nat_gateway_ids) == 2 &&
+      output.nat_gateway_evidence.nat_gateway_count == 1 &&
+      output.nat_gateway_evidence.availability_modes == toset(["regional"]) &&
+      output.nat_gateway_evidence.external_eip_count == 2 &&
+      output.nat_gateway_evidence.module_managed_eip_count == 0 &&
+      output.nat_gateway_evidence.nat_route_count == 2 &&
       output.module_ownership.vpcs == 0 &&
       output.module_ownership.internet_gateways == 0 &&
       output.module_ownership.elastic_ips == 0 &&
       toset(keys(output.module_ownership.injected_route_tables)) == toset(["external-public"])
     )
-    error_message = "The existing-VPC example must inject its VPC, IGW, public route table, and NAT EIPs while creating subnets and two NAT Gateways."
+    error_message = "The existing-VPC example must inject its VPC, IGW, public route table, and two NAT EIPs while creating subnets, one Regional NAT Gateway, and two NAT routes."
   }
 }
 

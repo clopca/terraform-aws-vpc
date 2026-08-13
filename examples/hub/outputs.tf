@@ -29,13 +29,23 @@ output "igw_count" {
 }
 
 output "nat_gateway_ids" {
-  description = "Public hub NAT Gateway IDs by Availability Zone."
+  description = "Public Regional NAT Gateway ID repeated by Availability Zone."
   value       = module.vpc.nat_gateway_ids
 }
 
 output "nat_public_ips" {
-  description = "Public hub NAT Gateway IPs by Availability Zone."
+  description = "Public Regional NAT Gateway IPs keyed by Availability Zone and allocation ID."
   value       = module.vpc.nat_public_ips
+}
+
+output "public_nat_gateway_evidence" {
+  description = "Regional NAT resource, address-ownership, and route evidence for the hub VPC."
+  value = {
+    availability_modes = toset([for nat in values(module.vpc.resources.nat_gateways) : nat.availability_mode])
+    managed_eip_count  = length(module.vpc.resources.eips)
+    nat_gateway_count  = length(module.vpc.resources.nat_gateways)
+    nat_route_count    = length(module.vpc.resources.routes.nat)
+  }
 }
 
 output "route_tables" {

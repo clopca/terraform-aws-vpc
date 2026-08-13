@@ -19,8 +19,19 @@ output "route_table_ids" {
 }
 
 output "nat_gateway_ids" {
-  description = "Module-created NAT Gateway IDs by AZ."
+  description = "Module-created Regional NAT Gateway ID repeated by AZ."
   value       = module.vpc.nat_gateway_ids
+}
+
+output "nat_gateway_evidence" {
+  description = "Regional NAT resource, address-ownership, and route evidence."
+  value = {
+    availability_modes       = toset([for nat in values(module.vpc.resources.nat_gateways) : nat.availability_mode])
+    external_eip_count       = length(aws_eip.nat)
+    module_managed_eip_count = length(module.vpc.resources.eips)
+    nat_gateway_count        = length(module.vpc.resources.nat_gateways)
+    nat_route_count          = length(module.vpc.resources.routes.nat)
+  }
 }
 
 output "external_eip_allocation_ids" {

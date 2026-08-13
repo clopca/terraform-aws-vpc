@@ -83,8 +83,7 @@ module "vpc" {
   }
 
   nat_gateway = {
-    mode         = "all_azs"
-    subnet_group = "public"
+    mode = "regional"
   }
 
   # Module-owned CloudWatch destination and delivery role keep the example

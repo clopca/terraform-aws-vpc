@@ -23,6 +23,16 @@ output "egress_only_igw_id" {
   value       = module.vpc.egress_only_igw_id
 }
 
+output "nat_gateway_evidence" {
+  description = "Regional NAT resource, address-ownership, and IPv4 route evidence."
+  value = {
+    availability_modes = toset([for nat in values(module.vpc.resources.nat_gateways) : nat.availability_mode])
+    managed_eip_count  = length(module.vpc.resources.eips)
+    nat_gateway_count  = length(module.vpc.resources.nat_gateways)
+    nat_route_count    = length(module.vpc.resources.routes.nat)
+  }
+}
+
 output "ipv6_route_counts" {
   description = "Managed IPv6 route counts proving IGW, EIGW, and NAT64 paths."
   value = {

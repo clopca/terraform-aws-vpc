@@ -52,9 +52,7 @@ module "vpc" {
   }
 
   nat_gateway = {
-    mode         = "single_az"
-    az           = var.availability_zones[0]
-    subnet_group = "public"
+    mode = "regional"
   }
 
   tags = {
