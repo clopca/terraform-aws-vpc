@@ -449,8 +449,9 @@ resource "terraform_data" "isolated_injected_route_table_validation" {
 # ─── Shared injected route table cannot select a per-AZ NAT target ────────
 resource "terraform_data" "route_table_routing_compatibility_validation" {
   input = {
-    destination_conflicts = local.route_destination_conflicts
-    isolated_conflicts    = local.isolated_shared_route_table_conflicts
+    destination_conflicts    = local.route_destination_conflicts
+    generic_route_collisions = local.generic_route_destination_collisions
+    isolated_conflicts       = local.isolated_shared_route_table_conflicts
   }
 
   lifecycle {
@@ -467,6 +468,40 @@ resource "terraform_data" "route_table_routing_compatibility_validation" {
     precondition {
       condition     = length(local.duplicate_generic_route_keys_by_table) == 0
       error_message = "Generic route keys are state identity and must be unique per physical injected route table. Duplicates: ${join(", ", flatten([for key, route_keys in local.duplicate_generic_route_keys_by_table : [for route_key in route_keys : "${key}=${route_key}"]]))}."
+    }
+
+    precondition {
+      condition = length(local.generic_route_destination_collisions) == 0
+      error_message = "Generic route destinations must be unique per physical route table. Collisions: ${join("; ", flatten([
+        for table_key, destinations in local.generic_route_destination_collisions : [
+          for destination, sources in destinations : "${table_key} ${destination}: ${join(" vs ", sources)}"
+        ]
+      ]))}."
+    }
+  }
+}
+
+resource "terraform_data" "top_level_routes_validation" {
+  input = {
+    invalid_groups      = local.invalid_top_level_route_groups
+    isolation_conflicts = local.top_level_route_isolation_conflicts
+    missing_azs         = local.top_level_route_missing_azs
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.invalid_top_level_route_groups) == 0
+      error_message = "Top-level routes reference unknown from_group values: ${join(", ", [for route_key, group in local.invalid_top_level_route_groups : "${route_key}=${group}"])}. Declare each group in var.subnets."
+    }
+
+    precondition {
+      condition     = length(local.top_level_route_missing_azs) == 0
+      error_message = "Top-level routes using ids_by_az must provide a target for every AZ in from_group. Missing AZs: ${join(", ", [for route_key, azs in local.top_level_route_missing_azs : "${route_key}=[${join(", ", azs)}]"])}."
+    }
+
+    precondition {
+      condition     = length(local.top_level_route_isolation_conflicts) == 0
+      error_message = "Top-level routes cannot target isolated subnet groups or physical route tables shared with an isolated group. Conflicts: ${join(", ", [for route_key, group in local.top_level_route_isolation_conflicts : "${route_key}=${group}"])}."
     }
   }
 }

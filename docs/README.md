@@ -15,7 +15,7 @@ Use these guides to choose and compose the v5 contracts. The root [README](../RE
 
 ## Input map
 
-The module exposes exactly 13 top-level inputs. Start in the guide named in the final column, then use the generated input table in the root README for the complete type and default.
+The module exposes exactly 14 top-level inputs. Start in the guide named in the final column, then use the generated input table in the root README for the complete type and default.
 
 | Input | Responsibility | Guide |
 | --- | --- | --- |
@@ -25,6 +25,7 @@ The module exposes exactly 13 top-level inputs. Start in the guide named in the 
 | `availability_zones` | Explicit production AZ names or development-only count selection. | [Addressing](addressing.md) |
 | `transit_gateway_attachments` | Plural caller-keyed Transit Gateway VPC attachments. | [Attachments](attachments.md) |
 | `subnets` | Subnet identity, roles, address allocation, route tables, routes, and network ACLs. | [Subnets and routing](subnets-and-routing.md) |
+| `routes` | Late-bound static or AZ-specific routes for targets produced by VPC consumers. | [Subnets and routing](subnets-and-routing.md) |
 | `nat_gateway` | NAT topology, ownership, connectivity, and Elastic IP sourcing. | [NAT Gateway](nat-gateway.md) |
 | `gateway_endpoints` | S3 and DynamoDB gateway endpoint ownership and policy. | [Subnets and routing](subnets-and-routing.md) |
 | `flow_logs` | VPC Flow Logs and CloudWatch destination/role ownership. | [Security and operations](security-and-operations.md) |

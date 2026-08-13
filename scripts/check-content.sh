@@ -98,7 +98,7 @@ for text, name in [(header, ".header.md"), (readme, "README.md")]:
 variables = re.findall(r'^variable "([^"]+)"', (root / "variables.tf").read_text(), re.M)
 index = (root / "docs/README.md").read_text()
 input_rows = re.findall(r'^\| `([^`]+)` \|', index, re.M)
-assert len(variables) == 13, variables
+assert len(variables) == 14, variables
 assert input_rows == variables, (input_rows, variables)
 
 required_docs = [
@@ -111,10 +111,10 @@ required_docs = [
     "docs/outputs.md",
     "docs/UPGRADE-GUIDE-5.0.md",
     "docs/migration-v4-reference.md",
+    "docs/rfc/v5-contract.md",
 ]
 for relative in required_docs:
     assert (root / relative).is_file(), f"missing {relative}"
-assert not (root / "docs/rfc").exists(), "docs/rfc must not be published"
 assert not (root / "docs/how-to-use-outputs.md").exists(), "old outputs guide path remains"
 
 upgrade = (root / "docs/UPGRADE-GUIDE-5.0.md").read_text()

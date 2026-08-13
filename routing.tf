@@ -98,6 +98,30 @@ resource "aws_route" "custom" {
   carrier_gateway_id        = each.value.target.type == "carrier_gateway" ? each.value.target.id : null
 }
 
+# This late-bound surface is intentionally terminal in the dependency graph:
+# var.routes may reach only this resource and validation-only terraform_data
+# resources. Do not feed it into subnets, route tables, or module outputs.
+resource "aws_route" "top_level" {
+  for_each = local.top_level_routes
+
+  route_table_id              = each.value.route_table_id
+  destination_cidr_block      = each.value.destination.type == "ipv4_cidr" ? each.value.destination.value : null
+  destination_ipv6_cidr_block = each.value.destination.type == "ipv6_cidr" ? each.value.destination.value : null
+  destination_prefix_list_id  = each.value.destination.type == "prefix_list" ? each.value.destination.value : null
+
+  vpc_peering_connection_id = each.value.target_type == "vpc_peering" ? each.value.target_id : null
+  vpc_endpoint_id           = each.value.target_type == "vpc_endpoint" ? each.value.target_id : null
+  network_interface_id      = each.value.target_type == "network_interface" ? each.value.target_id : null
+  gateway_id                = each.value.target_type == "virtual_private_gateway" ? each.value.target_id : null
+  local_gateway_id          = each.value.target_type == "local_gateway" ? each.value.target_id : null
+  carrier_gateway_id        = each.value.target_type == "carrier_gateway" ? each.value.target_id : null
+
+  depends_on = [
+    terraform_data.route_table_routing_compatibility_validation,
+    terraform_data.top_level_routes_validation,
+  ]
+}
+
 # ─── Transit Gateway Routes ───────────────────────────────────────────────
 
 resource "aws_route" "tgw" {

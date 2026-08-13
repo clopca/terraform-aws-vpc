@@ -790,6 +790,108 @@ locals {
     local.injected_route_table_targets,
   )
 
+  # Top-level routes are a late-binding surface. These locals may feed only the
+  # dedicated aws_route resource and validation-only terraform_data resources;
+  # never reuse them from subnet, route-table, or output expressions.
+  invalid_top_level_route_groups = {
+    for route_key, route in var.routes : route_key => route.from_group
+    if !contains(keys(var.subnets), route.from_group)
+  }
+  top_level_route_missing_azs = {
+    for route_key, route in var.routes : route_key => sort(tolist(setsubtract(
+      toset(local.azs),
+      toset(keys(coalesce(route.target.ids_by_az, {}))),
+    )))
+    if route.target.ids_by_az != null && length(setsubtract(
+      toset(local.azs),
+      toset(keys(route.target.ids_by_az)),
+    )) > 0
+  }
+  top_level_route_isolation_conflicts = {
+    for route_key, route in var.routes : route_key => route.from_group
+    if try(
+      var.subnets[route.from_group].role == "isolated" || (
+        !var.subnets[route.from_group].manage_route_table && anytrue([
+          for group, cfg in var.subnets :
+          group != route.from_group && cfg.role == "isolated" && !cfg.manage_route_table &&
+          cfg.route_table_key == var.subnets[route.from_group].route_table_key
+        ])
+      ),
+      false,
+    )
+  }
+
+  # Keys derive only from caller route keys and configured AZ names. IDs remain
+  # values and may stay unknown until apply.
+  top_level_routes = merge(concat([{}], [
+    for route_key, route in var.routes : {
+      for az in local.azs : "${route_key}/${az}" => {
+        route_key      = route_key
+        az             = az
+        from_group     = route.from_group
+        route_table_id = local.route_table_id_by_subnet["${route.from_group}/${az}"]
+        destination    = route.destination
+        target_type    = route.target.type
+        target_id      = route.target.id != null ? route.target.id : try(route.target.ids_by_az[az], null)
+      }
+      if contains(keys(var.subnets), route.from_group) && (
+        route.target.id != null || contains(keys(coalesce(route.target.ids_by_az, {})), az)
+      )
+    }
+  ])...)
+
+  # Preserve source names while normalizing generic declarations so a collision
+  # diagnostic can identify both caller keys, including cross-surface conflicts.
+  subnet_generic_route_declarations = flatten([
+    for group, cfg in var.subnets : [
+      for route_key, route in cfg.routes : [
+        for table_key in cfg.manage_route_table ? [for az in local.azs : "${group}/${az}"] : ["injected/${cfg.route_table_key}"] : {
+          table_key   = table_key
+          source      = "subnets.${group}.routes.${route_key}"
+          destination = "${route.destination.type == "ipv4_cidr" ? "ipv4" : route.destination.type == "ipv6_cidr" ? "ipv6" : "prefix"}:${route.destination.value}"
+        }
+      ]
+    ]
+  ])
+  top_level_generic_route_declarations = flatten([
+    for route_key, route in var.routes : contains(keys(var.subnets), route.from_group) ? [
+      for table_key in var.subnets[route.from_group].manage_route_table ? [for az in local.azs : "${route.from_group}/${az}"] : ["injected/${var.subnets[route.from_group].route_table_key}"] : {
+        table_key   = table_key
+        source      = "routes.${route_key}"
+        destination = "${route.destination.type == "ipv4_cidr" ? "ipv4" : route.destination.type == "ipv6_cidr" ? "ipv6" : "prefix"}:${route.destination.value}"
+      }
+    ] : []
+  ])
+  generic_route_declarations_by_table = {
+    for declaration in concat(local.subnet_generic_route_declarations, local.top_level_generic_route_declarations) :
+    declaration.table_key => declaration...
+  }
+  generic_route_destination_collisions = {
+    for table_key, declarations in local.generic_route_declarations_by_table : table_key => {
+      for destination in distinct([for declaration in declarations : declaration.destination]) : destination => sort(distinct([
+        for declaration in declarations : declaration.source if declaration.destination == destination
+      ]))
+      if length(distinct([
+        for declaration in declarations : declaration.source if declaration.destination == destination
+      ])) > 1
+    }
+    if length([
+      for destination in distinct([for declaration in declarations : declaration.destination]) : destination
+      if length(distinct([
+        for declaration in declarations : declaration.source if declaration.destination == destination
+      ])) > 1
+    ]) > 0
+  }
+  top_level_route_intents_by_table = {
+    for table_key in distinct([for declaration in local.top_level_generic_route_declarations : declaration.table_key]) :
+    table_key => [
+      for declaration in local.top_level_generic_route_declarations : {
+        destination = declaration.destination
+        target      = "top-level:${declaration.source}"
+      } if declaration.table_key == table_key
+    ]
+  }
+
   # Normalize every opinionated route to its physical destination and target.
   # Resource addresses remain unchanged; this collection exists only to reject
   # ambiguous tables before AWS sees duplicate or isolation-breaking routes.
@@ -836,6 +938,7 @@ locals {
         destination = "${route.destination.type == "ipv4_cidr" ? "ipv4" : route.destination.type == "ipv6_cidr" ? "ipv6" : "prefix"}:${route.destination.value}"
         target      = "${route.target.type}:${route.target.id}"
       }],
+      lookup(local.top_level_route_intents_by_table, key, []),
     )
   }
   route_destination_conflicts = {

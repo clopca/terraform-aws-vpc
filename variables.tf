@@ -1106,6 +1106,77 @@ variable "subnets" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TOP-LEVEL ROUTES — late-bound routing for bidirectional module composition
+#
+# Dependency-direction invariant: var.routes may feed only aws_route resources
+# dedicated to this surface and validation-only terraform_data resources. It must
+# never feed subnet, route-table, or output expressions; consumers may need those
+# outputs to compute these targets in the same plan.
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "routes" {
+  nullable    = false
+  description = <<-EOT
+    Caller-keyed routes applied to every route table in `from_group`. Use this
+    late-bound surface when a target is produced by a module that consumes this
+    VPC's subnet outputs. State keys use `<route-key>/<az>`; route keys must not
+    contain `/`.
+
+    `target.id` replicates one target to every AZ. `target.ids_by_az` selects the
+    target matching each configured AZ. Exactly one of `id` and `ids_by_az` must
+    be set. Destination and target types use the same closed unions as
+    `subnets[*].routes`.
+  EOT
+  type = map(object({
+    from_group = string
+    destination = object({
+      type  = string
+      value = string
+    })
+    target = object({
+      type      = string
+      id        = optional(string)
+      ids_by_az = optional(map(string))
+    })
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for key, route in var.routes :
+      can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/") &&
+      length(trimspace(route.from_group)) > 0 &&
+      contains(["ipv4_cidr", "ipv6_cidr", "prefix_list"], route.destination.type) &&
+      length(trimspace(route.destination.value)) > 0 &&
+      contains(["vpc_peering", "vpc_endpoint", "network_interface", "virtual_private_gateway", "local_gateway", "carrier_gateway"], route.target.type)
+    ])
+    error_message = "routes keys must be stable lowercase identifiers without '/'; from_group must be non-empty; destination.type and target.type must use the documented closed unions."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, route in var.routes :
+      (route.target.id != null ? 1 : 0) + (route.target.ids_by_az != null ? 1 : 0) == 1 &&
+      (route.target.id == null || length(trimspace(route.target.id)) > 0) &&
+      (route.target.ids_by_az == null || alltrue([
+        for az, id in route.target.ids_by_az : length(trimspace(az)) > 0 && length(trimspace(id)) > 0
+      ]))
+    ])
+    error_message = "routes[*].target must set exactly one of id or ids_by_az (XOR), and every supplied target ID must be non-empty."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, route in var.routes :
+      route.destination.type == "ipv4_cidr" ? (can(cidrhost(route.destination.value, 0)) && !strcontains(route.destination.value, ":")) :
+      route.destination.type == "ipv6_cidr" ? (can(cidrhost(route.destination.value, 0)) && strcontains(route.destination.value, ":")) :
+      startswith(route.destination.value, "pl-")
+    ])
+    error_message = "Top-level route destinations must match their declared type: IPv4 CIDR, IPv6 CIDR, or managed prefix-list ID."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # NAT GATEWAY — top-level, VPC-wide concern with create-or-inject EIP
 #
 # nat_gateway.existing_ids allows injecting existing NAT Gateways
