@@ -287,7 +287,7 @@ variable "availability_zones" {
 #   - Unpinned groups pack largest-first, then alphabetically; adding/removing a
 #     group affects unpinned groups that sort after it
 #   - Overlapping pins across different netmasks fail at plan time
-#   - For PRODUCTION, explicit `cidrs` remain the strongest immutability contract
+#   - For PRODUCTION, explicit `cidrs_by_az` remains the strongest immutability contract
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "subnets" {
@@ -334,10 +334,10 @@ variable "subnets" {
     create       = optional(bool, true)
     existing_ids = optional(map(string))
 
-    # ── IPv4 Addressing (one of netmask/cidrs/ipam required unless ipv6 native_only) ──
+    # ── IPv4 Addressing (one of netmask/cidrs_by_az/ipam required unless ipv6 native_only) ──
     ipv4 = optional(object({
       netmask        = optional(number)
-      cidrs          = optional(list(string))
+      cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
       # Absolute CIDR group slot for pinning [R1-C2]. Each slot reserves six
@@ -350,7 +350,7 @@ variable "subnets" {
     # ── IPv6 Addressing ──
     ipv6 = optional(object({
       auto_assign    = optional(bool, false)
-      cidrs          = optional(list(string))
+      cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
       native_only    = optional(bool, false)
@@ -520,11 +520,11 @@ variable "subnets" {
       for k, v in var.subnets :
       v.ipv4 == null ? true : (
         (v.ipv4.netmask != null ? 1 : 0) +
-        (v.ipv4.cidrs != null ? 1 : 0) +
+        (v.ipv4.cidrs_by_az != null ? 1 : 0) +
         (v.ipv4.ipam_pool_id != null ? 1 : 0) == 1
       )
     ])
-    error_message = "Within ipv4, provide exactly one of: netmask, cidrs, or ipam_pool_id."
+    error_message = "Within ipv4, provide exactly one of: netmask, cidrs_by_az, or ipam_pool_id."
   }
 
   validation {
@@ -734,28 +734,28 @@ variable "subnets" {
 
   validation {
     condition = alltrue(flatten([
-      for k, v in var.subnets : v.ipv4 == null || v.ipv4.cidrs == null ? [true] : [
-        for cidr in v.ipv4.cidrs : can(cidrhost(cidr, 0)) && !strcontains(cidr, ":")
+      for k, v in var.subnets : v.ipv4 == null || v.ipv4.cidrs_by_az == null ? [true] : [
+        for az, cidr in v.ipv4.cidrs_by_az : can(cidrhost(cidr, 0)) && !strcontains(cidr, ":")
       ]
     ]))
-    error_message = "subnets[*].ipv4.cidrs must contain valid IPv4 CIDR blocks."
+    error_message = "subnets[*].ipv4.cidrs_by_az values must be valid IPv4 CIDR blocks."
   }
 
   validation {
     condition = alltrue(flatten([
-      for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidrs == null ? [true] : [
-        for cidr in v.ipv6.cidrs : can(cidrhost(cidr, 0)) && strcontains(cidr, ":") && try(tonumber(split("/", cidr)[1]) == 64, false)
+      for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidrs_by_az == null ? [true] : [
+        for az, cidr in v.ipv6.cidrs_by_az : can(cidrhost(cidr, 0)) && strcontains(cidr, ":") && try(tonumber(split("/", cidr)[1]) == 64, false)
       ]
     ]))
-    error_message = "subnets[*].ipv6.cidrs must contain valid IPv6 /64 CIDR blocks."
+    error_message = "subnets[*].ipv6.cidrs_by_az values must be valid IPv6 /64 CIDR blocks."
   }
 
   validation {
     condition = alltrue([
       for k, v in var.subnets : v.ipv6 == null ? true : (
-        (v.ipv6.cidrs != null ? 1 : 0) +
+        (v.ipv6.cidrs_by_az != null ? 1 : 0) +
         (v.ipv6.ipam_pool_id != null ? 1 : 0) <= 1 &&
-        (v.ipv6.cidrs != null || v.ipv6.ipam_pool_id != null || v.ipv6.auto_assign)
+        (v.ipv6.cidrs_by_az != null || v.ipv6.ipam_pool_id != null || v.ipv6.auto_assign)
       )
     ])
     error_message = "Within ipv6, provide explicit cidrs, IPAM, or auto_assign=true for deterministic /64 calculation from the VPC."
@@ -773,7 +773,7 @@ variable "subnets" {
   validation {
     condition = alltrue([
       for k, v in var.subnets : v.ipv6 == null || v.ipv6.cidr_index == null ? true : (
-        v.ipv6.cidrs == null && v.ipv6.ipam_pool_id == null && v.ipv6.auto_assign &&
+        v.ipv6.cidrs_by_az == null && v.ipv6.ipam_pool_id == null && v.ipv6.auto_assign &&
         v.ipv6.cidr_index >= 0 && floor(v.ipv6.cidr_index) == v.ipv6.cidr_index
       )
     ])

@@ -54,15 +54,15 @@ run "inject_all_remaining_boundaries" {
         role         = "private"
         create       = false
         existing_ids = { us-east-1a = "subnet-01111111111111111" }
-        ipv4         = { cidrs = ["10.0.0.0/24"] }
-        ipv6         = { cidrs = ["2600:1f18:4200::/64"] }
+        ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
+        ipv6         = { cidrs_by_az = { "us-east-1a" = "2600:1f18:4200::/64" } }
         routing      = { egress_only_igw = true }
       }
       tgw = {
         role         = "transit_gateway"
         create       = false
         existing_ids = { us-east-1a = "subnet-02222222222222222" }
-        ipv4         = { cidrs = ["10.0.1.0/28"] }
+        ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.1.0/28" } }
         transit_gateway_options = {
           id            = "tgw-0123456789abcdef0"
           create        = false
@@ -73,7 +73,7 @@ run "inject_all_remaining_boundaries" {
         role         = "core_network"
         create       = false
         existing_ids = { us-east-1a = "subnet-03333333333333333" }
-        ipv4         = { cidrs = ["10.0.2.0/28"] }
+        ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.2.0/28" } }
         core_network_options = {
           id                 = "cnet-0123456789abcdef0"
           arn                = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
@@ -147,7 +147,7 @@ run "reject_missing_injected_eigw" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         ipv6    = { auto_assign = true }
         routing = { egress_only_igw = true }
       }
@@ -169,7 +169,7 @@ run "reject_incomplete_injected_subnet_ids" {
         role         = "private"
         create       = false
         existing_ids = { us-east-1a = "subnet-01111111111111111" }
-        ipv4         = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
       }
     }
   }
@@ -187,7 +187,7 @@ run "reject_missing_injected_attachment_id" {
     subnets = {
       tgw = {
         role = "transit_gateway"
-        ipv4 = { cidrs = ["10.0.0.0/28"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/28" } }
         transit_gateway_options = {
           id     = "tgw-0123456789abcdef0"
           create = false

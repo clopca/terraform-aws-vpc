@@ -82,23 +82,23 @@ run "tier_1_and_tier_2_shapes" {
     subnets = {
       public = {
         role = "public"
-        ipv4 = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
       }
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.10.0/24", "10.0.11.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.10.0/24", "us-east-1b" = "10.0.11.0/24" } }
         routing = { nat_gateway = true }
       }
       transit_gateway = {
         role = "transit_gateway"
-        ipv4 = { cidrs = ["10.0.240.0/28", "10.0.240.16/28"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.240.0/28", "us-east-1b" = "10.0.240.16/28" } }
         transit_gateway_options = {
           id = "tgw-0123456789abcdef0"
         }
       }
       core_network = {
         role = "core_network"
-        ipv4 = { cidrs = ["10.0.241.0/28", "10.0.241.16/28"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.241.0/28", "us-east-1b" = "10.0.241.16/28" } }
         core_network_options = {
           id  = "cnet-0123456789abcdef0"
           arn = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
@@ -237,7 +237,7 @@ run "absent_optional_resources" {
     subnets = {
       data = {
         role = "isolated"
-        ipv4 = { cidrs = ["10.1.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.1.0.0/24" } }
       }
     }
   }

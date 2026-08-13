@@ -36,7 +36,7 @@ run "create_inject_and_associate_gateway_endpoints" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.70.0.0/24", "10.70.1.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.70.0.0/24", "us-east-1b" = "10.70.1.0/24" } }
         routing = {
           s3_gateway_endpoint       = true
           dynamodb_gateway_endpoint = true
@@ -44,7 +44,7 @@ run "create_inject_and_associate_gateway_endpoints" {
       }
       shared = {
         role               = "private"
-        ipv4               = { cidrs = ["10.70.2.0/24", "10.70.3.0/24"] }
+        ipv4               = { cidrs_by_az = { "us-east-1a" = "10.70.2.0/24", "us-east-1b" = "10.70.3.0/24" } }
         manage_route_table = false
         route_table_id     = "rtb-shared"
         routing            = { s3_gateway_endpoint = true }
@@ -131,7 +131,7 @@ run "reject_gateway_endpoint_route_without_endpoint" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.73.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.73.0.0/24" } }
         routing = { s3_gateway_endpoint = true }
       }
     }

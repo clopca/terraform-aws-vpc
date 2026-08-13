@@ -55,13 +55,13 @@ module "vpc" {
       role               = "public"
       manage_route_table = false
       route_table_id     = terraform_data.route_table_id.output
-      ipv4               = { cidrs = ["10.0.0.0/24"] }
+      ipv4               = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
       routing            = { internet_gateway = true }
     }
 
     ipam = {
       role = "private"
-      ipv4 = { cidrs = ["10.0.1.0/24"] }
+      ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.1.0/24" } }
       ipv6 = {
         ipam_pool_id   = terraform_data.ipv6_pool.output
         netmask_length = 64

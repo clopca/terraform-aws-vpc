@@ -27,7 +27,7 @@ run "reject_invalid_subnet_role" {
     addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
-      app = { role = "invalid", ipv4 = { cidrs = ["10.0.0.0/24"] } }
+      app = { role = "invalid", ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } } }
     }
   }
 
@@ -60,7 +60,7 @@ run "reject_isolated_routing" {
     subnets = {
       data = {
         role    = "isolated"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         routing = { transit_gateway = ["10.0.0.0/8"] }
       }
     }
@@ -112,7 +112,7 @@ run "reject_cidr_count_mismatch" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24", "us-east-1c" = "10.0.2.0/24" } }
       }
     }
   }
@@ -151,7 +151,7 @@ run "reject_nat_route_without_gateway" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         routing = { nat_gateway = true }
       }
     }
@@ -172,7 +172,7 @@ run "reject_shared_route_table_with_all_az_nat" {
         role               = "private"
         manage_route_table = false
         route_table_id     = "rtb-existing"
-        ipv4               = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        ipv4               = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
         routing            = { nat_gateway = true }
       }
     }
@@ -199,7 +199,7 @@ run "reject_tgw_routes_without_attachment_group" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         routing = { transit_gateway = ["10.0.0.0/8"] }
       }
     }
@@ -234,7 +234,7 @@ run "reject_isolated_dns64" {
     subnets = {
       data = {
         role    = "isolated"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         ipv6    = { auto_assign = true }
         routing = { dns64 = true }
       }
@@ -260,7 +260,7 @@ run "public_can_disable_internet_gateway" {
     subnets = {
       edge = {
         role    = "public"
-        ipv4    = { cidrs = ["10.0.0.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         routing = { internet_gateway = false }
       }
     }

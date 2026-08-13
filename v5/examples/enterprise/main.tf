@@ -54,7 +54,7 @@ module "vpc" {
     application = {
       role = "private"
       ipv4 = {
-        cidrs = ["10.0.32.0/20", "10.0.48.0/20", "10.0.64.0/20"]
+        cidrs_by_az = { "eu-west-1a" = "10.0.32.0/20", "eu-west-1b" = "10.0.48.0/20", "eu-west-1c" = "10.0.64.0/20" }
       }
       ipv6 = { auto_assign = true }
       routing = {
@@ -67,7 +67,7 @@ module "vpc" {
     data = {
       role = "isolated"
       ipv4 = {
-        cidrs = ["10.0.80.0/22", "10.0.84.0/22", "10.0.88.0/22"]
+        cidrs_by_az = { "eu-west-1a" = "10.0.80.0/22", "eu-west-1b" = "10.0.84.0/22", "eu-west-1c" = "10.0.88.0/22" }
       }
       tags = { Tier = "data", Compliance = "pci-dss" }
     }
@@ -75,7 +75,7 @@ module "vpc" {
     endpoints = {
       role = "isolated"
       ipv4 = {
-        cidrs              = ["100.64.0.0/26", "100.64.0.64/26", "100.64.0.128/26"]
+        cidrs_by_az        = { "eu-west-1a" = "100.64.0.0/26", "eu-west-1b" = "100.64.0.64/26", "eu-west-1c" = "100.64.0.128/26" }
         secondary_cidr_key = "shared-services"
       }
       tags = { Tier = "vpc-endpoints" }

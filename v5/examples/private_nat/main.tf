@@ -24,7 +24,7 @@ module "vpc" {
     workload = {
       role = "private"
       ipv4 = {
-        cidrs = ["10.42.0.0/24", "10.42.1.0/24"]
+        cidrs_by_az = { "us-west-2a" = "10.42.0.0/24", "us-west-2b" = "10.42.1.0/24" }
       }
       # Workloads use the private NAT as their default next hop. Their original
       # 10/8 source addresses are translated before traffic reaches the TGW.
@@ -36,7 +36,7 @@ module "vpc" {
     nat-host = {
       role = "private"
       ipv4 = {
-        cidrs              = ["100.64.0.0/28", "100.64.0.16/28"]
+        cidrs_by_az        = { "us-west-2a" = "100.64.0.0/28", "us-west-2b" = "100.64.0.16/28" }
         secondary_cidr_key = "translation"
       }
       # The private NAT subnet forwards only the required remote 10/8 segments
@@ -49,7 +49,7 @@ module "vpc" {
     tgw = {
       role = "transit_gateway"
       ipv4 = {
-        cidrs              = ["100.64.0.32/28", "100.64.0.48/28"]
+        cidrs_by_az        = { "us-west-2a" = "100.64.0.32/28", "us-west-2b" = "100.64.0.48/28" }
         secondary_cidr_key = "translation"
       }
       transit_gateway_options = {

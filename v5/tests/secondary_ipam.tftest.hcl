@@ -56,7 +56,7 @@ run "secondary_static_and_ipam_are_stable" {
       shared = {
         role = "private"
         ipv4 = {
-          cidrs              = ["100.64.0.0/24", "100.64.1.0/24"]
+          cidrs_by_az        = { "us-east-1a" = "100.64.0.0/24", "us-east-1b" = "100.64.1.0/24" }
           secondary_cidr_key = "shared-services"
         }
       }
@@ -106,7 +106,7 @@ run "inject_secondary_association" {
       adopted = {
         role = "private"
         ipv4 = {
-          cidrs              = ["100.64.10.0/24"]
+          cidrs_by_az        = { "us-east-1a" = "100.64.10.0/24" }
           secondary_cidr_key = "adopted"
         }
       }
@@ -158,7 +158,7 @@ run "reject_unknown_secondary_selector" {
       app = {
         role = "private"
         ipv4 = {
-          cidrs              = ["10.0.0.0/24"]
+          cidrs_by_az        = { "us-east-1a" = "10.0.0.0/24" }
           secondary_cidr_key = "missing"
         }
       }

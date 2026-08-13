@@ -247,7 +247,7 @@ run "explicit_cidrs" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.0.100.0/24", "10.0.200.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.100.0/24", "us-east-1b" = "10.0.200.0/24" } }
       }
     }
   }
@@ -268,6 +268,65 @@ run "explicit_cidrs" {
       }
     )
     error_message = "Explicit CIDRs must pass through unchanged in AZ order."
+  }
+}
+
+run "explicit_cidrs_before_middle_az_insert" {
+  command = plan
+
+  variables {
+    vpc                = { name = "explicit-az-map" }
+    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1c"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = {
+          cidrs_by_az = {
+            us-east-1a = "10.0.100.0/24"
+            us-east-1c = "10.0.200.0/24"
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = output.subnet_cidrs_by_group_by_az.app == {
+      us-east-1a = "10.0.100.0/24"
+      us-east-1c = "10.0.200.0/24"
+    }
+    error_message = "Explicit CIDRs must be selected by AZ identity before insertion."
+  }
+}
+
+run "explicit_cidrs_after_middle_az_insert" {
+  command = plan
+
+  variables {
+    vpc                = { name = "explicit-az-map" }
+    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b", "us-east-1c"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = {
+          cidrs_by_az = {
+            us-east-1a = "10.0.100.0/24"
+            us-east-1b = "10.0.150.0/24"
+            us-east-1c = "10.0.200.0/24"
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      output.subnet_cidrs_by_group_by_az.app["us-east-1a"] == "10.0.100.0/24" &&
+      output.subnet_cidrs_by_group_by_az.app["us-east-1c"] == "10.0.200.0/24"
+    )
+    error_message = "Inserting an AZ in the middle must not reassign explicit CIDRs for existing AZ keys."
   }
 }
 

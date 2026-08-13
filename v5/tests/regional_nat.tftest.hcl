@@ -78,7 +78,7 @@ run "regional_auto_mode" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
         routing = { nat_gateway = true }
       }
     }
@@ -132,7 +132,7 @@ run "regional_existing_eips_manual_mode" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.1.0.0/24", "10.1.1.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.1.0.0/24", "us-east-1b" = "10.1.1.0/24" } }
         routing = { nat_gateway = true }
       }
     }
@@ -169,7 +169,7 @@ run "regional_byoip_pool_manual_mode" {
     subnets = {
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.2.0.0/24", "10.2.1.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.2.0.0/24", "us-east-1b" = "10.2.1.0/24" } }
         routing = { nat_gateway = true }
       }
     }
@@ -214,7 +214,7 @@ run "reject_regional_with_subnet_group" {
     addressing         = { ipv4 = { cidr_block = "10.4.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
-      public = { role = "public", ipv4 = { cidrs = ["10.4.0.0/24"] } }
+      public = { role = "public", ipv4 = { cidrs_by_az = { "us-east-1a" = "10.4.0.0/24" } } }
     }
     nat_gateway = { mode = "regional", subnet_group = "public" }
   }

@@ -37,7 +37,7 @@ run "name_formats_and_tag_precedence" {
         name_prefix             = "legacy-public"
         name_format             = "{group}-{az}"
         route_table_name_format = "rt-{group}-{az}"
-        ipv4                    = { cidrs = ["10.0.0.0/24"] }
+        ipv4                    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         tags = {
           Boundary = "group"
           Tier     = "edge"

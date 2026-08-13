@@ -63,10 +63,10 @@ module "vpc" {
     public = {
       role = "public"
       ipv4 = {
-        cidrs = [
+        cidrs_by_az = {
           for index, az in var.availability_zones :
-          cidrsubnet(var.vpc_cidr, 8, index)
-        ]
+          az => cidrsubnet(var.vpc_cidr, 8, index)
+        }
       }
       manage_route_table = false
       route_table_id     = aws_route_table.public.id
@@ -78,10 +78,10 @@ module "vpc" {
     application = {
       role = "private"
       ipv4 = {
-        cidrs = [
+        cidrs_by_az = {
           for index, az in var.availability_zones :
-          cidrsubnet(var.vpc_cidr, 8, index + 16)
-        ]
+          az => cidrsubnet(var.vpc_cidr, 8, index + 16)
+        }
       }
       routing = {
         nat_gateway = true

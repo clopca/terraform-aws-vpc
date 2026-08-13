@@ -21,10 +21,10 @@ module "vpc" {
     enclave = {
       role = "isolated"
       ipv4 = {
-        cidrs = [
+        cidrs_by_az = {
           for index, az in var.availability_zones :
-          cidrsubnet(var.vpc_cidr, 8, index)
-        ]
+          az => cidrsubnet(var.vpc_cidr, 8, index)
+        }
       }
       network_acl = {
         ingress = {
@@ -55,10 +55,10 @@ module "vpc" {
     control = {
       role = "isolated"
       ipv4 = {
-        cidrs = [
+        cidrs_by_az = {
           for index, az in var.availability_zones :
-          cidrsubnet(var.vpc_cidr, 8, index + 16)
-        ]
+          az => cidrsubnet(var.vpc_cidr, 8, index + 16)
+        }
       }
       network_acl = {
         ingress = {

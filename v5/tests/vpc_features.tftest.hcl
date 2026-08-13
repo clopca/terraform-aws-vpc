@@ -42,7 +42,7 @@ run "create_bpa_and_dhcp_options" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.0.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
       }
     }
     vpc_block_public_access = {

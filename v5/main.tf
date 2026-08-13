@@ -152,21 +152,6 @@ resource "aws_subnet" "main" {
       )
       error_message = "Subnet '${each.key}': must have an IPv4 or IPv6 CIDR source."
     }
-
-    # R2-C2: Validate cidrs length matches AZ count.
-    # This precondition fires at plan/apply time where AZ count is known,
-    # catching the mismatch that variable-level validations cannot enforce
-    # cross-variable (Terraform limitation). [R2-H1: resource-level precondition
-    # ensures enforcement even when availability_zones.count produces unknowns]
-    precondition {
-      condition = (
-        # Only validate for explicit cidrs mode — check that the subnet's parent
-        # group uses cidrs and that the current az_index is within bounds
-        each.value.cidr_block != null || each.value.ipam_pool_id != null ||
-        each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null
-      )
-      error_message = "Subnet '${each.key}': explicit cidrs list has fewer entries than configured AZs. Provide exactly one CIDR per AZ."
-    }
   }
 }
 
@@ -361,17 +346,17 @@ resource "terraform_data" "eigw_requires_ipv6" {
   }
 }
 
-# ─── Subnet CIDR vs AZ count validation [R2-C2] ──────────────────────────
-# For subnet groups using explicit cidrs, validate length matches az_count.
-# This catches the gap where a user provides 2 CIDRs but configures 3 AZs.
+# ─── Explicit subnet CIDR keys vs AZ set validation [R1-H1] ─────────────
+# Explicit maps must name exactly the configured AZs. No list position can
+# silently reassign a CIDR when an AZ is inserted or reordered.
 
 resource "terraform_data" "cidrs_az_count_validation" {
-  for_each = local.subnets_with_cidrs
+  for_each = local.subnets_with_cidrs_by_az
 
   lifecycle {
     precondition {
-      condition     = length(each.value.ipv4.cidrs) == local.az_count
-      error_message = "Subnet group '${each.key}' defines ${length(each.value.ipv4.cidrs)} explicit CIDRs but ${local.az_count} AZs are configured. Provide exactly one CIDR per AZ."
+      condition     = toset(keys(each.value.ipv4.cidrs_by_az)) == toset(local.azs)
+      error_message = "Subnet group '${each.key}' ipv4.cidrs_by_az keys must exactly match configured AZs: ${join(", ", local.azs)}."
     }
   }
 }
@@ -397,13 +382,13 @@ resource "terraform_data" "vpc_ipv4_addressing_validation" {
 resource "terraform_data" "ipv6_cidrs_az_count_validation" {
   for_each = {
     for name, cfg in var.subnets : name => cfg
-    if try(cfg.ipv6.cidrs, null) != null
+    if try(cfg.ipv6.cidrs_by_az, null) != null
   }
 
   lifecycle {
     precondition {
-      condition     = length(each.value.ipv6.cidrs) == local.az_count
-      error_message = "Subnet group '${each.key}' defines ${length(each.value.ipv6.cidrs)} explicit IPv6 CIDRs but ${local.az_count} AZs are configured. Provide exactly one IPv6 CIDR per AZ."
+      condition     = toset(keys(each.value.ipv6.cidrs_by_az)) == toset(local.azs)
+      error_message = "Subnet group '${each.key}' ipv6.cidrs_by_az keys must exactly match configured AZs: ${join(", ", local.azs)}."
     }
   }
 }

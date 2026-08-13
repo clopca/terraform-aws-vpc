@@ -243,10 +243,10 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `az_count` | `availability_zones.count` | Development only. Explicit names are recommended for stable state. |
 | `azs` | `availability_zones.names` | Copy unchanged; this is the production migration path. |
 | `subnets.<key>.netmask` | `subnets.<key>.ipv4.netmask` | Add `role`; preserve `<key>`. Pin with `cidr_index` or, preferably, migrate with explicit current CIDRs. |
-| `subnets.<key>.cidrs` | `subnets.<key>.ipv4.cidrs` | Copy exact state CIDRs in AZ order. |
-| `subnets.<key>.assign_ipv6_cidr` | `subnets.<key>.ipv6.cidrs` + `auto_assign` | Read the existing `/64` prefixes from state, copy them explicitly, and set `auto_assign = true`. |
-| `subnets.<key>.ipv6_cidrs` | `subnets.<key>.ipv6.cidrs` | Copy exact prefixes; set `auto_assign` to preserve address assignment behavior. |
-| `subnets.<key>.ipv6_native` | `subnets.<key>.ipv6.native_only` | Set true and provide the existing explicit IPv6 CIDRs. |
+| `subnets.<key>.cidrs` | `subnets.<key>.ipv4.cidrs_by_az` | Build a map from each exact AZ name to its current state CIDR; order is irrelevant. |
+| `subnets.<key>.assign_ipv6_cidr` | `subnets.<key>.ipv6.cidrs_by_az` + `auto_assign` | Read each existing `/64` from state, map it to its exact AZ name, and set `auto_assign = true`. |
+| `subnets.<key>.ipv6_cidrs` | `subnets.<key>.ipv6.cidrs_by_az` | Map exact prefixes by AZ name; set `auto_assign` to preserve address assignment behavior. |
+| `subnets.<key>.ipv6_native` | `subnets.<key>.ipv6.native_only` | Set true and provide the existing IPv6 CIDRs keyed by AZ. |
 | `subnets.<key>.assign_ipv6_address_on_creation` | `subnets.<key>.ipv6.auto_assign` | Copy boolean; v5 uses the typed IPv6 block. |
 | `subnets.<key>.enable_resource_name_dns_aaaa_record_on_launch` | no direct v5 equivalent | Remove. This undocumented v4 private-group passthrough is not part of the v5 contract. |
 | `subnets.<key>.name_prefix` | `subnets.<key>.name_prefix` | Copy unchanged; never rename the map key during the first migration. |
@@ -297,7 +297,7 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `vpc_lattice.service_network_identifier` | `vpc_lattice.enabled=true` + `service_network_identifier` | Enable explicitly, then copy the identifier; it may be computed upstream. |
 | `vpc_lattice.security_group_ids` | `vpc_lattice.security_group_ids` | Convert list to set semantics (ordering is ignored). |
 | `vpc_lattice.tags` | `vpc_lattice.tags` | Copy unchanged. |
-| `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
+| `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit AZ-keyed CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
 | `tags` | `tags` | Copy unchanged. Keep provider `default_tags` unchanged; effective precedence is provider defaults < global tags < group/resource tags < generated Name. |
 
 ## Outputs

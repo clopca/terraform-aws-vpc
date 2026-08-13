@@ -60,7 +60,7 @@ module "vpc" {
     legacy = {
       role = "isolated"
       ipv4 = {
-        cidrs              = ["100.64.0.0/24", "100.64.1.0/24"]
+        cidrs_by_az        = { "us-east-1a" = "100.64.0.0/24", "us-east-1b" = "100.64.1.0/24" }
         secondary_cidr_key = "legacy"
       }
     }

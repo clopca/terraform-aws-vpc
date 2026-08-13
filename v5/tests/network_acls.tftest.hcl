@@ -28,7 +28,7 @@ run "create_inject_rules_and_associations" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.80.0.0/24", "10.80.1.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.80.0.0/24", "us-east-1b" = "10.80.1.0/24" } }
         network_acl = {
           ingress = {
             "200" = {
@@ -59,7 +59,7 @@ run "create_inject_rules_and_associations" {
       }
       data = {
         role = "private"
-        ipv4 = { cidrs = ["10.80.2.0/24", "10.80.3.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.80.2.0/24", "us-east-1b" = "10.80.3.0/24" } }
         network_acl = {
           create = false
           id     = "acl-injected"
@@ -119,7 +119,7 @@ run "omit_network_acl_preserves_default_behavior" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.81.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.81.0.0/24" } }
       }
     }
   }
@@ -145,7 +145,7 @@ run "reject_invalid_network_acl_rule_number" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.82.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.82.0.0/24" } }
         network_acl = {
           ingress = {
             "0100" = { protocol = "-1", action = "allow", cidr_block = "0.0.0.0/0" }
@@ -168,7 +168,7 @@ run "reject_invalid_network_acl_rule_fields" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.83.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.83.0.0/24" } }
         network_acl = {
           ingress = {
             "100" = {
@@ -199,7 +199,7 @@ run "reject_invalid_network_acl_injection" {
     subnets = {
       app = {
         role = "private"
-        ipv4 = { cidrs = ["10.84.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.84.0.0/24" } }
         network_acl = {
           create = false
           id     = ""

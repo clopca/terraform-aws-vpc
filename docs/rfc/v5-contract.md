@@ -198,7 +198,7 @@ variable "subnets" {
     # ── Addressing (one required unless ipv6.native_only) ──
     ipv4 = optional(object({
       netmask        = optional(number)       # auto-calculated CIDR (16-28)
-      cidrs          = optional(list(string))  # explicit, one per AZ
+      cidrs_by_az    = optional(map(string))  # explicit, one per AZ
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
       cidr_index         = optional(number)   # pinning slot for netmask stability [R1-C2]
@@ -206,7 +206,7 @@ variable "subnets" {
     }))
     ipv6 = optional(object({
       auto_assign    = optional(bool, false) # also calculates a VPC-derived /64 when no other source is set
-      cidrs          = optional(list(string))
+      cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)      # 64 for subnet IPAM
       native_only    = optional(bool, false)
@@ -336,6 +336,18 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.6 ADR-R9-A2 — explicit CIDRs are keyed by Availability Zone
+
+**Decision:** `ipv4.cidrs_by_az` and `ipv6.cidrs_by_az` are maps whose keys must
+exactly equal the configured AZ names. The unpublished positional `cidrs` lists are
+removed without an adapter. Subnet state remains `<group>/<az>`, while CIDR lookup
+uses the same AZ key instead of a list index.
+
+**Rationale:** inserting or reordering an AZ can no longer assign a different
+ForceNew CIDR to an existing subnet address. Migration reads each current subnet
+CIDR from state and records it under that subnet's AZ. Map declaration order has no
+semantic effect; missing and extra AZ keys fail at plan time with the group name.
+
 ### 3.3.5 ADR-R8-3 — NACL rule number is state identity
 
 **Decision:** each subnet group may optionally create or inject one Network ACL.
@@ -415,12 +427,12 @@ created by the module.
 
 **IPv6 allocation:** VPC creation supports Amazon-provided `/56` or IPv6 IPAM
 with exactly one of an explicit CIDR or netmask; injected VPC mode discovers an
-associated block. A subnet accepts explicit `/64`s, IPv6 IPAM with `/64`, or
+associated block. A subnet accepts explicit AZ-keyed `/64`s, IPv6 IPAM with `/64`, or
 VPC-derived `/64`s when `auto_assign=true`. The derived path uses six AZ slots per
 group and `ipv6.cidr_index` pins an absolute group slot exactly as IPv4 pinning
 does. `native_only=true` omits IPv4 and still requires a real IPv6 source.
 
-**Production recommendation:** use explicit `cidrs` for the strongest immutable
+**Production recommendation:** use explicit `cidrs_by_az` for the strongest immutable
 allocation contract, `cidr_index` for stable calculated six-AZ reservations, and
 bare `netmask`/`auto_assign` only where shifts after group mutations are acceptable.
 

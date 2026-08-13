@@ -21,7 +21,7 @@ module "vpc" {
     public = {
       role = "public"
       ipv4 = {
-        cidrs = ["10.1.0.0/24", "10.1.1.0/24", "10.1.2.0/24"]
+        cidrs_by_az = { "us-west-2a" = "10.1.0.0/24", "us-west-2b" = "10.1.1.0/24", "us-west-2c" = "10.1.2.0/24" }
       }
       ipv6 = { auto_assign = true, cidr_index = 0 }
       routing = {
@@ -36,7 +36,7 @@ module "vpc" {
     edge = {
       role = "public"
       ipv4 = {
-        cidrs = ["10.1.3.0/24", "10.1.4.0/24", "10.1.5.0/24"]
+        cidrs_by_az = { "us-west-2a" = "10.1.3.0/24", "us-west-2b" = "10.1.4.0/24", "us-west-2c" = "10.1.5.0/24" }
       }
       ipv6 = { auto_assign = true, cidr_index = 1 }
       routing = {
@@ -51,7 +51,7 @@ module "vpc" {
     firewall = {
       role = "private"
       ipv4 = {
-        cidrs = ["10.1.16.0/28", "10.1.16.16/28", "10.1.16.32/28"]
+        cidrs_by_az = { "us-west-2a" = "10.1.16.0/28", "us-west-2b" = "10.1.16.16/28", "us-west-2c" = "10.1.16.32/28" }
       }
       ipv6 = { auto_assign = true, cidr_index = 2 }
       routing = {

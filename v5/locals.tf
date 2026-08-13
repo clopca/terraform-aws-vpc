@@ -2,7 +2,7 @@
 # terraform-aws-vpc v5 — Subnet Engine (locals.tf)
 #
 # CIDR Assignment Strategy:
-#   1. EXPLICIT cidrs (first-class): user provides one CIDR per AZ — used as-is.
+#   1. EXPLICIT cidrs_by_az (first-class): caller maps each AZ to its CIDR — used as-is.
 #   2. IPAM: ipam_pool_id + netmask_length — AWS allocates at apply time.
 #   3. NETMASK (calculated): deterministic derivation from VPC CIDR.
 #
@@ -45,7 +45,7 @@
 #     slot in that group. Existing AZ CIDRs remain unchanged.
 #
 # PRODUCTION RECOMMENDATION:
-#   Use explicit `cidrs` for any subnet group that must never shift.
+#   Use explicit `cidrs_by_az` for any subnet group that must never shift.
 #   Use `cidr_index` when deterministic six-AZ reservations are appropriate.
 #   Use bare `netmask` only when shifts after group mutations are acceptable.
 #
@@ -84,8 +84,8 @@ locals {
   subnets_with_netmask = {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.netmask != null
   }
-  subnets_with_cidrs = {
-    for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs != null
+  subnets_with_cidrs_by_az = {
+    for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs_by_az != null
   }
   # ─── Deterministic CIDR Calculation with Pinning [R1-C2] ───────────────
   #
@@ -179,7 +179,7 @@ locals {
   # packing of unpinned groups after the highest pin.
   subnets_with_calculated_ipv6 = {
     for name, cfg in var.subnets : name => cfg
-    if cfg.ipv6 != null && cfg.ipv6.cidrs == null && cfg.ipv6.netmask_length == null && cfg.ipv6.auto_assign
+    if cfg.ipv6 != null && cfg.ipv6.cidrs_by_az == null && cfg.ipv6.netmask_length == null && cfg.ipv6.auto_assign
   }
 
   ipv6_pinned_group_start = {
@@ -271,7 +271,7 @@ locals {
 
         # CIDR resolution: explicit > calculated > IPAM (null, resolved at apply)
         cidr_block = (
-          cfg.ipv4 != null && cfg.ipv4.cidrs != null ? try(cfg.ipv4.cidrs[ai], null) :
+          cfg.ipv4 != null && cfg.ipv4.cidrs_by_az != null ? try(cfg.ipv4.cidrs_by_az[az], null) :
           cfg.ipv4 != null && cfg.ipv4.netmask != null ? local.calculated_cidrs["${name}/${az}"] :
           null # IPAM or ipv6-only
         )
@@ -283,7 +283,7 @@ locals {
 
         # IPv6: explicit > deterministic VPC /64 > subnet IPAM.
         ipv6_cidr = (
-          try(cfg.ipv6.cidrs, null) != null ? try(cfg.ipv6.cidrs[ai], null) :
+          try(cfg.ipv6.cidrs_by_az, null) != null ? try(cfg.ipv6.cidrs_by_az[az], null) :
           contains(keys(local.subnets_with_calculated_ipv6), name) ? local.calculated_ipv6_cidrs["${name}/${az}"] :
           null
         )

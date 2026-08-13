@@ -39,13 +39,13 @@ run "generated_dual_stack_dns64_eigw" {
     subnets = {
       public = {
         role    = "public"
-        ipv4    = { cidrs = ["10.0.0.0/24", "10.0.1.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
         ipv6    = { auto_assign = true, cidr_index = 0 }
         routing = { internet_gateway = true }
       }
       app = {
         role    = "private"
-        ipv4    = { cidrs = ["10.0.10.0/24", "10.0.11.0/24"] }
+        ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.10.0/24", "us-east-1b" = "10.0.11.0/24" } }
         ipv6    = { auto_assign = true, cidr_index = 2 }
         routing = { egress_only_igw = true, dns64 = true }
       }
@@ -98,7 +98,7 @@ run "vpc_and_subnet_ipv6_ipam" {
     subnets = {
       application = {
         role = "private"
-        ipv4 = { cidrs = ["10.0.0.0/24"] }
+        ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
         ipv6 = { ipam_pool_id = "ipam-pool-subnet", netmask_length = 64, auto_assign = true }
       }
     }
