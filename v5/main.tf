@@ -223,6 +223,27 @@ resource "terraform_data" "subnet_ipv6_vpc_validation" {
   }
 }
 
+resource "terraform_data" "injected_ipv6_association_validation" {
+  count = !local.create_vpc && var.addressing.ipv6 != null ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition = (
+        length([
+          for association in data.aws_vpc.existing[0].ipv6_cidr_block_associations : association
+          if association.state == "associated"
+        ]) <= 1 || var.addressing.ipv6.association_id != null
+      )
+      error_message = "Injected VPCs with multiple associated IPv6 CIDRs require addressing.ipv6.association_id so calculated subnet /64s remain stable."
+    }
+
+    precondition {
+      condition     = var.addressing.ipv6.association_id == null || local.vpc_ipv6_cidr != null
+      error_message = "addressing.ipv6.association_id does not identify an associated IPv6 CIDR on the injected VPC."
+    }
+  }
+}
+
 # ─── NAT Gateway precondition resource [R2-C3] ───────────────────────────
 # Validates that nat_gateway.az is within the resolved AZ list.
 # Uses a null_resource with precondition because this is a cross-variable
@@ -248,6 +269,27 @@ resource "terraform_data" "cidr_pinning_validation" {
     precondition {
       condition     = length(local.pinned_group_overlap_pairs) == 0
       error_message = "Pinned subnet CIDR ranges overlap across netmasks (${join(", ", local.pinned_group_overlap_pairs)}). Choose non-overlapping ipv4.cidr_index values or use explicit CIDRs."
+    }
+
+    precondition {
+      condition     = length(local.invalid_calculated_ipv4_keys) == 0
+      error_message = "Calculated IPv4 CIDRs do not fit the parent VPC prefix for subnet groups: ${join(", ", local.invalid_calculated_ipv4_keys)}. Increase the child prefix, reduce cidr_index, or use explicit cidrs_by_az."
+    }
+
+    precondition {
+      condition     = length(local.capacity_exceeded_ipv4_groups) == 0
+      error_message = "Calculated IPv4 reservations exceed VPC capacity for subnet groups: ${join(", ", local.capacity_exceeded_ipv4_groups)}. The highest cidr_index reservation must fit inside the parent CIDR."
+    }
+  }
+}
+
+resource "terraform_data" "ipv6_cidr_calculation_validation" {
+  count = length(local.subnets_with_calculated_ipv6) > 0 ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = length(local.invalid_calculated_ipv6_keys) == 0
+      error_message = "Calculated IPv6 /64 CIDRs do not fit the selected VPC association for subnet groups: ${join(", ", local.invalid_calculated_ipv6_keys)}. Select a sufficiently large association or use explicit cidrs_by_az."
     }
   }
 }

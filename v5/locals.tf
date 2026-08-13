@@ -74,7 +74,9 @@ locals {
   vpc_ipv6_cidr = var.addressing.ipv6 == null ? null : (
     local.create_vpc ? aws_vpc.main[0].ipv6_cidr_block : try(sort([
       for association in data.aws_vpc.existing[0].ipv6_cidr_block_associations : association.ipv6_cidr_block
-      if association.state == "associated"
+      if association.state == "associated" && (
+        var.addressing.ipv6.association_id == null || try(association.association_id, null) == var.addressing.ipv6.association_id
+      )
     ])[0], null)
   )
 
@@ -164,13 +166,32 @@ locals {
   # slots stay unused, preserving all existing CIDRs when a new AZ is appended.
   calculated_cidrs = merge([
     for name, cfg in local.subnets_with_netmask : {
-      for ai, az in local.azs : "${name}/${az}" => cidrsubnet(
+      for ai, az in local.azs : "${name}/${az}" => try(cidrsubnet(
         local.vpc_cidr,
         cfg.ipv4.netmask - local.vpc_prefix_length,
         (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
-      )
+      ), local.vpc_cidr)
     }
   ]...)
+  invalid_calculated_ipv4_keys = [
+    for name, cfg in local.subnets_with_netmask : name
+    if !alltrue([
+      for ai, az in local.azs : can(cidrsubnet(
+        local.vpc_cidr,
+        cfg.ipv4.netmask - local.vpc_prefix_length,
+        (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
+      ))
+    ])
+  ]
+  calculated_group_end_unit = {
+    for name, start in local.calculated_group_start_unit :
+    name => start + local.cidr_units_per_group[name] - 1
+  }
+  available_cidr_units = pow(2, 28 - local.vpc_prefix_length)
+  capacity_exceeded_ipv4_groups = [
+    for name, end in local.calculated_group_end_unit : name
+    if end >= local.available_cidr_units
+  ]
 
   # ─── Deterministic IPv6 /64 calculation ───────────────────────────────
   # All AWS IPv6 subnets are /64. The engine mirrors IPv4 state stability:
@@ -203,13 +224,23 @@ locals {
   vpc_ipv6_prefix_length = local.vpc_ipv6_cidr == null ? null : tonumber(split("/", local.vpc_ipv6_cidr)[1])
   calculated_ipv6_cidrs = merge([
     for name, cfg in local.subnets_with_calculated_ipv6 : {
-      for ai, az in local.azs : "${name}/${az}" => cidrsubnet(
+      for ai, az in local.azs : "${name}/${az}" => try(cidrsubnet(
         local.vpc_ipv6_cidr,
         64 - local.vpc_ipv6_prefix_length,
         local.ipv6_calculated_group_start[name] + ai,
-      )
+      ), local.vpc_ipv6_cidr)
     }
   ]...)
+  invalid_calculated_ipv6_keys = [
+    for name, cfg in local.subnets_with_calculated_ipv6 : name
+    if !alltrue([
+      for ai, az in local.azs : can(cidrsubnet(
+        local.vpc_ipv6_cidr,
+        64 - local.vpc_ipv6_prefix_length,
+        local.ipv6_calculated_group_start[name] + ai,
+      ))
+    ])
+  ]
 
   # ─── Routing: resolve internet_gateway default [R2-H3] ──────────────────
   # null = auto: true for public role, false for everything else

@@ -12,6 +12,26 @@ mock_provider "aws" {
     defaults = { account_id = "123456789012" }
   }
 
+  mock_data "aws_vpc" {
+    defaults = {
+      id         = "vpc-existing-documentation"
+      arn        = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-existing-documentation"
+      cidr_block = "10.0.0.0/16"
+      ipv6_cidr_block_associations = [
+        {
+          association_id  = "vpc-cidr-assoc-a"
+          ipv6_cidr_block = "2001:db8:100::/56"
+          state           = "associated"
+        },
+        {
+          association_id  = "vpc-cidr-assoc-b"
+          ipv6_cidr_block = "2001:db8:200::/56"
+          state           = "associated"
+        }
+      ]
+    }
+  }
+
   mock_data "aws_subnet" {
     defaults = {
       id              = "subnet-existing-mock"
@@ -230,4 +250,48 @@ run "reject_missing_injected_lattice_id" {
   }
 
   expect_failures = [var.vpc_lattice]
+}
+
+run "injected_ipv6_association_selector_is_stable" {
+  command = plan
+
+  variables {
+    vpc                = { name = "selected-ipv6", create = false, id = "vpc-existing-documentation" }
+    addressing         = { ipv4 = {}, ipv6 = { association_id = "vpc-cidr-assoc-b" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.0.10.0/24" } }
+        ipv6 = { auto_assign = true }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      output.vpc_ipv6_cidr_block == "2001:db8:200::/56" &&
+      aws_subnet.main["app/us-east-1a"].ipv6_cidr_block == "2001:db8:200::/64"
+    )
+    error_message = "Injected IPv6 calculation must use the caller-selected association instead of lexicographic order."
+  }
+}
+
+run "reject_ambiguous_injected_ipv6_associations" {
+  command = plan
+
+  variables {
+    vpc                = { name = "ambiguous-ipv6", create = false, id = "vpc-existing-documentation" }
+    addressing         = { ipv4 = {}, ipv6 = {} }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.0.11.0/24" } }
+        ipv6 = { auto_assign = true }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.injected_ipv6_association_validation[0]]
 }

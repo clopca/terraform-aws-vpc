@@ -323,3 +323,175 @@ run "public_ip_assignment_is_opt_in" {
     error_message = "Public subnet IPv4 auto-assignment must default false and require explicit opt-in."
   }
 }
+
+run "nat_gateway_null_uses_non_null_default" {
+  command = plan
+
+  variables {
+    vpc                = { name = "nullable-default" }
+    addressing         = { ipv4 = { cidr_block = "10.110.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    nat_gateway        = null
+  }
+
+  assert {
+    condition     = length(aws_nat_gateway.main) == 0
+    error_message = "nullable=false must normalize explicit nat_gateway=null to the declared non-null default instead of dereferencing null."
+  }
+}
+
+run "reject_vpc_ipv4_orphan_netmask_length" {
+  command = plan
+
+  variables {
+    vpc                = { name = "orphan-vpc-netmask" }
+    addressing         = { ipv4 = { cidr_block = "10.112.0.0/16", netmask_length = 16 } }
+    availability_zones = { names = ["us-east-1a"] }
+  }
+
+  expect_failures = [var.addressing]
+}
+
+run "reject_subnet_ipv4_orphan_netmask_length" {
+  command = plan
+
+  variables {
+    vpc                = { name = "orphan-subnet-netmask" }
+    addressing         = { ipv4 = { cidr_block = "10.113.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.113.0.0/24" }, netmask_length = 24 }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "reject_cidr_index_outside_calculated_mode" {
+  command = plan
+
+  variables {
+    vpc                = { name = "orphan-cidr-index" }
+    addressing         = { ipv4 = { cidr_block = "10.114.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.114.0.0/24" }, cidr_index = 1 }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "reject_ipv6_orphan_netmask_length" {
+  command = plan
+
+  variables {
+    vpc                = { name = "orphan-ipv6-netmask" }
+    addressing         = { ipv4 = { cidr_block = "10.115.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.115.0.0/24" } }
+        ipv6 = { auto_assign = true, netmask_length = 64 }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "reject_ipv6_native_with_ipv4" {
+  command = plan
+
+  variables {
+    vpc                = { name = "mixed-native" }
+    addressing         = { ipv4 = { cidr_block = "10.116.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.116.0.0/24" } }
+        ipv6 = { native_only = true, auto_assign = true }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "isolated_accepts_explicit_empty_route_lists" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-empty-routes" }
+    addressing         = { ipv4 = { cidr_block = "10.117.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role = "isolated"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.117.0.0/24" } }
+        routing = {
+          transit_gateway      = []
+          transit_gateway_ipv6 = []
+          core_network         = []
+          core_network_ipv6    = []
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_route.tgw) == 0 && length(aws_route.cwan) == 0
+    error_message = "Explicit empty transit route lists must preserve isolated semantics."
+  }
+}
+
+run "reject_empty_subnet_name_format" {
+  command = plan
+
+  variables {
+    vpc                = { name = "empty-format" }
+    addressing         = { ipv4 = { cidr_block = "10.118.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = { role = "private", name_format = "", ipv4 = { cidrs_by_az = { us-east-1a = "10.118.0.0/24" } } }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "reject_empty_nat_name_format" {
+  command = plan
+
+  variables {
+    vpc                = { name = "empty-nat-format" }
+    addressing         = { ipv4 = { cidr_block = "10.119.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    nat_gateway        = { mode = "none", name_format = "" }
+  }
+
+  expect_failures = [var.nat_gateway]
+}
+
+run "reject_calculated_cidr_pin_beyond_parent_capacity" {
+  command = plan
+
+  variables {
+    vpc                = { name = "pin-capacity" }
+    addressing         = { ipv4 = { cidr_block = "10.120.0.0/24" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = { role = "private", ipv4 = { netmask = 28, cidr_index = 3 } }
+    }
+  }
+
+  expect_failures = [terraform_data.cidr_pinning_validation[0]]
+}

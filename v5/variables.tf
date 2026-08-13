@@ -10,6 +10,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "vpc" {
+  nullable    = false
   description = <<-EOT
     VPC configuration. Set `create = false` and `id` to reference an existing VPC.
     The explicit boolean decides resource cardinality, so `id` may be computed by an
@@ -86,6 +87,7 @@ variable "vpc" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "default_resources" {
+  nullable    = false
   description = <<-EOT
     Opt-in management of the VPC's existing default resources. These resources
     are adopted, never created: enabling a selector takes ownership of the
@@ -123,6 +125,7 @@ variable "default_resources" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "addressing" {
+  nullable    = false
   description = <<-EOT
     IPv4 and/or IPv6 addressing for the VPC. Supports static CIDR, IPAM, or
     Amazon-assigned IPv6. At least one of ipv4 or ipv6 must be configured.
@@ -145,6 +148,7 @@ variable "addressing" {
     }))
     ipv6 = optional(object({
       amazon_assigned = optional(bool, false)
+      association_id  = optional(string)
       cidr_block      = optional(string)
       ipam_pool_id    = optional(string)
       netmask_length  = optional(number)
@@ -166,9 +170,9 @@ variable "addressing" {
 
   validation {
     condition = var.addressing.ipv4 == null ? true : (
-      var.addressing.ipv4.ipam_pool_id == null || var.addressing.ipv4.netmask_length != null
+      (var.addressing.ipv4.ipam_pool_id == null) == (var.addressing.ipv4.netmask_length == null)
     )
-    error_message = "addressing.ipv4: netmask_length is required when ipam_pool_id is set."
+    error_message = "addressing.ipv4: netmask_length is valid if and only if ipam_pool_id is set."
   }
 
   validation {
@@ -195,9 +199,10 @@ variable "addressing" {
   validation {
     condition = var.addressing.ipv6 == null ? true : (
       (try(var.addressing.ipv6.amazon_assigned, false) ? 1 : 0) +
-      (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) <= 1
+      (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) +
+      (var.addressing.ipv6.association_id != null ? 1 : 0) <= 1
     )
-    error_message = "addressing.ipv6: amazon_assigned and ipam_pool_id are mutually exclusive."
+    error_message = "addressing.ipv6: amazon_assigned, ipam_pool_id, and association_id are mutually exclusive."
   }
 
   validation {
@@ -223,6 +228,7 @@ variable "addressing" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "availability_zones" {
+  nullable    = false
   description = <<-EOT
     AZ selection. Provide either an explicit list of AZ names or a count
     (takes first N from the region alphabetically). Exactly one is required.
@@ -291,6 +297,7 @@ variable "availability_zones" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "subnets" {
+  nullable    = false
   description = <<-EOT
     Map of subnet groups. Each key is a stable logical name (used in state keys
     as "key/az"). Keys are IMMUTABLE post-deploy — renaming requires `moved` blocks.
@@ -489,11 +496,12 @@ variable "subnets" {
   validation {
     condition = alltrue(flatten([
       for key, cfg in var.subnets : [
-        for format in compact([cfg.name_format, cfg.route_table_name_format]) :
-        length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+        for format in [cfg.name_format, cfg.route_table_name_format] : format == null || (
+          length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+        )
       ]
     ]))
-    error_message = "Subnet and route-table name formats must be non-empty and may use only {vpc}, {group}, and {az}."
+    error_message = "Subnet and route-table name formats must be null or non-empty and may use only {vpc}, {group}, and {az}."
   }
 
   # R1-C1: REMOVED singleton constraint for public role.
@@ -585,10 +593,17 @@ variable "subnets" {
     condition = alltrue([
       for k, v in var.subnets :
       v.ipv4 == null ? true : (
-        v.ipv4.ipam_pool_id == null || v.ipv4.netmask_length != null
+        (v.ipv4.ipam_pool_id == null) == (v.ipv4.netmask_length == null)
       )
     ])
-    error_message = "Within ipv4, netmask_length is required when ipam_pool_id is set."
+    error_message = "Within ipv4, netmask_length is valid if and only if ipam_pool_id is set."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.ipv4 == null || v.ipv4.cidr_index == null || v.ipv4.netmask != null
+    ])
+    error_message = "ipv4.cidr_index is valid only with calculated ipv4.netmask mode."
   }
 
   validation {
@@ -780,21 +795,16 @@ variable "subnets" {
   validation {
     condition = alltrue([
       for k, v in var.subnets : v.ipv6 == null ? true : (
-        (v.ipv6.cidrs_by_az != null ? 1 : 0) +
-        (v.ipv6.ipam_pool_id != null ? 1 : 0) <= 1 &&
-        (v.ipv6.cidrs_by_az != null || v.ipv6.ipam_pool_id != null || v.ipv6.auto_assign)
+        v.ipv6.ipam_pool_id != null ? (
+          v.ipv6.cidrs_by_az == null && v.ipv6.netmask_length == 64 && v.ipv6.cidr_index == null
+          ) : v.ipv6.cidrs_by_az != null ? (
+          v.ipv6.netmask_length == null && v.ipv6.cidr_index == null
+          ) : (
+          v.ipv6.auto_assign && v.ipv6.netmask_length == null
+        )
       )
     ])
-    error_message = "Within ipv6, provide explicit cidrs, IPAM, or auto_assign=true for deterministic /64 calculation from the VPC."
-  }
-
-  validation {
-    condition = alltrue([
-      for k, v in var.subnets : v.ipv6 == null || v.ipv6.ipam_pool_id == null ? true : (
-        v.ipv6.netmask_length == 64
-      )
-    ])
-    error_message = "Within ipv6, IPAM requires netmask_length = 64."
+    error_message = "Within ipv6, select exactly one mode: explicit cidrs_by_az, IPAM with netmask_length=64, or auto-calculated auto_assign=true. Fields from other modes must be null."
   }
 
   validation {
@@ -820,9 +830,9 @@ variable "subnets" {
 
   validation {
     condition = alltrue([
-      for k, v in var.subnets : !try(v.ipv6.native_only, false) || v.ipv6 != null
+      for k, v in var.subnets : !try(v.ipv6.native_only, false) || (v.ipv6 != null && v.ipv4 == null)
     ])
-    error_message = "IPv6-native subnet groups must define ipv6 addressing."
+    error_message = "IPv6-native subnet groups must define IPv6 addressing and must not configure IPv4."
   }
 
   validation {
@@ -915,6 +925,7 @@ variable "subnets" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "nat_gateway" {
+  nullable    = false
   description = <<-EOT
     NAT Gateway configuration. `single_az` and `all_azs` create zonal Gateways;
     `regional` creates one public VPC-level Gateway and repeats its ID by configured
@@ -1021,10 +1032,11 @@ variable "nat_gateway" {
 
   validation {
     condition = alltrue([
-      for format in compact([var.nat_gateway.name_format, var.nat_gateway.eip.name_format]) :
-      length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+      for format in [var.nat_gateway.name_format, var.nat_gateway.eip.name_format] : format == null || (
+        length(trimspace(format)) > 0 && !can(regex("\\{[^}]+\\}", replace(replace(replace(format, "{vpc}", ""), "{group}", ""), "{az}", "")))
+      )
     ])
-    error_message = "NAT and EIP name formats must be non-empty and may use only {vpc}, {group}, and {az}."
+    error_message = "NAT and EIP name formats must be null or non-empty and may use only {vpc}, {group}, and {az}."
   }
 }
 
@@ -1033,6 +1045,7 @@ variable "nat_gateway" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "gateway_endpoints" {
+  nullable    = false
   description = <<-EOT
     Gateway VPC endpoints keyed by a stable caller-owned identifier. Each entry
     explicitly selects service `s3` or `dynamodb`; at most one endpoint per
@@ -1104,6 +1117,7 @@ variable "gateway_endpoints" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "flow_logs" {
+  nullable    = false
   description = <<-EOT
     VPC Flow Logs keyed by a stable logical name. Map keys are Terraform state
     identity and must not be renamed without a moved block.
@@ -1280,6 +1294,7 @@ variable "flow_logs" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "vpc_lattice" {
+  nullable    = false
   description = "VPC Lattice association. enabled is the plan-known cardinality selector; identifiers may be computed. When private DNS is enabled, dns_options defaults to AWS's VERIFIED_DOMAINS_ONLY behavior."
   type = object({
     enabled                    = optional(bool, false)
@@ -1352,6 +1367,7 @@ variable "vpc_lattice" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "vpc_block_public_access" {
+  nullable    = false
   description = <<-EOT
     Regional VPC Block Public Access options. This is an account/Region singleton;
     enable it from exactly one module instance. create=false injects existing
@@ -1417,6 +1433,7 @@ variable "vpc_block_public_access" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "dhcp_options" {
+  nullable    = false
   description = "DHCP option set for the VPC. Enable create mode from typed settings or inject an existing dhcp_options_id."
   type = object({
     enabled                           = optional(bool, false)
@@ -1463,6 +1480,7 @@ variable "dhcp_options" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "tags" {
+  nullable    = false
   description = "Tags applied to all resources created by this module."
   type        = map(string)
   default     = {}
