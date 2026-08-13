@@ -70,6 +70,60 @@ mock_provider "aws" {
   mock_resource "aws_vpclattice_service_network" {
     defaults = { id = "sn-mock" }
   }
+
+  mock_resource "aws_ec2_transit_gateway" {
+    defaults = {
+      id  = "tgw-0123456789abcdef0"
+      arn = "arn:aws:ec2:us-east-1:123456789012:transit-gateway/tgw-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_ec2_transit_gateway_route_table" {
+    defaults = { id = "tgw-rtb-0123456789abcdef0" }
+  }
+
+  mock_resource "aws_ec2_transit_gateway_vpc_attachment" {
+    defaults = { id = "tgw-attach-0123456789abcdef0" }
+  }
+
+  mock_resource "aws_security_group" {
+    defaults = { id = "sg-0123456789abcdef0" }
+  }
+
+  mock_resource "aws_vpc_endpoint" {
+    defaults = {
+      id  = "vpce-0123456789abcdef0"
+      arn = "arn:aws:ec2:us-east-1:123456789012:vpc-endpoint/vpce-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_route53profiles_profile" {
+    defaults = {
+      id  = "rp-0123456789abcdef0"
+      arn = "arn:aws:route53profiles:us-east-1:123456789012:profile/rp-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_route53_resolver_endpoint" {
+    defaults = {
+      id  = "rslvr-out-0123456789abcdef0"
+      arn = "arn:aws:route53resolver:us-east-1:123456789012:resolver-endpoint/rslvr-out-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_route53_resolver_rule" {
+    defaults = {
+      id  = "rslvr-rr-0123456789abcdef0"
+      arn = "arn:aws:route53resolver:us-east-1:123456789012:resolver-rule/rslvr-rr-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_ram_resource_share" {
+    defaults = {
+      id  = "rs-0123456789abcdef0"
+      arn = "arn:aws:ram:us-east-1:123456789012:resource-share/01234567-89ab-cdef-0123-456789abcdef"
+    }
+  }
 }
 
 run "basic_example" {
@@ -343,4 +397,174 @@ run "inspection_egress_example" {
     )
     error_message = "The inspection-egress example must plan three-AZ NAT egress, appliance-path TGW prefix-list routes, and complete Tier 1 Network Firewall inputs."
   }
+}
+
+run "centralized_endpoints_dns_example" {
+  command = plan
+
+  module {
+    source = "./examples/centralized_endpoints_dns"
+  }
+
+  variables {
+    resolver_inbound_ips_by_az = {
+      us-east-1a = "10.250.16.10"
+      us-east-1b = "10.250.16.26"
+    }
+    resolver_outbound_ips_by_az = {
+      us-east-1a = "10.250.16.11"
+      us-east-1b = "10.250.16.27"
+    }
+    ram_principals = ["123456789012"]
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.subnet_ids)) == toset(["endpoints", "resolver", "tgw"]) &&
+      alltrue([for group in values(output.subnet_ids) : length(group) == 2]) &&
+      length(output.topology_evidence.subnets_by_role.private) == 4 &&
+      length(output.topology_evidence.subnets_by_role.transit_gateway) == 2 &&
+      toset(keys(output.topology_evidence.hub_attachment)) == toset(["dns-hub"]) &&
+      alltrue([for attachments in values(output.topology_evidence.spoke_attachments) : toset(keys(attachments)) == toset(["dns-hub"])]) &&
+      output.topology_evidence.tgw_route_table_associations == 3 &&
+      output.topology_evidence.tgw_route_table_propagations == 3
+    )
+    error_message = "The centralized endpoints example must plan the exact two-AZ hub groups, two spokes, and explicit TGW route-table wiring."
+  }
+
+  assert {
+    condition = (
+      alltrue(flatten([for group in ["endpoints", "resolver"] : [
+        for connectivity in values(output.connectivity_evidence.by_group_by_az[group]) :
+        connectivity.internet == false && connectivity.tgw == true && connectivity.igw == false && connectivity.nat == false && connectivity.eigw == false
+      ]])) &&
+      output.connectivity_evidence.internet_gateway_id == null &&
+      length(output.connectivity_evidence.nat_gateway_ids) == 0 &&
+      output.connectivity_evidence.egress_only_igw_id == null &&
+      output.connectivity_evidence.transit_route_count == 12 &&
+      output.connectivity_evidence.transit_destinations == toset(["10.20.0.0/16", "10.30.0.0/16", "192.0.2.0/24"])
+    )
+    error_message = "Endpoint and Resolver subnets must have TGW return routes for every consumer and no Internet, NAT, or egress-only gateway path."
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.endpoint_evidence)) == toset(["ec2messages", "logs", "ssm", "ssmmessages", "sts"]) &&
+      alltrue([for endpoint in values(output.endpoint_evidence) :
+        endpoint.private_dns_enabled == true &&
+        length(endpoint.configured_subnet_azs) == 2 &&
+        length(endpoint.security_group_ids) == 1 &&
+        endpoint.has_policy
+      ]) &&
+      toset(output.profile_evidence.endpoint_resource_associations) == toset(["ec2messages", "logs", "ssm", "ssmmessages", "sts"]) &&
+      toset(output.profile_evidence.vpc_associations) == toset(["application", "hub", "operations"])
+    )
+    error_message = "Every pedagogical service must use Private DNS, two endpoint AZs, an explicit policy and SG, and Route 53 Profile associations to the hub and spokes."
+  }
+
+  assert {
+    condition = (
+      output.security_evidence.endpoint_https_rule_count == 3 &&
+      output.security_evidence.endpoint_https_cidrs == toset(["10.20.0.0/16", "10.30.0.0/16", "192.0.2.0/24"]) &&
+      output.security_evidence.wildcard_ipv4_rule_count == 0 &&
+      output.dns_attribute_evidence.enable_dns_hostnames == true &&
+      output.dns_attribute_evidence.enable_dns_support == true
+    )
+    error_message = "Endpoint HTTPS authorization must exactly match consumer CIDRs, contain no wildcard source, and preserve both VPC DNS attributes."
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.resolver_evidence.configured_by_az)) == toset(["us-east-1a", "us-east-1b"]) &&
+      output.resolver_evidence.configured_by_az["us-east-1a"].inbound_ip == "10.250.16.10" &&
+      output.resolver_evidence.configured_by_az["us-east-1b"].inbound_ip == "10.250.16.26" &&
+      output.resolver_evidence.configured_by_az["us-east-1a"].outbound_ip == "10.250.16.11" &&
+      output.resolver_evidence.configured_by_az["us-east-1b"].outbound_ip == "10.250.16.27" &&
+      output.resolver_evidence.inbound.direction == "INBOUND" &&
+      output.resolver_evidence.outbound.direction == "OUTBOUND" &&
+      length(output.resolver_evidence.inbound.ip_addresses) == 2 &&
+      length(output.resolver_evidence.outbound.ip_addresses) == 2 &&
+      length(output.resolver_evidence.inbound_security_rules) == 2 &&
+      length(output.resolver_evidence.outbound_security_rules) == 4 &&
+      alltrue([for rule in values(output.resolver_evidence.inbound_security_rules) : rule.port == 53 && rule.cidr == "192.0.2.0/24"]) &&
+      alltrue([for rule in values(output.resolver_evidence.outbound_security_rules) : rule.port == 53 && contains(["192.0.2.53/32", "192.0.2.54/32"], rule.cidr)])
+    )
+    error_message = "Both Resolver directions must place fixed IPs in two AZs and use only directional TCP/UDP 53 security rules."
+  }
+
+  assert {
+    condition = (
+      toset(keys(output.resolver_rule_evidence.rules)) == toset(["on-premises"]) &&
+      output.resolver_rule_evidence.rules["on-premises"].rule_type == "FORWARD" &&
+      length(output.resolver_rule_evidence.rules["on-premises"].targets) == 2 &&
+      output.resolver_rule_evidence.spoke_association_count == 2 &&
+      output.resolver_rule_evidence.ram_resource_count == 1 &&
+      output.resolver_rule_evidence.ram_principal_count == 1 &&
+      output.resolver_rule_evidence.allow_external == false &&
+      output.private_zone_evidence.zones == ["shared"] &&
+      output.private_zone_evidence.record_count == 1 &&
+      output.private_zone_evidence.spoke_association_count == 2
+    )
+    error_message = "Forwarding rules must be associated separately to both spokes, shared through RAM, and accompanied by direct custom-zone associations."
+  }
+}
+
+run "centralized_endpoints_dns_rejects_unknown_fixed_ip_az" {
+  command = plan
+
+  module {
+    source = "./examples/centralized_endpoints_dns"
+  }
+
+  variables {
+    availability_zones = ["us-east-1a", "us-east-1b"]
+    resolver_inbound_ips_by_az = {
+      us-east-1a = "10.250.16.10"
+      us-east-1b = "10.250.16.26"
+      us-east-1c = "10.250.16.42"
+    }
+    resolver_outbound_ips_by_az = {
+      us-east-1a = "10.250.16.11"
+      us-east-1b = "10.250.16.27"
+    }
+  }
+
+  expect_failures = [terraform_data.example_contract]
+}
+
+run "centralized_endpoints_dns_rejects_consumer_overlap" {
+  command = plan
+
+  module {
+    source = "./examples/centralized_endpoints_dns"
+  }
+
+  variables {
+    availability_zones = ["us-east-1a", "us-east-1b"]
+    consumer_cidrs     = ["10.250.1.0/24"]
+    resolver_inbound_ips_by_az = {
+      us-east-1a = "10.250.16.10"
+      us-east-1b = "10.250.16.26"
+    }
+    resolver_outbound_ips_by_az = {
+      us-east-1a = "10.250.16.11"
+      us-east-1b = "10.250.16.27"
+    }
+  }
+
+  expect_failures = [terraform_data.example_contract]
+}
+
+run "centralized_endpoints_dns_requires_two_azs" {
+  command = plan
+
+  module {
+    source = "./examples/centralized_endpoints_dns"
+  }
+
+  variables {
+    availability_zones = ["us-east-1a"]
+  }
+
+  expect_failures = [var.availability_zones]
 }
