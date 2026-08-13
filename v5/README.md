@@ -95,6 +95,29 @@ Subnet group keys are state identity. Renaming a group changes every
 `aws_subnet.main["<group>/<az>"]` address and requires explicit `moved` blocks.
 Use `name_prefix` for cosmetic changes.
 
+For injected route tables, `subnets[*].route_table_key` is also immutable Terraform
+state identity. It prefixes every managed route and gateway-endpoint association as
+`injected/<route_table_key>/...`; `route_table_id` is only the physical AWS value.
+If a key must be renamed while the physical table stays unchanged, first enumerate
+the affected addresses with `terraform state list`, then add one root-module
+`moved` block per address and verify a state-only plan. For example:
+
+```hcl
+moved {
+  from = module.vpc.aws_route.igw_ipv4["injected/edge-old/igw"]
+  to   = module.vpc.aws_route.igw_ipv4["injected/edge/igw"]
+}
+
+moved {
+  from = module.vpc.aws_vpc_endpoint_route_table_association.gateway["injected/edge-old/gateway-endpoint/s3"]
+  to   = module.vpc.aws_vpc_endpoint_route_table_association.gateway["injected/edge/gateway-endpoint/s3"]
+}
+```
+
+Repeat this for every populated route collection under that key; do not change the
+key without the corresponding moves, because competing old/new route resources can
+target the same physical table.
+
 IPv4 allocation has three modes:
 
 1. **Explicit `cidrs_by_az`** — passed through unchanged and recommended for production.

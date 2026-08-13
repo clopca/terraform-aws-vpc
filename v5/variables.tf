@@ -371,8 +371,10 @@ variable "subnets" {
       - core_network: limited to 1 group (Cloud WAN attachment adapter is singular)
 
     Set `manage_route_table = false` plus `route_table_key` and `route_table_id`
-    to inject an existing route table. `route_table_key` is caller-owned physical
-    identity: groups sharing one table must use the same key and ID. The module
+    to inject an existing route table. `route_table_key` is caller-owned, immutable
+    Terraform state identity; renaming it changes every `injected/<key>/...` route
+    and gateway-endpoint association address and requires root-module `moved` blocks.
+    Groups sharing one physical table must use the same key and ID. The module
     associates every subnet while materializing each route and gateway-endpoint
     association only once per physical key. A shared injected table cannot provide
     per-AZ NAT targets, so `nat_gateway.mode = "all_azs"` is rejected when any

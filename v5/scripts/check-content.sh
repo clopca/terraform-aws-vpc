@@ -17,3 +17,6 @@ if grep -RInE --exclude-dir='.git' --exclude-dir='.terraform' --exclude='check-c
 fi
 grep -Fq 'dynamodb:GetItem' "$repo_root/v5/examples/basic/main.tf"
 grep -Fq 'arn:aws:dynamodb:us-east-1:123456789012:table/application-data' "$repo_root/v5/examples/basic/main.tf"
+
+grep -Fq '`subnets[*].route_table_key` is also immutable Terraform' "$repo_root/v5/.header.md"
+grep -Fq 'module.vpc.aws_vpc_endpoint_route_table_association.gateway["injected/edge-old/gateway-endpoint/s3"]' "$repo_root/v5/.header.md"
