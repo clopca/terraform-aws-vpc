@@ -111,7 +111,7 @@ Amazon ECR needs separate API and DKR endpoints, a wildcard DKR name in the clas
 - At least two distinct AZs. Resolver creates one inbound and one outbound IP/ENI per AZ; every interface endpoint creates one endpoint ENI per AZ.
 - `consumer_cidrs` must include every remote HTTPS consumer and the return prefixes reachable through the TGW. They must not overlap `10.250.0.0/16`.
 - On-premises routing must connect the TGW to the declared DNS resolver network, and on-premises DNS must conditionally forward AWS/private domains to both inbound endpoint IPs.
-- The plan tests verify Profile wiring but cannot prove apply-time acceptance of a VPC endpoint ARN by Route 53 Profiles; confirm each association in a sandbox account before production rollout.
+- Sandbox apply verification confirms that Route 53 Profiles accepts an interface VPC endpoint ARN in `aws_route53profiles_resource_association.resource_arn`; both the endpoint resource association and the Profile-to-VPC association reached `COMPLETE`.
 - **Cost:** the TGW and three VPC attachments, ten interface endpoint ENIs, four Resolver ENIs, DNS queries, RAM sharing, data processing, and cross-AZ or hybrid transfer can incur charges. There are no Internet Gateway or NAT Gateway charges in this topology.
 
 Check current Service Quotas before applying. Resolver endpoints default to four per account/Region and six IPs per endpoint; interface endpoints and Route 53 Profile associations also have regional quotas.
