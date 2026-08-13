@@ -33,6 +33,14 @@ output "vpc_cidr_block" {
   value       = local.vpc_cidr
 }
 
+output "vpc_ipv4_cidr_blocks" {
+  description = "IPv4 VPC CIDR blocks by stable addressing key. The primary key is always present; secondary keys match IPv4 addressing.secondary entries. Shape: map(string|null)."
+  value = merge(
+    { primary = local.vpc_cidr },
+    local.secondary_ipv4_cidr_blocks,
+  )
+}
+
 output "vpc_ipv6_cidr_blocks" {
   description = "IPv6 VPC CIDR blocks by stable addressing.secondary key."
   value       = local.secondary_ipv6_cidr_blocks

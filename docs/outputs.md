@@ -14,6 +14,38 @@ If an integration can use a Tier 1 ID instead of an object, use the ID. This kee
 
 ## Tier 1: stable composition
 
+### Allow traffic from every IPv4 VPC CIDR
+
+`vpc_ipv4_cidr_blocks` contains `primary` plus every IPv4 key from
+`addressing.secondary`. The keys are stable even when an IPAM-allocated value is
+unknown during planning. Provider-assigned IPAM values are passed through without
+being coerced to `null` and resolve after apply; `null` is reserved for an injected
+association that AWS does not resolve.
+
+Using the map directly as `for_each` preserves resource identity while allowing
+provider-computed CIDRs to remain unknown until apply:
+
+```hcl
+resource "aws_security_group" "service" {
+  name   = "service"
+  vpc_id = module.vpc.vpc_id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "vpc_https" {
+  for_each = module.vpc.vpc_ipv4_cidr_blocks
+
+  description       = "HTTPS from VPC CIDR ${each.key}"
+  security_group_id = aws_security_group.service.id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = each.value
+}
+```
+
+IPv6 secondary keys do not appear in this map; use `vpc_ipv6_cidr_blocks` for
+those associations.
+
 ### Select subnets by caller-owned group
 
 Group keys are the keys supplied in `var.subnets`. Use them when the consumer knows the topology name. The fragment below omits required module inputs.

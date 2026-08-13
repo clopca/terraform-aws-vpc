@@ -418,6 +418,7 @@ No modules.
 | <a name="output_vpc_block_public_access_options_id"></a> [vpc\_block\_public\_access\_options\_id](#output\_vpc\_block\_public\_access\_options\_id) | VPC Block Public Access regional options ID (created or injected), or null when disabled. |
 | <a name="output_vpc_cidr_block"></a> [vpc\_cidr\_block](#output\_vpc\_cidr\_block) | The primary IPv4 CIDR block of the VPC. |
 | <a name="output_vpc_id"></a> [vpc\_id](#output\_vpc\_id) | The ID of the VPC (created or referenced). |
+| <a name="output_vpc_ipv4_cidr_blocks"></a> [vpc\_ipv4\_cidr\_blocks](#output\_vpc\_ipv4\_cidr\_blocks) | IPv4 VPC CIDR blocks by stable addressing key. The primary key is always present; secondary keys match IPv4 addressing.secondary entries. Shape: map(string\|null). |
 | <a name="output_vpc_ipv6_cidr_block"></a> [vpc\_ipv6\_cidr\_block](#output\_vpc\_ipv6\_cidr\_block) | DEPRECATED singular adapter: the IPv6 CIDR under the first sorted secondary key, or null. Use vpc\_ipv6\_cidr\_blocks. |
 | <a name="output_vpc_ipv6_cidr_blocks"></a> [vpc\_ipv6\_cidr\_blocks](#output\_vpc\_ipv6\_cidr\_blocks) | IPv6 VPC CIDR blocks by stable addressing.secondary key. |
 | <a name="output_vpc_lattice_service_network_association"></a> [vpc\_lattice\_service\_network\_association](#output\_vpc\_lattice\_service\_network\_association) | DEPRECATED: v4-compatible full VPC Lattice association object. Use vpc\_lattice\_service\_network\_association\_id. Removed in v6. |
