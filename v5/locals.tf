@@ -64,7 +64,6 @@ locals {
     0,
     min(var.availability_zones.count, length(local.discovered_azs)),
   )
-  az_count = length(local.azs)
 
   # ─── VPC Identity ───────────────────────────────────────────────────────
   create_vpc = var.vpc.create
