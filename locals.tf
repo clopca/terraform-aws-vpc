@@ -802,10 +802,14 @@ locals {
       toset(local.azs),
       toset(keys(coalesce(route.target.ids_by_az, {}))),
     )))
-    if route.target.ids_by_az != null && length(setsubtract(
+    if try(var.subnets[route.from_group].manage_route_table, false) && route.target.ids_by_az != null && length(setsubtract(
       toset(local.azs),
       toset(keys(route.target.ids_by_az)),
     )) > 0
+  }
+  top_level_route_shared_table_zonal_target_conflicts = {
+    for route_key, route in var.routes : route_key => route.from_group
+    if try(!var.subnets[route.from_group].manage_route_table, false) && route.target.ids_by_az != null
   }
   top_level_route_isolation_conflicts = {
     for route_key, route in var.routes : route_key => route.from_group
@@ -821,24 +825,38 @@ locals {
     )
   }
 
-  # Keys derive only from caller route keys and configured AZ names. IDs remain
-  # values and may stay unknown until apply.
-  top_level_routes = merge(concat([{}], [
-    for route_key, route in var.routes : {
-      for az in local.azs : "${route_key}/${az}" => {
+  # Managed tables preserve <route-key>/<az> identity. Injected tables are one
+  # physical table across all AZs, so a static target has one /shared instance.
+  top_level_routes = merge(
+    merge(concat([{}], [
+      for route_key, route in var.routes : {
+        for az in local.azs : "${route_key}/${az}" => {
+          route_key      = route_key
+          az             = az
+          from_group     = route.from_group
+          route_table_id = local.route_table_id_by_subnet["${route.from_group}/${az}"]
+          destination    = route.destination
+          target_type    = route.target.type
+          target_id      = route.target.id != null ? route.target.id : try(route.target.ids_by_az[az], null)
+        }
+        if try(var.subnets[route.from_group].manage_route_table, false) && (
+          route.target.id != null || contains(keys(coalesce(route.target.ids_by_az, {})), az)
+        )
+      }
+    ])...),
+    {
+      for route_key, route in var.routes : "${route_key}/shared" => {
         route_key      = route_key
-        az             = az
+        az             = null
         from_group     = route.from_group
-        route_table_id = local.route_table_id_by_subnet["${route.from_group}/${az}"]
+        route_table_id = local.injected_route_table_ids_by_key[var.subnets[route.from_group].route_table_key]
         destination    = route.destination
         target_type    = route.target.type
-        target_id      = route.target.id != null ? route.target.id : try(route.target.ids_by_az[az], null)
+        target_id      = route.target.id
       }
-      if contains(keys(var.subnets), route.from_group) && (
-        route.target.id != null || contains(keys(coalesce(route.target.ids_by_az, {})), az)
-      )
-    }
-  ])...)
+      if try(!var.subnets[route.from_group].manage_route_table, false) && route.target.id != null
+    },
+  )
 
   # Preserve source names while normalizing generic declarations so a collision
   # diagnostic can identify both caller keys, including cross-surface conflicts.

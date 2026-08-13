@@ -649,6 +649,7 @@ output "resources" {
       nat64               = aws_route.nat64
       eigw                = aws_route.eigw
       custom              = aws_route.custom
+      top_level           = aws_route.top_level
       tgw                 = aws_route.tgw
       tgw_ipv6            = aws_route.tgw_ipv6
       tgw_attachment      = aws_route.tgw_attachment

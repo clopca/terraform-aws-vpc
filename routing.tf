@@ -117,6 +117,8 @@ resource "aws_route" "top_level" {
   carrier_gateway_id        = each.value.target_type == "carrier_gateway" ? each.value.target_id : null
 
   depends_on = [
+    terraform_data.injected_route_table_identity_validation,
+    terraform_data.isolated_injected_route_table_validation,
     terraform_data.route_table_routing_compatibility_validation,
     terraform_data.top_level_routes_validation,
   ]

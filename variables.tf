@@ -1119,13 +1119,16 @@ variable "routes" {
   description = <<-EOT
     Caller-keyed routes applied to every route table in `from_group`. Use this
     late-bound surface when a target is produced by a module that consumes this
-    VPC's subnet outputs. State keys use `<route-key>/<az>`; route keys must not
-    contain `/`.
+    VPC's subnet outputs. Module-managed tables use state keys
+    `<route-key>/<az>`. An injected table is one shared physical table and uses
+    `<route-key>/shared`; it accepts only `target.id`. Route keys must not contain
+    `/`.
 
-    `target.id` replicates one target to every AZ. `target.ids_by_az` selects the
-    target matching each configured AZ. Exactly one of `id` and `ids_by_az` must
-    be set. Destination and target types use the same closed unions as
-    `subnets[*].routes`.
+    `target.id` replicates one target to every module-managed AZ or creates one
+    route on an injected shared table. `target.ids_by_az` selects the target
+    matching each configured AZ and therefore requires module-managed per-AZ route
+    tables. Exactly one of `id` and `ids_by_az` must be set. Destination and target
+    types use the same closed unions as `subnets[*].routes`.
   EOT
   type = map(object({
     from_group = string

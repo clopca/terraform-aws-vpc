@@ -24,10 +24,14 @@ routes = {
 ```
 
 Each route map key is caller-owned state identity and must not contain `/`.
-Expansion produces one `aws_route.top_level` instance per configured Availability
-Zone with the address key `<route-key>/<az>`. The keys are derived only from the
-caller route key and configured AZ names; route-table and target IDs remain values
-and may be unknown during planning.
+For module-managed route tables, expansion produces one `aws_route.top_level`
+instance per configured Availability Zone with the address key
+`<route-key>/<az>`. An injected route table is one shared physical table across
+all subnets and AZs, so a static `target.id` produces exactly one instance keyed
+`<route-key>/shared`. `target.ids_by_az` is rejected for injected tables because
+one physical table cannot select a different target by AZ. Resource keys are
+derived only from caller-owned route, AZ, and shared-table identities;
+route-table and target IDs remain values and may be unknown during planning.
 
 `from_group` must name an entry in `subnets`. Its effective route tables receive
 the route. The destination union is identical to `subnets[*].routes`:
@@ -37,9 +41,11 @@ the route. The destination union is identical to `subnets[*].routes`:
 
 Exactly one target ID form is required:
 
-- `id` applies one target ID to every AZ in the group.
-- `ids_by_az` selects the target ID matching each AZ. Every configured AZ must be
-  present; a plan failure lists all missing AZs.
+- `id` applies one target ID to every module-managed AZ, or once to an injected
+  shared table.
+- `ids_by_az` selects the target ID matching each AZ and requires module-managed
+  per-AZ tables. Every configured AZ must be present; a plan failure lists all
+  missing AZs.
 
 A physical route table may have only one generic route declaration for a given
 destination. Collision checks cover `subnets[*].routes` against top-level
@@ -59,4 +65,8 @@ Top-level `routes` may feed only their dedicated `aws_route` resources and
 validation-only `terraform_data` resources. They never feed subnet resources,
 route-table resources, or module outputs. This one-way dependency boundary allows
 a firewall to consume VPC subnet outputs and return computed zonal endpoint IDs
-without creating a Terraform dependency cycle.
+without creating a Terraform dependency cycle. Before any top-level route is
+written, Terraform completes injected physical-identity validation and every
+applicable isolation and route-compatibility guard. This explicit ordering keeps
+computed aliases fail-closed at apply time rather than allowing a partial route
+write before identity comparison finishes.

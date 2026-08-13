@@ -313,3 +313,102 @@ run "reject_top_level_route_for_isolated_group" {
 
   expect_failures = [terraform_data.top_level_routes_validation]
 }
+
+run "injected_static_target_materializes_once_single_az" {
+  command = plan
+
+  variables {
+    vpc                = { name = "injected-static-single-az" }
+    addressing         = { primary = { cidr_block = "10.142.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.142.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+    routes = {
+      services = {
+        from_group  = "app"
+        destination = { type = "ipv4_cidr", value = "10.200.0.0/16" }
+        target      = { type = "vpc_peering", id = "pcx-documentation" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      toset(keys(aws_route.top_level)) == toset(["services/shared"]) &&
+      length(distinct([for route in values(aws_route.top_level) : "${route.route_table_id}|${route.destination_cidr_block}"])) == length(aws_route.top_level)
+    )
+    error_message = "A static route on a one-AZ injected table must have one /shared address and one physical table/destination pair."
+  }
+}
+
+run "injected_static_target_materializes_once_multiple_azs" {
+  command = plan
+
+  variables {
+    vpc                = { name = "injected-static-multiple-azs" }
+    addressing         = { primary = { cidr_block = "10.143.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.143.0.0/24", us-east-1b = "10.143.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+    routes = {
+      services = {
+        from_group  = "app"
+        destination = { type = "ipv4_cidr", value = "10.200.0.0/16" }
+        target      = { type = "vpc_peering", id = "pcx-documentation" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      toset(keys(aws_route.top_level)) == toset(["services/shared"]) &&
+      length(distinct([for route in values(aws_route.top_level) : "${route.route_table_id}|${route.destination_cidr_block}"])) == length(aws_route.top_level)
+    )
+    error_message = "A static route on a multi-AZ injected table must be de-duplicated to one physical table/destination pair."
+  }
+}
+
+run "reject_zonal_target_on_injected_shared_table" {
+  command = plan
+
+  variables {
+    vpc                = { name = "injected-zonal-target" }
+    addressing         = { primary = { cidr_block = "10.144.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.144.0.0/24", us-east-1b = "10.144.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+    routes = {
+      invalid = {
+        from_group  = "app"
+        destination = { type = "ipv4_cidr", value = "0.0.0.0/0" }
+        target = {
+          type      = "vpc_endpoint"
+          ids_by_az = { us-east-1a = "vpce-a", us-east-1b = "vpce-b" }
+        }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.top_level_routes_validation]
+}
