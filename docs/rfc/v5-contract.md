@@ -338,6 +338,13 @@ perpetual-diff defects. No `ignore_changes` is used: changing provider defaults 
 a real tag mutation and must be baselined on v4 before migration. Untaggable AWS
 resources and validation-only `terraform_data` have no tag argument by schema.
 
+### 3.3.7 Cloud WAN accepter ownership is independent
+
+The accepter collection uses the constant key `"vpc"` whenever the three plan-known
+flags `require_acceptance`, `accept_attachment`, and `create_accepter` are true.
+Its `attachment_id` is the effective created or injected attachment ID, so attachment
+ownership and accepter ownership form an explicit 2×2 create/inject matrix.
+
 ### 3.3.6 ADR-R9-A2 — explicit CIDRs are keyed by Availability Zone
 
 **Decision:** `ipv4.cidrs_by_az` and `ipv6.cidrs_by_az` are maps whose keys must

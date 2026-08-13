@@ -65,6 +65,15 @@ locals {
     ? try(aws_networkmanager_vpc_attachment.this["vpc"].id, null)
     : var.subnets[local.core_network_group].core_network_options.attachment_id
   )
+  core_network_accepter = local.core_network_group == null ? {} : (
+    var.subnets[local.core_network_group].core_network_options.require_acceptance &&
+    var.subnets[local.core_network_group].core_network_options.accept_attachment &&
+    var.subnets[local.core_network_group].core_network_options.create_accepter
+    ) ? {
+    vpc = {
+      attachment_id = local.core_network_attachment_id
+    }
+  } : {}
   core_network_accepter_id = local.core_network_group == null || !var.subnets[local.core_network_group].core_network_options.accept_attachment ? null : (
     var.subnets[local.core_network_group].core_network_options.create_accepter
     ? try(aws_networkmanager_attachment_accepter.this["vpc"].id, null)
@@ -189,11 +198,8 @@ resource "aws_networkmanager_vpc_attachment" "this" {
 }
 
 resource "aws_networkmanager_attachment_accepter" "this" {
-  for_each = {
-    for key, attachment in local.core_network_attachment : key => attachment
-    if attachment.options.require_acceptance && attachment.options.accept_attachment && attachment.options.create_accepter
-  }
+  for_each = local.core_network_accepter
 
-  attachment_id   = aws_networkmanager_vpc_attachment.this[each.key].id
+  attachment_id   = each.value.attachment_id
   attachment_type = "VPC"
 }
