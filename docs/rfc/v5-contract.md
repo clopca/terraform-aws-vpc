@@ -1,9 +1,9 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Candidate contract under remediation; not yet release-gated
+> **Status:** Candidate contract; complete local gate green, live AWS revalidation pending
 > **Date:** 2026-08-13
-> **Technical snapshot:** `c2a255a` on `explore/v5-typed-contract` before this editorial update
-> **Local evidence:** focused Terraform regressions and validate gates are green; the complete post-remediation test/TFLint/archive gate remains pending and must supersede this line
+> **Technical snapshot:** `007e529` on `explore/v5-typed-contract` before this status-only update
+> **Local evidence:** `terraform test` 118/118, TFLint 0 findings, fmt clean, module + 11 examples init/validate 12/12 locally and from `git archive`, README external init green
 > **AWS revalidation:** pending by design; this remediation made no AWS API calls and makes no fresh apply/zero-diff/destroy claim
 >
 > Historical remediation detail remains in `docs/rfc/reviews/` as an appendix, not as current release status.
