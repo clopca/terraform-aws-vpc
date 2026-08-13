@@ -754,7 +754,8 @@ locals {
       anytrue([for destinations in values(local.resolved_routing[group].transit_gateway_attachments) : length(destinations) > 0]) ||
       anytrue([for destinations in values(local.resolved_routing[group].transit_gateway_attachments_ipv6) : length(destinations) > 0]) ||
       length(coalesce(local.resolved_routing[group].core_network, [])) > 0 ||
-      length(coalesce(local.resolved_routing[group].core_network_ipv6, [])) > 0
+      length(coalesce(local.resolved_routing[group].core_network_ipv6, [])) > 0 ||
+      length(var.subnets[group].routes) > 0
     ])
   }
 

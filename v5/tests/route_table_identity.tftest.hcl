@@ -203,3 +203,105 @@ run "reject_tgw_and_cwan_same_destination" {
 
   expect_failures = [terraform_data.route_table_routing_compatibility_validation]
 }
+
+run "reject_isolated_sharing_generic_ipv4_route" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-generic-ipv4" }
+    addressing         = { primary = { cidr_block = "10.102.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.102.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+        routes = {
+          egress = {
+            destination = { type = "ipv4_cidr", value = "0.0.0.0/0" }
+            target      = { type = "vpc_endpoint", id = "vpce-documentation" }
+          }
+        }
+      }
+      data = {
+        role               = "isolated"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.102.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.route_table_routing_compatibility_validation]
+}
+
+run "reject_isolated_sharing_generic_ipv6_route" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-generic-ipv6" }
+    addressing         = { primary = { cidr_block = "10.103.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.103.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+        routes = {
+          partner-v6 = {
+            destination = { type = "ipv6_cidr", value = "2001:db8:100::/48" }
+            target      = { type = "vpc_peering", id = "pcx-documentation" }
+          }
+        }
+      }
+      data = {
+        role               = "isolated"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.103.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.route_table_routing_compatibility_validation]
+}
+
+run "reject_isolated_sharing_generic_prefix_list_route" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-generic-prefix" }
+    addressing         = { primary = { cidr_block = "10.104.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.104.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+        routes = {
+          partner-prefix = {
+            destination = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+            target      = { type = "vpc_peering", id = "pcx-documentation" }
+          }
+        }
+      }
+      data = {
+        role               = "isolated"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.104.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared"
+        route_table_id     = "rtb-shared"
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.route_table_routing_compatibility_validation]
+}
