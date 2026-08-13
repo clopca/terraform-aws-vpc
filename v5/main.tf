@@ -385,6 +385,11 @@ resource "terraform_data" "route_table_routing_compatibility_validation" {
       condition     = length(local.route_destination_conflicts) == 0
       error_message = "Each physical route table may have at most one target per destination. Conflicts: ${join(", ", flatten([for key, destinations in local.route_destination_conflicts : [for destination in destinations : "${key}=${destination}"]]))}."
     }
+
+    precondition {
+      condition     = length(local.duplicate_generic_route_keys_by_table) == 0
+      error_message = "Generic route keys are state identity and must be unique per physical injected route table. Duplicates: ${join(", ", flatten([for key, route_keys in local.duplicate_generic_route_keys_by_table : [for route_key in route_keys : "${key}=${route_key}"]]))}."
+    }
   }
 }
 

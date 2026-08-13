@@ -78,6 +78,24 @@ resource "aws_route" "eigw" {
   egress_only_gateway_id      = local.eigw_id
 }
 
+# ─── Generic caller-keyed routes ──────────────────────────────────────────
+
+resource "aws_route" "custom" {
+  for_each = local.routes_custom
+
+  route_table_id              = each.value.route_table_id
+  destination_cidr_block      = each.value.destination.type == "ipv4_cidr" ? each.value.destination.value : null
+  destination_ipv6_cidr_block = each.value.destination.type == "ipv6_cidr" ? each.value.destination.value : null
+  destination_prefix_list_id  = each.value.destination.type == "prefix_list" ? each.value.destination.value : null
+
+  vpc_peering_connection_id = each.value.target.type == "vpc_peering" ? each.value.target.id : null
+  vpc_endpoint_id           = each.value.target.type == "vpc_endpoint" ? each.value.target.id : null
+  network_interface_id      = each.value.target.type == "network_interface" ? each.value.target.id : null
+  gateway_id                = each.value.target.type == "virtual_private_gateway" ? each.value.target.id : null
+  local_gateway_id          = each.value.target.type == "local_gateway" ? each.value.target.id : null
+  carrier_gateway_id        = each.value.target.type == "carrier_gateway" ? each.value.target.id : null
+}
+
 # ─── Transit Gateway Routes ───────────────────────────────────────────────
 
 resource "aws_route" "tgw" {

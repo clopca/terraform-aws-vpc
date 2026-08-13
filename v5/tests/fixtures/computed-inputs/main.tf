@@ -44,6 +44,10 @@ resource "terraform_data" "cwan_accepter_id" {
   input = "accepter-computed"
 }
 
+resource "terraform_data" "route_target_id" {
+  input = "pcx-computed"
+}
+
 module "vpc" {
   source = "../../.."
 
@@ -66,6 +70,12 @@ module "vpc" {
       route_table_id     = terraform_data.route_table_id.output
       ipv4               = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
       routing            = { internet_gateway = true }
+      routes = {
+        computed-peer = {
+          destination = { type = "ipv4_cidr", value = "10.210.0.0/16" }
+          target      = { type = "vpc_peering", id = terraform_data.route_target_id.output }
+        }
+      }
     }
 
     ipam = {
@@ -122,5 +132,6 @@ output "composition_shape" {
     lattice_associations = length(module.vpc.resources.vpc_lattice_associations)
     cwan_routes          = length(module.vpc.resources.routes.cwan)
     cwan_readiness_keys  = keys(module.vpc.resources.core_network_readiness)
+    custom_route_keys    = keys(module.vpc.resources.routes.custom)
   }
 }

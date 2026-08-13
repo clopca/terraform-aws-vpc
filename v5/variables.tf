@@ -422,6 +422,19 @@ variable "subnets" {
       dynamodb_gateway_endpoint = optional(bool, false)
     }), {})
 
+    # Caller-owned route keys are Terraform state identity; destination and
+    # target IDs remain values and may therefore be computed during plan.
+    routes = optional(map(object({
+      destination = object({
+        type  = string # ipv4_cidr | ipv6_cidr | prefix_list
+        value = string
+      })
+      target = object({
+        type = string # vpc_peering | vpc_endpoint | network_interface | virtual_private_gateway | local_gateway | carrier_gateway
+        id   = string
+      })
+    })), {})
+
     # ── Public role options ──
     public_options = optional(object({
       map_public_ip = optional(bool, false)
@@ -587,6 +600,39 @@ variable "subnets" {
       ]
     ]))
     error_message = "TGW and Cloud WAN destination lists must not contain duplicates within a subnet group."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : [
+        for key, route in subnet.routes :
+        can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/") &&
+        contains(["ipv4_cidr", "ipv6_cidr", "prefix_list"], route.destination.type) &&
+        length(trimspace(route.destination.value)) > 0 &&
+        contains(["vpc_peering", "vpc_endpoint", "network_interface", "virtual_private_gateway", "local_gateway", "carrier_gateway"], route.target.type) &&
+        length(trimspace(route.target.id)) > 0
+      ]
+    ]))
+    error_message = "subnets[*].routes keys must be stable lowercase identifiers; destination.type must be ipv4_cidr, ipv6_cidr, or prefix_list; target.type must be one of the documented closed target union; destination values and target IDs must be non-empty."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for group, subnet in var.subnets : [
+        for key, route in subnet.routes :
+        route.destination.type == "ipv4_cidr" ? (can(cidrhost(route.destination.value, 0)) && !strcontains(route.destination.value, ":")) :
+        route.destination.type == "ipv6_cidr" ? (can(cidrhost(route.destination.value, 0)) && strcontains(route.destination.value, ":")) :
+        startswith(route.destination.value, "pl-")
+      ]
+    ]))
+    error_message = "Generic route destinations must match their declared type: IPv4 CIDR, IPv6 CIDR, or managed prefix-list ID."
+  }
+
+  validation {
+    condition = alltrue([
+      for group, subnet in var.subnets : subnet.role != "isolated" || length(subnet.routes) == 0
+    ])
+    error_message = "Isolated subnet groups cannot declare generic routes; gateway endpoint associations remain the only allowed non-local routes."
   }
 
   validation {

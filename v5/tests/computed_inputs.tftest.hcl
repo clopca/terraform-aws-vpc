@@ -54,7 +54,8 @@ run "computed_ids_keep_collection_keys_plan_known" {
       output.composition_shape.created_route_tables == 2 &&
       output.composition_shape.lattice_associations == 1 &&
       output.composition_shape.cwan_routes == 1 &&
-      output.composition_shape.cwan_readiness_keys == ["vpc"]
+      output.composition_shape.cwan_readiness_keys == ["vpc"] &&
+      output.composition_shape.custom_route_keys == ["injected/external-public/custom/computed-peer"]
     )
     error_message = "Computed IDs must remain values; all resource keys and ownership decisions must come from explicit configuration."
   }

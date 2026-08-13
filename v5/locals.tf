@@ -554,6 +554,7 @@ locals {
         az             = az
         route_table_id = aws_route_table.main["${name}/${az}"].id
         routing        = local.resolved_routing[name]
+        routes         = cfg.routes
         has_ipv6       = cfg.ipv6 != null
       }
     } if cfg.manage_route_table
@@ -575,6 +576,7 @@ locals {
         core_network              = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network, [])]))
         core_network_ipv6         = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network_ipv6, [])]))
       }
+      routes   = merge([for group in groups : var.subnets[group].routes]...)
       has_ipv6 = anytrue([for group in groups : var.subnets[group].ipv6 != null])
     }
   }
@@ -609,6 +611,10 @@ locals {
         destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv6:${dest}"
         target      = "cwan"
       }],
+      [for route in values(rt.routes) : {
+        destination = "${route.destination.type == "ipv4_cidr" ? "ipv4" : route.destination.type == "ipv6_cidr" ? "ipv6" : "prefix"}:${route.destination.value}"
+        target      = "${route.target.type}:${route.target.id}"
+      }],
     )
   }
   route_destination_conflicts = {
@@ -618,6 +624,19 @@ locals {
       ] if length([
         for destination in distinct([for intent in intents : intent.destination]) : destination
         if length(distinct([for intent in intents : intent.target if intent.destination == destination])) > 1
+    ]) > 0
+  }
+  duplicate_generic_route_keys_by_table = {
+    for key, groups in local.injected_route_table_groups_by_key : key => [
+      for route_key in distinct(flatten([for group in groups : keys(var.subnets[group].routes)])) : route_key
+      if length(flatten([
+        for group in groups : [for candidate in keys(var.subnets[group].routes) : candidate if candidate == route_key]
+      ])) > 1
+      ] if length([
+        for route_key in distinct(flatten([for group in groups : keys(var.subnets[group].routes)])) : route_key
+        if length(flatten([
+          for group in groups : [for candidate in keys(var.subnets[group].routes) : candidate if candidate == route_key]
+        ])) > 1
     ]) > 0
   }
   isolated_shared_route_table_conflicts = {
@@ -698,6 +717,16 @@ locals {
       route_table_id = rt.route_table_id
     } if rt.routing.egress_only_igw
   }
+
+  routes_custom = merge([
+    for key, rt in local.route_table_targets : {
+      for route_key, route in rt.routes : "${key}/custom/${route_key}" => {
+        route_table_id = rt.route_table_id
+        destination    = route.destination
+        target         = route.target
+      }
+    }
+  ]...)
 
   # Destination CIDRs, not list positions, form route keys. Reordering a list
   # therefore produces no resource churn; adding/removing affects one route.
