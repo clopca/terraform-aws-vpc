@@ -121,100 +121,142 @@ variable "default_resources" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADDRESSING (IPv4/IPv6)
+# ADDRESSING — mandatory primary IPv4 plus caller-keyed secondary associations
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "addressing" {
   nullable    = false
   description = <<-EOT
-    IPv4 and/or IPv6 addressing for the VPC. Supports static CIDR, IPAM, or
-    Amazon-assigned IPv6. At least one of ipv4 or ipv6 must be configured.
-    For IPv6 IPAM, provide ipam_pool_id plus exactly one of cidr_block or
-    netmask_length. An empty IPv6 object is valid only when injecting a VPC and
-    discovering its existing IPv6 association.
+    VPC addressing with one mandatory primary IPv4 block and zero or more
+    caller-keyed secondary associations. Each secondary entry is a closed union:
+    configure exactly one of `ipv4` or `ipv6`. The family sub-objects mirror the
+    subnet contract, keep family-specific arguments impossible to mix, and make
+    each map key durable Terraform resource identity.
+
+    The primary block supports static IPv4, IPv4 IPAM, or an empty object when an
+    existing VPC supplies the primary CIDR. Secondary entries support create or
+    inject mode. IPv6 is always secondary, may be Amazon-provided or allocated
+    from IPAM, and supports VPC prefixes /44 through /60 in increments of /4.
+    AWS service quotas, rather than this module, govern association cardinality.
   EOT
   type = object({
-    ipv4 = optional(object({
+    primary = object({
       cidr_block     = optional(string)
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      secondary = optional(map(object({
+    })
+    secondary = optional(map(object({
+      ipv4 = optional(object({
         create         = optional(bool, true)
         association_id = optional(string)
         cidr_block     = optional(string)
         ipam_pool_id   = optional(string)
         netmask_length = optional(number)
-      })), {})
-    }))
-    ipv6 = optional(object({
-      amazon_assigned = optional(bool, false)
-      association_id  = optional(string)
-      cidr_block      = optional(string)
-      ipam_pool_id    = optional(string)
-      netmask_length  = optional(number)
-    }))
+      }))
+      ipv6 = optional(object({
+        create          = optional(bool, true)
+        association_id  = optional(string)
+        amazon_assigned = optional(bool, false)
+        cidr_block      = optional(string)
+        ipam_pool_id    = optional(string)
+        netmask_length  = optional(number)
+      }))
+    })), {})
   })
 
   validation {
-    condition     = var.addressing.ipv4 != null || var.addressing.ipv6 != null
-    error_message = "At least one of addressing.ipv4 or addressing.ipv6 must be configured."
-  }
-
-  validation {
-    condition = var.addressing.ipv4 == null ? true : (
-      (var.addressing.ipv4.cidr_block != null ? 1 : 0) +
-      (var.addressing.ipv4.ipam_pool_id != null ? 1 : 0) <= 1
+    condition = (
+      (var.addressing.primary.cidr_block != null ? 1 : 0) +
+      (var.addressing.primary.ipam_pool_id != null ? 1 : 0) <= 1
     )
-    error_message = "addressing.ipv4: provide either cidr_block OR ipam_pool_id, not both."
+    error_message = "addressing.primary: provide either cidr_block or ipam_pool_id, not both."
   }
 
   validation {
-    condition = var.addressing.ipv4 == null ? true : (
-      (var.addressing.ipv4.ipam_pool_id == null) == (var.addressing.ipv4.netmask_length == null)
+    condition = (
+      (var.addressing.primary.ipam_pool_id == null) ==
+      (var.addressing.primary.netmask_length == null)
     )
-    error_message = "addressing.ipv4: netmask_length is valid if and only if ipam_pool_id is set."
+    error_message = "addressing.primary: netmask_length is valid if and only if ipam_pool_id is set."
   }
 
   validation {
-    condition = var.addressing.ipv4 == null ? true : alltrue([
-      for key, secondary in var.addressing.ipv4.secondary : secondary.create ? (
-        secondary.association_id == null &&
-        (secondary.cidr_block != null ? 1 : 0) + (secondary.ipam_pool_id != null ? 1 : 0) == 1 &&
-        (secondary.ipam_pool_id == null ? secondary.netmask_length == null : secondary.netmask_length != null)
-        ) : (
-        secondary.association_id != null && length(trimspace(secondary.association_id)) > 0 &&
-        secondary.cidr_block == null && secondary.ipam_pool_id == null && secondary.netmask_length == null
+    condition = alltrue([
+      for key in keys(var.addressing.secondary) :
+      can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/")
+    ])
+    error_message = "addressing.secondary keys must be stable lowercase identifiers without '/'."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, secondary in var.addressing.secondary :
+      (secondary.ipv4 != null ? 1 : 0) + (secondary.ipv6 != null ? 1 : 0) == 1
+    ])
+    error_message = "Each addressing.secondary entry must configure exactly one family: ipv4 or ipv6."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, secondary in var.addressing.secondary : secondary.ipv4 == null ? true : (
+        secondary.ipv4.create ? (
+          secondary.ipv4.association_id == null &&
+          (secondary.ipv4.cidr_block != null ? 1 : 0) + (secondary.ipv4.ipam_pool_id != null ? 1 : 0) == 1 &&
+          (secondary.ipv4.ipam_pool_id == null ? secondary.ipv4.netmask_length == null : secondary.ipv4.netmask_length != null)
+          ) : (
+          secondary.ipv4.association_id != null && length(trimspace(secondary.ipv4.association_id)) > 0 &&
+          secondary.ipv4.cidr_block == null && secondary.ipv4.ipam_pool_id == null && secondary.ipv4.netmask_length == null
+        )
       )
     ])
-    error_message = "Each secondary CIDR must select create mode with exactly one static/IPAM source (and IPAM netmask), or inject mode with association_id only."
+    error_message = "Each secondary IPv4 entry must select create mode with exactly one static/IPAM source (and IPAM netmask), or inject mode with association_id only."
   }
 
   validation {
-    condition = var.addressing.ipv4 == null ? true : alltrue([
-      for key in keys(var.addressing.ipv4.secondary) : can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/")
-    ])
-    error_message = "addressing.ipv4.secondary keys must be stable lowercase identifiers without '/'."
-  }
-
-  validation {
-    condition = var.addressing.ipv6 == null ? true : (
-      (try(var.addressing.ipv6.amazon_assigned, false) ? 1 : 0) +
-      (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) +
-      (var.addressing.ipv6.association_id != null ? 1 : 0) <= 1
-    )
-    error_message = "addressing.ipv6: amazon_assigned, ipam_pool_id, and association_id are mutually exclusive."
-  }
-
-  validation {
-    condition = var.addressing.ipv6 == null ? true : (
-      var.addressing.ipv6.ipam_pool_id == null ? (
-        var.addressing.ipv6.cidr_block == null && var.addressing.ipv6.netmask_length == null
-        ) : (
-        (var.addressing.ipv6.cidr_block != null ? 1 : 0) +
-        (var.addressing.ipv6.netmask_length != null ? 1 : 0) == 1
+    condition = alltrue([
+      for key, secondary in var.addressing.secondary : secondary.ipv6 == null ? true : (
+        secondary.ipv6.create ? (
+          secondary.ipv6.association_id == null && (
+            secondary.ipv6.amazon_assigned ? (
+              secondary.ipv6.cidr_block == null && secondary.ipv6.ipam_pool_id == null && secondary.ipv6.netmask_length == null
+              ) : (
+              secondary.ipv6.ipam_pool_id != null &&
+              (secondary.ipv6.cidr_block != null ? 1 : 0) + (secondary.ipv6.netmask_length != null ? 1 : 0) == 1
+            )
+          )
+          ) : (
+          secondary.ipv6.association_id != null && length(trimspace(secondary.ipv6.association_id)) > 0 &&
+          !secondary.ipv6.amazon_assigned && secondary.ipv6.cidr_block == null &&
+          secondary.ipv6.ipam_pool_id == null && secondary.ipv6.netmask_length == null
+        )
       )
-    )
-    error_message = "addressing.ipv6: IPAM requires ipam_pool_id plus exactly one of cidr_block or netmask_length."
+    ])
+    error_message = "Each secondary IPv6 entry must select create mode with Amazon assignment or IPv6 IPAM (CIDR/netmask), or inject mode with association_id only."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, secondary in var.addressing.secondary : secondary.ipv6 == null ? true : (
+        secondary.ipv6.netmask_length == null ? true : (
+          secondary.ipv6.netmask_length >= 44 && secondary.ipv6.netmask_length <= 60 &&
+          secondary.ipv6.netmask_length % 4 == 0
+        )
+      )
+    ])
+    error_message = "Secondary IPv6 netmask_length must be /44, /48, /52, /56, or /60."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, secondary in var.addressing.secondary : secondary.ipv6 == null || secondary.ipv6.cidr_block == null ? true : (
+        can(cidrhost(secondary.ipv6.cidr_block, 0)) &&
+        strcontains(secondary.ipv6.cidr_block, ":") &&
+        try(tonumber(split("/", secondary.ipv6.cidr_block)[1]) >= 44, false) &&
+        try(tonumber(split("/", secondary.ipv6.cidr_block)[1]) <= 60, false) &&
+        try(tonumber(split("/", secondary.ipv6.cidr_block)[1]) % 4 == 0, false)
+      )
+    ])
+    error_message = "Secondary IPv6 cidr_block must be a valid /44, /48, /52, /56, or /60 IPv6 prefix."
   }
 }
 

@@ -25,7 +25,7 @@ run "unpinned_before_group_add" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
@@ -59,7 +59,7 @@ run "unpinned_after_group_add" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
@@ -90,7 +90,7 @@ run "unpinned_after_group_remove" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
@@ -119,7 +119,7 @@ run "pinned_before_group_add" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
@@ -148,7 +148,7 @@ run "pinned_after_group_add" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
@@ -179,7 +179,7 @@ run "pinned_after_group_remove" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
@@ -208,7 +208,7 @@ run "add_availability_zone" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b", "us-east-1c"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
@@ -242,7 +242,7 @@ run "explicit_cidrs" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -276,7 +276,7 @@ run "explicit_cidrs_before_middle_az_insert" {
 
   variables {
     vpc                = { name = "explicit-az-map" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1c"] }
     subnets = {
       app = {
@@ -305,7 +305,7 @@ run "explicit_cidrs_after_middle_az_insert" {
 
   variables {
     vpc                = { name = "explicit-az-map" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b", "us-east-1c"] }
     subnets = {
       app = {
@@ -335,7 +335,7 @@ run "mixed_netmasks_pack_without_overlap" {
 
   variables {
     vpc                = { name = "cidr-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       application = { role = "private", ipv4 = { netmask = 22 } }

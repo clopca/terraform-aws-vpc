@@ -29,7 +29,7 @@ run "name_formats_and_tag_precedence" {
         Scope    = "gateway"
       }
     }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       public = {
@@ -92,7 +92,7 @@ run "flow_log_name_formats_and_omission" {
 
   variables {
     vpc                = { name = "legacy-flow" }
-    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.1.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     tags               = { Name = "global-must-be-removed-or-overridden" }

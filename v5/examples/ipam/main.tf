@@ -6,22 +6,26 @@ module "vpc" {
   }
 
   addressing = {
-    ipv4 = {
+    primary = {
       ipam_pool_id   = var.vpc_ipv4_ipam_pool_id
       netmask_length = 16
-      secondary = {
-        analytics = {
+    }
+    secondary = {
+      analytics = {
+        ipv4 = {
           ipam_pool_id   = var.secondary_ipv4_ipam_pool_id
           netmask_length = 20
         }
-        legacy = {
-          cidr_block = "100.64.0.0/20"
+      }
+      legacy = {
+        ipv4 = { cidr_block = "100.64.0.0/20" }
+      }
+      ipv6-ipam = {
+        ipv6 = {
+          ipam_pool_id   = var.vpc_ipv6_ipam_pool_id
+          netmask_length = 56
         }
       }
-    }
-    ipv6 = {
-      ipam_pool_id   = var.vpc_ipv6_ipam_pool_id
-      netmask_length = 56
     }
   }
 

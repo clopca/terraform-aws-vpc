@@ -69,15 +69,11 @@ locals {
   create_vpc = var.vpc.create
   vpc_id     = local.create_vpc ? aws_vpc.main[0].id : var.vpc.id
 
-  # Primary CIDRs — needed for deterministic subnet calculation.
-  vpc_cidr = local.create_vpc ? aws_vpc.main[0].cidr_block : data.aws_vpc.existing[0].cidr_block
-  vpc_ipv6_cidr = var.addressing.ipv6 == null ? null : (
-    local.create_vpc ? aws_vpc.main[0].ipv6_cidr_block : try(sort([
-      for association in data.aws_vpc.existing[0].ipv6_cidr_block_associations : association.ipv6_cidr_block
-      if association.state == "associated" && (
-        var.addressing.ipv6.association_id == null || try(association.association_id, null) == var.addressing.ipv6.association_id
-      )
-    ])[0], null)
+  # Primary IPv4 and temporary singular IPv6 compatibility handles.
+  vpc_cidr                   = local.create_vpc ? aws_vpc.main[0].cidr_block : data.aws_vpc.existing[0].cidr_block
+  default_ipv6_secondary_key = try(sort(keys(local.secondary_ipv6_cidrs))[0], null)
+  vpc_ipv6_cidr = local.default_ipv6_secondary_key == null ? null : (
+    local.secondary_ipv6_cidr_blocks[local.default_ipv6_secondary_key]
   )
 
   # ─── Subnet Group Classification ────────────────────────────────────────
@@ -362,15 +358,48 @@ locals {
   ]...)
 
   # ─── Secondary CIDRs and subnet create-or-inject handles ────────────────
-  secondary_cidrs = var.addressing.ipv4 != null ? var.addressing.ipv4.secondary : {}
-  secondary_cidrs_to_create = {
-    for key, secondary in local.secondary_cidrs : key => secondary if secondary.create
+  secondary_ipv4_cidrs = {
+    for key, secondary in var.addressing.secondary : key => secondary.ipv4
+    if secondary.ipv4 != null
   }
-  secondary_cidr_association_ids = {
-    for key, secondary in local.secondary_cidrs : key => (
+  secondary_ipv6_cidrs = {
+    for key, secondary in var.addressing.secondary : key => secondary.ipv6
+    if secondary.ipv6 != null
+  }
+  secondary_ipv4_cidrs_to_create = {
+    for key, secondary in local.secondary_ipv4_cidrs : key => secondary if secondary.create
+  }
+  secondary_ipv6_cidrs_to_create = {
+    for key, secondary in local.secondary_ipv6_cidrs : key => secondary if secondary.create
+  }
+  injected_secondary_ipv6_cidrs = {
+    for key, secondary in local.secondary_ipv6_cidrs : key => secondary if !secondary.create
+  }
+  ipv6_association_vpc = length(local.injected_secondary_ipv6_cidrs) == 0 ? null : (
+    local.create_vpc ? data.aws_vpc.managed_ipv6_associations[0] : data.aws_vpc.existing[0]
+  )
+  secondary_ipv6_cidr_blocks = {
+    for key, secondary in local.secondary_ipv6_cidrs : key => (
+      secondary.create ? aws_vpc_ipv6_cidr_block_association.secondary[key].ipv6_cidr_block : try([
+        for association in local.ipv6_association_vpc.ipv6_cidr_block_associations : association.ipv6_cidr_block
+        if association.state == "associated" && try(association.association_id, null) == secondary.association_id
+      ][0], null)
+    )
+  }
+  secondary_ipv4_cidr_association_ids = {
+    for key, secondary in local.secondary_ipv4_cidrs : key => (
       secondary.create ? aws_vpc_ipv4_cidr_block_association.secondary[key].id : secondary.association_id
     )
   }
+  secondary_ipv6_cidr_association_ids = {
+    for key, secondary in local.secondary_ipv6_cidrs : key => (
+      secondary.create ? aws_vpc_ipv6_cidr_block_association.secondary[key].id : secondary.association_id
+    )
+  }
+  secondary_cidr_association_ids = merge(
+    local.secondary_ipv4_cidr_association_ids,
+    local.secondary_ipv6_cidr_association_ids,
+  )
 
   subnets_to_create = {
     for key, subnet in local.subnet_map : key => subnet if subnet.create

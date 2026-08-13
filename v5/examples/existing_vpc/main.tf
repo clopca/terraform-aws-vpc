@@ -52,7 +52,7 @@ module "vpc" {
   # The module discovers the injected VPC's primary IPv4 CIDR through the AWS
   # data source; subnet CIDRs remain explicit caller-owned configuration.
   addressing = {
-    ipv4 = {}
+    primary = {}
   }
 
   availability_zones = {

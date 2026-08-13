@@ -26,7 +26,7 @@ run "count_sorts_and_slices_discovered_azs" {
 
   variables {
     vpc                = { name = "az-count-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { count = 2 }
     subnets = {
       app = { role = "private", ipv4 = { netmask = 24 } }

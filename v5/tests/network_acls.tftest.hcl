@@ -23,7 +23,7 @@ run "create_inject_rules_and_associations" {
 
   variables {
     vpc                = { name = "nacl-test" }
-    addressing         = { ipv4 = { cidr_block = "10.80.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.80.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -114,7 +114,7 @@ run "omit_network_acl_preserves_default_behavior" {
 
   variables {
     vpc                = { name = "default-nacl" }
-    addressing         = { ipv4 = { cidr_block = "10.81.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.81.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -140,7 +140,7 @@ run "reject_invalid_network_acl_rule_number" {
 
   variables {
     vpc                = { name = "invalid-number" }
-    addressing         = { ipv4 = { cidr_block = "10.82.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.82.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -163,7 +163,7 @@ run "reject_invalid_network_acl_rule_fields" {
 
   variables {
     vpc                = { name = "invalid-rule" }
-    addressing         = { ipv4 = { cidr_block = "10.83.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.83.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -194,7 +194,7 @@ run "reject_invalid_network_acl_injection" {
 
   variables {
     vpc                = { name = "invalid-injection" }
-    addressing         = { ipv4 = { cidr_block = "10.84.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.84.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {

@@ -53,7 +53,7 @@ run "adopt_and_harden_default_resources" {
 
   variables {
     vpc                = { name = "secure-defaults" }
-    addressing         = { ipv4 = { cidr_block = "10.60.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.60.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     default_resources = {
@@ -94,7 +94,7 @@ run "reject_invalid_default_resource_name_format" {
 
   variables {
     vpc                = { name = "invalid-defaults" }
-    addressing         = { ipv4 = { cidr_block = "10.61.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.61.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     default_resources  = { name_format = "{vpc}-{unknown}" }
@@ -113,7 +113,7 @@ run "expose_injected_vpc_default_ids_without_adoption" {
       create = false
       id     = "vpc-existing"
     }
-    addressing         = { ipv4 = {} }
+    addressing         = { primary = {} }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
   }

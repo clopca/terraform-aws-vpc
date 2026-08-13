@@ -23,6 +23,13 @@ data "aws_vpc" "existing" {
   id    = var.vpc.id
 }
 
+# A managed VPC may inject pre-existing IPv6 associations during migration.
+# The explicit create flag keeps this lookup cardinality plan-known.
+data "aws_vpc" "managed_ipv6_associations" {
+  count = var.vpc.create && length(local.injected_secondary_ipv6_cidrs) > 0 ? 1 : 0
+  id    = local.vpc_id
+}
+
 data "aws_subnet" "existing" {
   for_each = local.subnets_to_inject
 
@@ -41,16 +48,10 @@ data "aws_caller_identity" "current" {
 resource "aws_vpc" "main" {
   count = local.create_vpc ? 1 : 0
 
-  # Addressing: static CIDR or IPAM
-  cidr_block          = try(var.addressing.ipv4.cidr_block, null)
-  ipv4_ipam_pool_id   = try(var.addressing.ipv4.ipam_pool_id, null)
-  ipv4_netmask_length = try(var.addressing.ipv4.netmask_length, null)
-
-  # IPv6
-  assign_generated_ipv6_cidr_block = try(var.addressing.ipv6.amazon_assigned, false) ? true : null
-  ipv6_cidr_block                  = try(var.addressing.ipv6.cidr_block, null)
-  ipv6_ipam_pool_id                = try(var.addressing.ipv6.ipam_pool_id, null)
-  ipv6_netmask_length              = try(var.addressing.ipv6.netmask_length, null)
+  # Primary IPv4: static CIDR or IPAM. IPv6 is always a secondary association.
+  cidr_block          = var.addressing.primary.cidr_block
+  ipv4_ipam_pool_id   = var.addressing.primary.ipam_pool_id
+  ipv4_netmask_length = var.addressing.primary.netmask_length
 
   instance_tenancy     = var.vpc.instance_tenancy
   enable_dns_hostnames = var.vpc.dns.enable_hostnames
@@ -63,11 +64,9 @@ resource "aws_vpc" "main" {
   lifecycle {
     precondition {
       condition = (
-        var.addressing.ipv4 != null ?
-        (var.addressing.ipv4.cidr_block != null || var.addressing.ipv4.ipam_pool_id != null) :
-        true
+        var.addressing.primary.cidr_block != null || var.addressing.primary.ipam_pool_id != null
       )
-      error_message = "When creating a VPC with IPv4, either cidr_block or ipam_pool_id must be provided."
+      error_message = "When creating a VPC, addressing.primary requires either cidr_block or ipam_pool_id."
     }
   }
 }
@@ -76,13 +75,23 @@ resource "aws_vpc" "main" {
 # Supports multiple secondary CIDRs, each via static CIDR or IPAM.
 
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
-  for_each = local.secondary_cidrs_to_create
+  for_each = local.secondary_ipv4_cidrs_to_create
 
   vpc_id              = local.vpc_id
   cidr_block          = each.value.cidr_block
   ipv4_ipam_pool_id   = each.value.ipam_pool_id
   ipv4_netmask_length = each.value.netmask_length
+}
 
+# IPv6 is always represented as a caller-keyed secondary VPC association.
+resource "aws_vpc_ipv6_cidr_block_association" "secondary" {
+  for_each = local.secondary_ipv6_cidrs_to_create
+
+  vpc_id                           = local.vpc_id
+  assign_generated_ipv6_cidr_block = each.value.amazon_assigned ? true : null
+  ipv6_cidr_block                  = each.value.cidr_block
+  ipv6_ipam_pool_id                = each.value.ipam_pool_id
+  ipv6_netmask_length              = each.value.netmask_length
 }
 
 # ─── Internet Gateway — create-or-inject [R1-H2] ─────────────────────────
@@ -141,7 +150,10 @@ resource "aws_subnet" "main" {
     Name = each.value.resource_name
   })
 
-  depends_on = [aws_vpc_ipv4_cidr_block_association.secondary]
+  depends_on = [
+    aws_vpc_ipv4_cidr_block_association.secondary,
+    aws_vpc_ipv6_cidr_block_association.secondary,
+  ]
 
   lifecycle {
     # Basic: must have some addressing
@@ -179,7 +191,7 @@ resource "terraform_data" "subnet_secondary_cidr_validation" {
 
   lifecycle {
     precondition {
-      condition     = contains(keys(local.secondary_cidrs), each.value.secondary_cidr_key)
+      condition     = contains(keys(local.secondary_ipv4_cidrs), each.value.secondary_cidr_key)
       error_message = "Subnet '${each.key}' references unknown secondary CIDR key '${each.value.secondary_cidr_key}'."
     }
   }
@@ -198,48 +210,26 @@ resource "terraform_data" "availability_zone_count_validation" {
 }
 
 # ─── VPC/subnet IPv6 contract validation ─────────────────────────────────
-resource "terraform_data" "vpc_ipv6_addressing_validation" {
-  count = local.create_vpc && var.addressing.ipv6 != null ? 1 : 0
-
-  lifecycle {
-    precondition {
-      condition = (
-        (var.addressing.ipv6.amazon_assigned ? 1 : 0) +
-        (var.addressing.ipv6.ipam_pool_id != null ? 1 : 0) == 1
-      )
-      error_message = "Creating a VPC with IPv6 requires exactly one source: amazon_assigned=true or IPv6 IPAM."
-    }
-  }
-}
-
 resource "terraform_data" "subnet_ipv6_vpc_validation" {
-  count = anytrue([for name, cfg in var.subnets : cfg.ipv6 != null]) && var.addressing.ipv6 == null ? 1 : 0
+  count = anytrue([for name, cfg in var.subnets : cfg.ipv6 != null]) && length(local.secondary_ipv6_cidrs) == 0 ? 1 : 0
 
   lifecycle {
     precondition {
-      condition     = var.addressing.ipv6 != null
-      error_message = "Subnet IPv6 addressing requires addressing.ipv6 on the created or injected VPC."
+      condition     = length(local.secondary_ipv6_cidrs) > 0
+      error_message = "Subnet IPv6 addressing requires at least one addressing.secondary entry with the ipv6 family."
     }
   }
 }
 
 resource "terraform_data" "injected_ipv6_association_validation" {
-  count = !local.create_vpc && var.addressing.ipv6 != null ? 1 : 0
+  for_each = local.injected_secondary_ipv6_cidrs
+
+  input = local.secondary_ipv6_cidr_blocks[each.key]
 
   lifecycle {
     precondition {
-      condition = (
-        length([
-          for association in data.aws_vpc.existing[0].ipv6_cidr_block_associations : association
-          if association.state == "associated"
-        ]) <= 1 || var.addressing.ipv6.association_id != null
-      )
-      error_message = "Injected VPCs with multiple associated IPv6 CIDRs require addressing.ipv6.association_id so calculated subnet /64s remain stable."
-    }
-
-    precondition {
-      condition     = var.addressing.ipv6.association_id == null || local.vpc_ipv6_cidr != null
-      error_message = "addressing.ipv6.association_id does not identify an associated IPv6 CIDR on the injected VPC."
+      condition     = local.secondary_ipv6_cidr_blocks[each.key] != null
+      error_message = "addressing.secondary['${each.key}'].ipv6.association_id does not identify an associated IPv6 CIDR on the VPC."
     }
   }
 }
@@ -422,12 +412,12 @@ resource "terraform_data" "eigw_injection_validation" {
 }
 
 resource "terraform_data" "eigw_requires_ipv6" {
-  count = local.needs_eigw && var.addressing.ipv6 == null ? 1 : 0
+  count = local.needs_eigw && length(local.secondary_ipv6_cidrs) == 0 ? 1 : 0
 
   lifecycle {
     precondition {
-      condition     = var.addressing.ipv6 != null
-      error_message = "One or more subnet groups have routing.egress_only_igw = true, but no IPv6 addressing is configured on the VPC. Configure addressing.ipv6 or remove the EIGW routing."
+      condition     = length(local.secondary_ipv6_cidrs) > 0
+      error_message = "One or more subnet groups have routing.egress_only_igw = true, but no secondary IPv6 association is configured."
     }
   }
 }
@@ -455,11 +445,11 @@ resource "terraform_data" "vpc_ipv4_addressing_validation" {
 
   lifecycle {
     precondition {
-      condition = var.addressing.ipv4 != null && (
-        (var.addressing.ipv4.cidr_block != null ? 1 : 0) +
-        (var.addressing.ipv4.ipam_pool_id != null ? 1 : 0) == 1
+      condition = (
+        (var.addressing.primary.cidr_block != null ? 1 : 0) +
+        (var.addressing.primary.ipam_pool_id != null ? 1 : 0) == 1
       )
-      error_message = "Creating a VPC requires exactly one IPv4 source: addressing.ipv4.cidr_block or addressing.ipv4.ipam_pool_id."
+      error_message = "Creating a VPC requires exactly one IPv4 source: addressing.primary.cidr_block or addressing.primary.ipam_pool_id."
     }
   }
 }

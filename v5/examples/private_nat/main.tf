@@ -6,12 +6,12 @@ module "vpc" {
   }
 
   addressing = {
-    ipv4 = {
+    primary = {
       cidr_block = "10.42.0.0/16"
-      secondary = {
-        translation = {
-          cidr_block = "100.64.0.0/20"
-        }
+    }
+    secondary = {
+      translation = {
+        ipv4 = { cidr_block = "100.64.0.0/20" }
       }
     }
   }

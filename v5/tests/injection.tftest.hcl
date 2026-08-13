@@ -65,8 +65,8 @@ run "inject_all_remaining_boundaries" {
       eigw_id     = "eigw-0123456789abcdef0"
     }
     addressing = {
-      ipv4 = { cidr_block = "10.0.0.0/16" }
-      ipv6 = { amazon_assigned = true }
+      primary   = { cidr_block = "10.0.0.0/16" }
+      secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } }
     }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
@@ -160,8 +160,8 @@ run "reject_missing_injected_eigw" {
       eigw_create = false
     }
     addressing = {
-      ipv4 = { cidr_block = "10.0.0.0/16" }
-      ipv6 = { amazon_assigned = true }
+      primary   = { cidr_block = "10.0.0.0/16" }
+      secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } }
     }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
@@ -182,7 +182,7 @@ run "reject_incomplete_injected_subnet_ids" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -202,7 +202,7 @@ run "reject_missing_injected_attachment_id" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       tgw = {
@@ -224,7 +224,7 @@ run "reject_missing_injected_flow_log_id" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     flow_logs = {
@@ -240,7 +240,7 @@ run "reject_missing_injected_lattice_id" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_lattice = {
@@ -257,7 +257,7 @@ run "injected_ipv6_association_selector_is_stable" {
 
   variables {
     vpc                = { name = "selected-ipv6", create = false, id = "vpc-existing-documentation" }
-    addressing         = { ipv4 = {}, ipv6 = { association_id = "vpc-cidr-assoc-b" } }
+    addressing         = { primary = {}, secondary = { ipv6 = { ipv6 = { create = false, association_id = "vpc-cidr-assoc-b" } } } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -277,21 +277,15 @@ run "injected_ipv6_association_selector_is_stable" {
   }
 }
 
-run "reject_ambiguous_injected_ipv6_associations" {
+run "reject_unknown_injected_ipv6_association" {
   command = plan
 
   variables {
-    vpc                = { name = "ambiguous-ipv6", create = false, id = "vpc-existing-documentation" }
-    addressing         = { ipv4 = {}, ipv6 = {} }
+    vpc                = { name = "unknown-ipv6", create = false, id = "vpc-existing-documentation" }
+    addressing         = { primary = {}, secondary = { ipv6 = { ipv6 = { create = false, association_id = "vpc-cidr-assoc-missing" } } } }
     availability_zones = { names = ["us-east-1a"] }
-    subnets = {
-      app = {
-        role = "private"
-        ipv4 = { cidrs_by_az = { us-east-1a = "10.0.11.0/24" } }
-        ipv6 = { auto_assign = true }
-      }
-    }
+    subnets            = {}
   }
 
-  expect_failures = [terraform_data.injected_ipv6_association_validation[0]]
+  expect_failures = [terraform_data.injected_ipv6_association_validation["ipv6"]]
 }

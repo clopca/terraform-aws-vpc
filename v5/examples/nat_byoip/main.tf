@@ -24,7 +24,7 @@ module "create" {
   source = "../.."
 
   vpc                = { name = "nat-eip-create" }
-  addressing         = { ipv4 = { cidr_block = "10.10.0.0/16" } }
+  addressing         = { primary = { cidr_block = "10.10.0.0/16" } }
   availability_zones = { names = var.availability_zones }
   subnets            = local.subnet_groups
 
@@ -39,7 +39,7 @@ module "byoip_pool" {
   source = "../.."
 
   vpc                = { name = "nat-eip-byoip" }
-  addressing         = { ipv4 = { cidr_block = "10.20.0.0/16" } }
+  addressing         = { primary = { cidr_block = "10.20.0.0/16" } }
   availability_zones = { names = var.availability_zones }
   subnets            = local.subnet_groups
 
@@ -57,7 +57,7 @@ module "existing" {
   source = "../.."
 
   vpc                = { name = "nat-eip-existing" }
-  addressing         = { ipv4 = { cidr_block = "10.30.0.0/16" } }
+  addressing         = { primary = { cidr_block = "10.30.0.0/16" } }
   availability_zones = { names = var.availability_zones }
   subnets            = local.subnet_groups
 
@@ -75,7 +75,7 @@ module "regional_existing" {
   source = "../.."
 
   vpc                = { name = "nat-regional-existing" }
-  addressing         = { ipv4 = { cidr_block = "10.40.0.0/16" } }
+  addressing         = { primary = { cidr_block = "10.40.0.0/16" } }
   availability_zones = { names = var.availability_zones }
   subnets            = local.regional_subnet_groups
 

@@ -31,7 +31,7 @@ run "private_dns_pins_aws_default" {
 
   variables {
     vpc                = { name = "lattice-default-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_lattice = {
@@ -55,7 +55,7 @@ run "private_dns_supports_specified_domains" {
 
   variables {
     vpc                = { name = "lattice-specified-test" }
-    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.1.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_lattice = {
@@ -83,7 +83,7 @@ run "reject_domains_with_verified_only" {
 
   variables {
     vpc                = { name = "lattice-negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.2.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.2.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_lattice = {

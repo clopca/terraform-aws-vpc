@@ -30,16 +30,16 @@ run "secondary_static_and_ipam_are_stable" {
   variables {
     vpc = { name = "secondary-test" }
     addressing = {
-      ipv4 = {
-        cidr_block = "10.0.0.0/16"
-        secondary = {
-          analytics = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        analytics = {
+          ipv4 = {
             ipam_pool_id   = "ipam-pool-0123456789abcdef0"
             netmask_length = 20
           }
-          shared-services = {
-            cidr_block = "100.64.0.0/20"
-          }
+        }
+        shared-services = {
+          ipv4 = { cidr_block = "100.64.0.0/20" }
         }
       }
     }
@@ -91,10 +91,10 @@ run "inject_secondary_association" {
   variables {
     vpc = { name = "secondary-inject-test" }
     addressing = {
-      ipv4 = {
-        cidr_block = "10.0.0.0/16"
-        secondary = {
-          adopted = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        adopted = {
+          ipv4 = {
             create         = false
             association_id = "vpc-cidr-assoc-0123456789abcdef0"
           }
@@ -129,10 +129,10 @@ run "reject_secondary_with_two_sources" {
   variables {
     vpc = { name = "negative-test" }
     addressing = {
-      ipv4 = {
-        cidr_block = "10.0.0.0/16"
-        secondary = {
-          invalid = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        invalid = {
+          ipv4 = {
             cidr_block     = "100.64.0.0/20"
             ipam_pool_id   = "ipam-pool-0123456789abcdef0"
             netmask_length = 20
@@ -152,7 +152,7 @@ run "reject_unknown_secondary_selector" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -166,4 +166,24 @@ run "reject_unknown_secondary_selector" {
   }
 
   expect_failures = [terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"]]
+}
+
+run "reject_secondary_with_both_families" {
+  command = plan
+
+  variables {
+    vpc = { name = "negative-test" }
+    addressing = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        invalid = {
+          ipv4 = { cidr_block = "100.64.0.0/20" }
+          ipv6 = { amazon_assigned = true }
+        }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+  }
+
+  expect_failures = [var.addressing]
 }

@@ -33,8 +33,13 @@ output "vpc_cidr_block" {
   value       = local.vpc_cidr
 }
 
+output "vpc_ipv6_cidr_blocks" {
+  description = "IPv6 VPC CIDR blocks by stable addressing.secondary key."
+  value       = local.secondary_ipv6_cidr_blocks
+}
+
 output "vpc_ipv6_cidr_block" {
-  description = "The IPv6 CIDR block used for deterministic subnet /64 allocation, or null when IPv6 is disabled."
+  description = "DEPRECATED singular adapter: the IPv6 CIDR under the first sorted secondary key, or null. Use vpc_ipv6_cidr_blocks."
   value       = local.vpc_ipv6_cidr
 }
 
@@ -328,8 +333,18 @@ output "egress_only_igw_id" {
 }
 
 output "secondary_cidr_association_ids" {
-  description = "Secondary IPv4 CIDR association IDs by stable caller-owned key."
+  description = "Secondary IPv4 and IPv6 CIDR association IDs by stable caller-owned key."
   value       = local.secondary_cidr_association_ids
+}
+
+output "secondary_ipv4_cidr_association_ids" {
+  description = "Secondary IPv4 CIDR association IDs by stable caller-owned key."
+  value       = local.secondary_ipv4_cidr_association_ids
+}
+
+output "secondary_ipv6_cidr_association_ids" {
+  description = "Secondary IPv6 CIDR association IDs by stable caller-owned key."
+  value       = local.secondary_ipv6_cidr_association_ids
 }
 
 output "network_acl_ids_by_group" {
@@ -568,18 +583,19 @@ output "resources" {
       created  = aws_vpc.main
       existing = data.aws_vpc.existing
     }
-    secondary_cidr_associations    = aws_vpc_ipv4_cidr_block_association.secondary
-    secondary_cidr_association_ids = local.secondary_cidr_association_ids
-    subnets                        = aws_subnet.main
-    injected_subnets               = data.aws_subnet.existing
-    subnet_ids                     = local.subnet_ids
-    route_tables                   = aws_route_table.main
-    injected_route_table_ids       = local.injected_route_table_ids_by_key
-    route_table_associations       = aws_route_table_association.main
-    network_acls                   = aws_network_acl.this
-    network_acl_rules              = aws_network_acl_rule.this
-    network_acl_associations       = aws_network_acl_association.this
-    network_acl_ids                = local.network_acl_ids
+    secondary_ipv4_cidr_associations = aws_vpc_ipv4_cidr_block_association.secondary
+    secondary_ipv6_cidr_associations = aws_vpc_ipv6_cidr_block_association.secondary
+    secondary_cidr_association_ids   = local.secondary_cidr_association_ids
+    subnets                          = aws_subnet.main
+    injected_subnets                 = data.aws_subnet.existing
+    subnet_ids                       = local.subnet_ids
+    route_tables                     = aws_route_table.main
+    injected_route_table_ids         = local.injected_route_table_ids_by_key
+    route_table_associations         = aws_route_table_association.main
+    network_acls                     = aws_network_acl.this
+    network_acl_rules                = aws_network_acl_rule.this
+    network_acl_associations         = aws_network_acl_association.this
+    network_acl_ids                  = local.network_acl_ids
     default_resources = {
       security_groups = aws_default_security_group.this
       network_acls    = aws_default_network_acl.this

@@ -9,6 +9,13 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_vpc_ipv6_cidr_block_association" {
+    defaults = {
+      id              = "vpc-cidr-assoc-mock"
+      ipv6_cidr_block = "2001:db8:4200::/56"
+    }
+  }
+
   mock_resource "aws_subnet" {
     defaults = {
       id  = "subnet-mock"
@@ -34,7 +41,7 @@ run "generated_dual_stack_dns64_eigw" {
 
   variables {
     vpc                = { name = "ipv6-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       public = {
@@ -59,8 +66,8 @@ run "generated_dual_stack_dns64_eigw" {
   }
 
   assert {
-    condition     = aws_vpc.main[0].assign_generated_ipv6_cidr_block
-    error_message = "Amazon-provided IPv6 must set assign_generated_ipv6_cidr_block on the VPC."
+    condition     = aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].assign_generated_ipv6_cidr_block
+    error_message = "Amazon-provided IPv6 must use a standalone secondary association."
   }
 
   assert {
@@ -91,8 +98,8 @@ run "vpc_and_subnet_ipv6_ipam" {
   variables {
     vpc = { name = "ipv6-ipam-test" }
     addressing = {
-      ipv4 = { cidr_block = "10.0.0.0/16" }
-      ipv6 = { ipam_pool_id = "ipam-pool-vpc", netmask_length = 56 }
+      primary   = { cidr_block = "10.0.0.0/16" }
+      secondary = { ipv6 = { ipv6 = { ipam_pool_id = "ipam-pool-vpc", netmask_length = 56 } } }
     }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
@@ -106,8 +113,8 @@ run "vpc_and_subnet_ipv6_ipam" {
 
   assert {
     condition = (
-      aws_vpc.main[0].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
-      aws_vpc.main[0].ipv6_netmask_length == 56
+      aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].ipv6_netmask_length == 56
     )
     error_message = "VPC IPv6 IPAM must pass pool and netmask without an explicit CIDR."
   }
@@ -128,8 +135,8 @@ run "explicit_vpc_ipv6_ipam_cidr" {
   variables {
     vpc = { name = "ipv6-explicit-test" }
     addressing = {
-      ipv4 = { cidr_block = "10.0.0.0/16" }
-      ipv6 = { ipam_pool_id = "ipam-pool-vpc", cidr_block = "2001:db8:100::/56" }
+      primary   = { cidr_block = "10.0.0.0/16" }
+      secondary = { ipv6 = { ipv6 = { ipam_pool_id = "ipam-pool-vpc", cidr_block = "2001:db8:100::/56" } } }
     }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
@@ -142,9 +149,9 @@ run "explicit_vpc_ipv6_ipam_cidr" {
 
   assert {
     condition = (
-      aws_vpc.main[0].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
-      aws_vpc.main[0].ipv6_cidr_block == "2001:db8:100::/56" &&
-      aws_vpc.main[0].ipv6_netmask_length == null
+      aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].ipv6_cidr_block == "2001:db8:100::/56" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipv6"].ipv6_netmask_length == null
     )
     error_message = "Explicit VPC IPv6 CIDRs must be passed with their IPAM pool."
   }
@@ -155,5 +162,38 @@ run "explicit_vpc_ipv6_ipam_cidr" {
       aws_subnet.main["native/us-east-1a"].ipv6_cidr_block == "2001:db8:100::/64"
     )
     error_message = "IPv6-native subnets must plan a real /64 and no IPv4 CIDR."
+  }
+}
+
+
+run "multiple_ipv6_secondaries_are_caller_keyed" {
+  command = plan
+
+  variables {
+    vpc = { name = "multiple-ipv6" }
+    addressing = {
+      primary = { cidr_block = "10.10.0.0/16" }
+      secondary = {
+        amazon = { ipv6 = { amazon_assigned = true } }
+        ipam = {
+          ipv6 = {
+            ipam_pool_id   = "ipam-pool-vpc"
+            netmask_length = 52
+          }
+        }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+  }
+
+  assert {
+    condition = (
+      toset(keys(aws_vpc_ipv6_cidr_block_association.secondary)) == toset(["amazon", "ipam"]) &&
+      aws_vpc_ipv6_cidr_block_association.secondary["amazon"].assign_generated_ipv6_cidr_block &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipam"].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipam"].ipv6_netmask_length == 52 &&
+      toset(keys(output.vpc_ipv6_cidr_blocks)) == toset(["amazon", "ipam"])
+    )
+    error_message = "Every IPv6 secondary must retain caller-owned identity and independent source arguments."
   }
 }

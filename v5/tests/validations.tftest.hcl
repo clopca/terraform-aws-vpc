@@ -24,7 +24,7 @@ run "reject_invalid_subnet_role" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = { role = "invalid", ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } } }
@@ -39,7 +39,7 @@ run "reject_duplicate_pinned_index" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app  = { role = "private", ipv4 = { netmask = 24, cidr_index = 1 } }
@@ -55,7 +55,7 @@ run "reject_isolated_routing" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       data = {
@@ -75,7 +75,7 @@ run "reject_conflicting_vpc_ipv4_sources" {
   variables {
     vpc = { name = "negative-test" }
     addressing = {
-      ipv4 = {
+      primary = {
         cidr_block     = "10.0.0.0/16"
         ipam_pool_id   = "ipam-pool-0123456789abcdef0"
         netmask_length = 16
@@ -93,7 +93,7 @@ run "reject_single_az_nat_without_az" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     nat_gateway        = { mode = "single_az" }
@@ -107,7 +107,7 @@ run "reject_cidr_count_mismatch" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -125,7 +125,7 @@ run "reject_nat_az_outside_vpc_azs" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets            = {}
     nat_gateway = {
@@ -146,7 +146,7 @@ run "reject_nat_route_without_gateway" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -165,7 +165,7 @@ run "reject_shared_route_table_with_all_az_nat" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -195,7 +195,7 @@ run "reject_tgw_routes_without_attachment_group" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -214,7 +214,7 @@ run "reject_overlapping_pins_across_netmasks" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       application = { role = "private", ipv4 = { netmask = 22, cidr_index = 0 } }
@@ -230,7 +230,7 @@ run "reject_isolated_dns64" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       data = {
@@ -256,7 +256,7 @@ run "public_can_disable_internet_gateway" {
 
   variables {
     vpc                = { name = "no-igw-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       edge = {
@@ -279,7 +279,7 @@ run "reject_invalid_flow_log_name_format" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.9.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.9.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     flow_logs = {
@@ -300,7 +300,7 @@ run "public_ip_assignment_is_opt_in" {
 
   variables {
     vpc                = { name = "public-ip-opt-in" }
-    addressing         = { ipv4 = { cidr_block = "10.95.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.95.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       default_public = {
@@ -329,7 +329,7 @@ run "nat_gateway_null_uses_non_null_default" {
 
   variables {
     vpc                = { name = "nullable-default" }
-    addressing         = { ipv4 = { cidr_block = "10.110.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.110.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     nat_gateway        = null
   }
@@ -345,7 +345,7 @@ run "reject_vpc_ipv4_orphan_netmask_length" {
 
   variables {
     vpc                = { name = "orphan-vpc-netmask" }
-    addressing         = { ipv4 = { cidr_block = "10.112.0.0/16", netmask_length = 16 } }
+    addressing         = { primary = { cidr_block = "10.112.0.0/16", netmask_length = 16 } }
     availability_zones = { names = ["us-east-1a"] }
   }
 
@@ -357,7 +357,7 @@ run "reject_subnet_ipv4_orphan_netmask_length" {
 
   variables {
     vpc                = { name = "orphan-subnet-netmask" }
-    addressing         = { ipv4 = { cidr_block = "10.113.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.113.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -375,7 +375,7 @@ run "reject_cidr_index_outside_calculated_mode" {
 
   variables {
     vpc                = { name = "orphan-cidr-index" }
-    addressing         = { ipv4 = { cidr_block = "10.114.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.114.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -393,7 +393,7 @@ run "reject_ipv6_orphan_netmask_length" {
 
   variables {
     vpc                = { name = "orphan-ipv6-netmask" }
-    addressing         = { ipv4 = { cidr_block = "10.115.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    addressing         = { primary = { cidr_block = "10.115.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -412,7 +412,7 @@ run "reject_ipv6_native_with_ipv4" {
 
   variables {
     vpc                = { name = "mixed-native" }
-    addressing         = { ipv4 = { cidr_block = "10.116.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    addressing         = { primary = { cidr_block = "10.116.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -431,7 +431,7 @@ run "isolated_accepts_explicit_empty_route_lists" {
 
   variables {
     vpc                = { name = "isolated-empty-routes" }
-    addressing         = { ipv4 = { cidr_block = "10.117.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.117.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       data = {
@@ -458,7 +458,7 @@ run "reject_empty_subnet_name_format" {
 
   variables {
     vpc                = { name = "empty-format" }
-    addressing         = { ipv4 = { cidr_block = "10.118.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.118.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = { role = "private", name_format = "", ipv4 = { cidrs_by_az = { us-east-1a = "10.118.0.0/24" } } }
@@ -473,7 +473,7 @@ run "reject_empty_nat_name_format" {
 
   variables {
     vpc                = { name = "empty-nat-format" }
-    addressing         = { ipv4 = { cidr_block = "10.119.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.119.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     nat_gateway        = { mode = "none", name_format = "" }
   }
@@ -486,7 +486,7 @@ run "reject_calculated_cidr_pin_beyond_parent_capacity" {
 
   variables {
     vpc                = { name = "pin-capacity" }
-    addressing         = { ipv4 = { cidr_block = "10.120.0.0/24" } }
+    addressing         = { primary = { cidr_block = "10.120.0.0/24" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = { role = "private", ipv4 = { netmask = 28, cidr_index = 3 } }

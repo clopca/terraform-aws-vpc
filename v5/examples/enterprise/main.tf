@@ -21,16 +21,16 @@ module "vpc" {
   }
 
   addressing = {
-    ipv4 = {
+    primary = {
       cidr_block = "10.0.0.0/16"
-      secondary = {
-        shared-services = {
-          cidr_block = "100.64.0.0/20"
-        }
-      }
     }
-    ipv6 = {
-      amazon_assigned = true
+    secondary = {
+      shared-services = {
+        ipv4 = { cidr_block = "100.64.0.0/20" }
+      }
+      amazon-ipv6 = {
+        ipv6 = { amazon_assigned = true }
+      }
     }
   }
 

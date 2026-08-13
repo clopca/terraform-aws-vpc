@@ -76,7 +76,7 @@ run "tier_1_and_tier_2_shapes" {
 
   variables {
     vpc                = { name = "shape-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
 
     subnets = {
@@ -232,7 +232,7 @@ run "absent_optional_resources" {
 
   variables {
     vpc                = { name = "absence-test" }
-    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.1.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       data = {

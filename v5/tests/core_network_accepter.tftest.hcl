@@ -30,7 +30,7 @@ run "create_attachment_create_accepter" {
   command = plan
   variables {
     vpc                = { name = "cwan-create-create" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       cwan = {
@@ -57,7 +57,7 @@ run "create_attachment_inject_accepter" {
   command = plan
   variables {
     vpc                = { name = "cwan-create-inject" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       cwan = {
@@ -85,7 +85,7 @@ run "inject_attachment_create_accepter" {
   command = plan
   variables {
     vpc                = { name = "cwan-inject-create" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       cwan = {
@@ -113,7 +113,7 @@ run "inject_attachment_inject_accepter" {
   command = plan
   variables {
     vpc                = { name = "cwan-inject-inject" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       cwan = {
@@ -142,7 +142,7 @@ run "reject_accept_attachment_without_required_acceptance" {
   command = plan
   variables {
     vpc                = { name = "cwan-invalid-acceptance" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       cwan = {

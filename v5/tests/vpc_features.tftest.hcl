@@ -37,7 +37,7 @@ run "create_bpa_and_dhcp_options" {
 
   variables {
     vpc                = { name = "feature-test" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -97,7 +97,7 @@ run "inject_bpa_and_dhcp_options" {
 
   variables {
     vpc                = { name = "feature-inject-test" }
-    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.1.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_block_public_access = {
@@ -137,7 +137,7 @@ run "reject_bpa_allow_egress_under_ingress_mode" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.2.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.2.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     vpc_block_public_access = {
@@ -157,7 +157,7 @@ run "reject_invalid_dhcp_node_type" {
 
   variables {
     vpc                = { name = "negative-test" }
-    addressing         = { ipv4 = { cidr_block = "10.3.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.3.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     dhcp_options = {

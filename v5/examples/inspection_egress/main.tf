@@ -6,7 +6,7 @@ module "vpc" {
   }
 
   addressing = {
-    ipv4 = { cidr_block = "100.64.0.0/16" }
+    primary = { cidr_block = "100.64.0.0/16" }
   }
 
   availability_zones = {

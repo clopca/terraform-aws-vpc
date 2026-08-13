@@ -36,6 +36,10 @@ resource "terraform_data" "ipv6_pool" {
   input = "ipam-pool-computed"
 }
 
+resource "terraform_data" "ipv6_association_id" {
+  input = "vpc-cidr-assoc-computed"
+}
+
 resource "terraform_data" "cwan_attachment_id" {
   input = "attachment-computed"
 }
@@ -59,7 +63,7 @@ module "vpc" {
     igw_id     = terraform_data.igw_id.output
   }
 
-  addressing         = { ipv4 = {}, ipv6 = {} }
+  addressing         = { primary = {}, secondary = { ipv6 = { ipv6 = { create = false, association_id = terraform_data.ipv6_association_id.output } } } }
   availability_zones = { names = ["us-east-1a"] }
 
   subnets = {

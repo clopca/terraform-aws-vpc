@@ -23,7 +23,7 @@ run "generic_peering_and_gwlbe_routes" {
 
   variables {
     vpc                = { name = "generic-routes" }
-    addressing         = { ipv4 = { cidr_block = "10.121.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.121.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -61,7 +61,7 @@ run "reject_generic_collision_with_opinionated_route" {
 
   variables {
     vpc                = { name = "generic-collision" }
-    addressing         = { ipv4 = { cidr_block = "10.122.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.122.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       public = {

@@ -73,7 +73,7 @@ run "regional_auto_mode" {
 
   variables {
     vpc                = { name = "regional-auto" }
-    addressing         = { ipv4 = { cidr_block = "10.0.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -127,7 +127,7 @@ run "regional_existing_eips_manual_mode" {
 
   variables {
     vpc                = { name = "regional-manual" }
-    addressing         = { ipv4 = { cidr_block = "10.1.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.1.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -164,7 +164,7 @@ run "regional_byoip_pool_manual_mode" {
 
   variables {
     vpc                = { name = "regional-byoip" }
-    addressing         = { ipv4 = { cidr_block = "10.2.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.2.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -197,7 +197,7 @@ run "reject_regional_with_az" {
 
   variables {
     vpc                = { name = "regional-invalid" }
-    addressing         = { ipv4 = { cidr_block = "10.3.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.3.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     nat_gateway        = { mode = "regional", az = "us-east-1a" }
@@ -211,7 +211,7 @@ run "reject_regional_with_subnet_group" {
 
   variables {
     vpc                = { name = "regional-invalid" }
-    addressing         = { ipv4 = { cidr_block = "10.4.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.4.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       public = { role = "public", ipv4 = { cidrs_by_az = { "us-east-1a" = "10.4.0.0/24" } } }
@@ -227,7 +227,7 @@ run "reject_regional_private_nat" {
 
   variables {
     vpc                = { name = "regional-invalid" }
-    addressing         = { ipv4 = { cidr_block = "10.5.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.5.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     nat_gateway        = { mode = "regional", connectivity_type = "private" }

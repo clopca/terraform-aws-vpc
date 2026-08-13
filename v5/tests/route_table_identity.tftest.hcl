@@ -36,7 +36,7 @@ run "shared_physical_route_table_is_materialized_once" {
 
   variables {
     vpc                = { name = "shared-route-table" }
-    addressing         = { ipv4 = { cidr_block = "10.96.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.96.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       public_a = {
@@ -74,7 +74,7 @@ run "reject_route_table_key_with_different_ids" {
 
   variables {
     vpc                = { name = "invalid-route-table-identity" }
-    addressing         = { ipv4 = { cidr_block = "10.97.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.97.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -102,7 +102,7 @@ run "reject_isolated_sharing_public_route_table" {
 
   variables {
     vpc                = { name = "isolated-shared-table" }
-    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.98.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       public = {
@@ -130,7 +130,7 @@ run "reject_igw_and_nat_same_destination" {
 
   variables {
     vpc                = { name = "igw-nat-collision" }
-    addressing         = { ipv4 = { cidr_block = "10.99.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.99.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -155,7 +155,7 @@ run "reject_ipv6_igw_and_eigw_same_destination" {
 
   variables {
     vpc                = { name = "igw-eigw-collision" }
-    addressing         = { ipv4 = { cidr_block = "10.100.0.0/16" }, ipv6 = { amazon_assigned = true } }
+    addressing         = { primary = { cidr_block = "10.100.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -175,7 +175,7 @@ run "reject_tgw_and_cwan_same_destination" {
 
   variables {
     vpc                = { name = "transit-collision" }
-    addressing         = { ipv4 = { cidr_block = "10.101.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.101.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {

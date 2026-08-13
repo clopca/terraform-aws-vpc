@@ -31,7 +31,7 @@ run "create_inject_and_associate_gateway_endpoints" {
 
   variables {
     vpc                = { name = "endpoint-test" }
-    addressing         = { ipv4 = { cidr_block = "10.70.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.70.0.0/16" } }
     availability_zones = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       app = {
@@ -94,7 +94,7 @@ run "reject_duplicate_gateway_endpoint_service" {
 
   variables {
     vpc                = { name = "duplicate-endpoint" }
-    addressing         = { ipv4 = { cidr_block = "10.71.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.71.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     gateway_endpoints = {
@@ -111,7 +111,7 @@ run "reject_invalid_gateway_endpoint_policy" {
 
   variables {
     vpc                = { name = "invalid-policy" }
-    addressing         = { ipv4 = { cidr_block = "10.72.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.72.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets            = {}
     gateway_endpoints = {
@@ -127,7 +127,7 @@ run "reject_gateway_endpoint_route_without_endpoint" {
 
   variables {
     vpc                = { name = "missing-endpoint" }
-    addressing         = { ipv4 = { cidr_block = "10.73.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.73.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       app = {
@@ -147,7 +147,7 @@ run "isolated_groups_allow_private_gateway_endpoints" {
 
   variables {
     vpc                = { name = "isolated-endpoints" }
-    addressing         = { ipv4 = { cidr_block = "10.74.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.74.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       data = {

@@ -10,8 +10,10 @@ module "vpc" {
   }
 
   addressing = {
-    ipv4 = { cidr_block = "10.42.0.0/16" }
-    ipv6 = { amazon_assigned = true }
+    primary = { cidr_block = "10.42.0.0/16" }
+    secondary = {
+      v4-ipv6 = { ipv6 = { amazon_assigned = true } }
+    }
   }
 
   availability_zones = {

@@ -24,7 +24,7 @@ mock_provider "aws" {
 
 variables {
   vpc                = { name = "plural-tgw-test" }
-  addressing         = { ipv4 = { cidr_block = "10.100.0.0/16" } }
+  addressing         = { primary = { cidr_block = "10.100.0.0/16" } }
   availability_zones = { names = ["us-east-1a"] }
   subnets = {
     app = {

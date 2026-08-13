@@ -30,7 +30,7 @@ run "role_and_connectivity_are_independent" {
 
   variables {
     vpc                = { name = "connectivity-output-test" }
-    addressing         = { ipv4 = { cidr_block = "10.110.0.0/16" } }
+    addressing         = { primary = { cidr_block = "10.110.0.0/16" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
       public = {
