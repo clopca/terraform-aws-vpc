@@ -48,9 +48,10 @@ resource "aws_vpc" "main" {
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
   count = (var.vpc_secondary_cidr && !var.create_vpc) ? 1 : 0
 
-  vpc_id            = var.vpc_id
-  cidr_block        = local.cidr_block
-  ipv4_ipam_pool_id = var.vpc_ipv4_ipam_pool_id
+  vpc_id              = var.vpc_id
+  cidr_block          = var.vpc_ipv4_netmask_length == null ? var.cidr_block : null
+  ipv4_ipam_pool_id   = var.vpc_ipv4_ipam_pool_id
+  ipv4_netmask_length = var.vpc_ipv4_netmask_length
 }
 
 # ---------- PUBLIC SUBNET CONFIGURATION ----------
@@ -95,9 +96,15 @@ resource "aws_route_table_association" "public" {
 }
 
 # Elastic IP - used in NAT gateways (if configured)
+# Supports BYOIP and pre-existing EIPs via var.nat_gateway_eip_configuration.
+# When mode = "create" (default), behaviour is unchanged from prior versions.
+# When mode = "existing", EIPs are not created; allocation_ids are used directly.
 resource "aws_eip" "nat" {
-  for_each = toset(local.nat_configuration)
+  for_each = var.nat_gateway_eip_configuration.mode != "existing" ? toset(local.nat_configuration) : toset([])
   domain   = "vpc"
+
+  # BYOIP: allocate from a customer-owned IPv4 pool when mode = "byoip_pool"
+  public_ipv4_pool = var.nat_gateway_eip_configuration.mode == "byoip_pool" ? var.nat_gateway_eip_configuration.public_ipv4_pool : null
 
   tags = merge(
     { Name = "nat-${local.subnet_names["public"]}-${each.key}" },
@@ -110,7 +117,7 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "main" {
   for_each = toset(local.nat_configuration)
 
-  allocation_id = aws_eip.nat[each.key].id
+  allocation_id = var.nat_gateway_eip_configuration.mode == "existing" ? var.nat_gateway_eip_configuration.allocation_ids[each.key] : aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.public[each.key].id
 
   tags = merge(
@@ -477,12 +484,28 @@ resource "aws_route" "cwan_to_nat" {
 }
 
 # AWS Cloud WAN's Core Network VPC attachment
+#
+# `vpc_arn` is sourced via `local.vpc.arn` which resolves to the data block
+# (`data.aws_vpc.main[0].arn`) when `create_vpc = false`. The Terraform planner
+# can mark the entire data-source object as `(known after apply)` whenever an
+# unrelated attribute of the VPC is updated. That propagates through
+# `local.vpc.arn`, marks `vpc_arn` as changing, and forces this attachment to be
+# replaced — disconnecting the VPC from the Cloud WAN core network (destructive).
+#
+# Ignoring drift on `vpc_arn` is safe: an attached VPC's ARN cannot change in
+# place; migrating to a different VPC is a destroy-and-recreate the user does
+# intentionally by removing the `core_network` subnet config entirely.
+#
+# Users may also pass `var.vpc_arn` explicitly to bypass the data source lookup
+# altogether when `create_vpc = false`.
+#
+# Resolves https://github.com/aws-ia/terraform-aws-vpc/issues/162
 resource "aws_networkmanager_vpc_attachment" "cwan" {
   count = contains(local.subnet_keys, "core_network") ? 1 : 0
 
   core_network_id = var.core_network.id
   subnet_arns     = values(aws_subnet.cwan)[*].arn
-  vpc_arn         = local.vpc.arn
+  vpc_arn         = local.vpc_arn
 
   options {
     ipv6_support           = local.cwan_dualstack ? true : false
@@ -494,6 +517,10 @@ resource "aws_networkmanager_vpc_attachment" "cwan" {
     module.tags.tags_aws,
     try(module.subnet_tags["core_network"].tags_aws, {})
   )
+
+  lifecycle {
+    ignore_changes = [vpc_arn]
+  }
 }
 
 # Core Network's attachment acceptance (if required)

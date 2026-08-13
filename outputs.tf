@@ -160,6 +160,36 @@ output "nat_gateway_attributes_by_az" {
 EOF
 }
 
+output "nat_gateway_ids" {
+  value       = try({ for az, gw in aws_nat_gateway.main : az => gw.id }, {})
+  description = "Map of AZ to NAT Gateway ID. Empty map when no NAT Gateways are configured."
+}
+
+output "nat_public_ips" {
+  value       = try({ for az, gw in aws_nat_gateway.main : az => gw.public_ip }, {})
+  description = "Map of AZ to NAT Gateway public IP address. Empty map when no NAT Gateways are configured."
+}
+
+output "nat_eip_attributes_by_az" {
+  value       = try(aws_eip.nat, null)
+  description = <<-EOF
+  Map of NAT Gateway Elastic IP resource attributes by AZ. Includes public_ip,
+  allocation_id, and public_ipv4_pool. Null when mode = "existing" (EIPs not managed by module).
+
+  Example:
+  ```
+  nat_eip_attributes_by_az = {
+    "us-east-1a" = {
+      "id"               = "eipalloc-0e8b20303eea88b13"
+      "public_ip"        = "52.1.2.3"
+      "public_ipv4_pool" = "amazon"
+      "domain"           = "vpc"
+    }
+  }
+  ```
+EOF
+}
+
 output "natgw_id_per_az" {
   value       = try(local.nat_per_az, null)
   description = <<-EOF
@@ -197,4 +227,122 @@ output "vpc_lattice_service_network_association" {
 output "flow_log_attributes" {
   description = "Flow Log information."
   value       = try(module.flow_logs[0].flow_log, null)
+}
+
+# ---------- ROLE-BASED CONVENIENCE OUTPUTS (v4.8+) ----------
+# These outputs address the confusion reported in #177 and #159:
+# private_subnet_attributes_by_az includes BOTH NAT-routed and isolated subnets,
+# causing users to accidentally deploy compute into non-routable networks.
+
+output "subnet_ids_by_role" {
+  description = <<-EOF
+  Map of subnet role to map of AZ to subnet ID. Distinguishes NAT-connected
+  private subnets from isolated ones. Fixes #177, #159.
+
+  Example:
+  ```
+  subnet_ids_by_role = {
+    "private" = {
+      "us-east-1a" = "subnet-0a1b2c3d"
+      "us-east-1b" = "subnet-0e4f5a6b"
+    }
+    "isolated" = {
+      "us-east-1a" = "subnet-0c7d8e9f"
+      "us-east-1b" = "subnet-0a1b2c3d"
+    }
+    "public" = {
+      "us-east-1a" = "subnet-0f1a2b3c"
+    }
+    "transit_gateway" = {
+      "us-east-1a" = "subnet-0d4e5f6a"
+    }
+  }
+  ```
+  EOF
+  value = merge(
+    # Public subnets
+    try(length(aws_subnet.public) > 0, false) ? {
+      "public" = { for az, subnet in aws_subnet.public : az => subnet.id }
+    } : {},
+    # Transit gateway subnets
+    try(length(aws_subnet.tgw) > 0, false) ? {
+      "transit_gateway" = { for az, subnet in aws_subnet.tgw : az => subnet.id }
+    } : {},
+    # Core network subnets
+    try(length(aws_subnet.cwan) > 0, false) ? {
+      "core_network" = { for az, subnet in aws_subnet.cwan : az => subnet.id }
+    } : {},
+    # Private subnets split by NAT connectivity
+    {
+      for role in local.private_subnet_names : role => {
+        for az in local.azs : az => aws_subnet.private["${role}/${az}"].id
+      }
+    }
+  )
+}
+
+output "natgw_subnet_ids" {
+  description = <<-EOF
+  Flat list of private subnet IDs that have a route to a NAT gateway
+  (connect_to_public_natgw = true). Use this to safely place compute workloads
+  that require outbound Internet access. Fixes #177.
+
+  Example:
+  ```
+  natgw_subnet_ids = ["subnet-0a1b2c3d", "subnet-0e4f5a6b", "subnet-0c7d8e9f"]
+  ```
+  EOF
+  value = [
+    for key in try(local.private_subnet_names_nat_routed, []) :
+    aws_subnet.private[key].id
+  ]
+}
+
+output "isolated_subnet_ids" {
+  description = <<-EOF
+  Flat list of private subnet IDs that do NOT have a route to a NAT gateway
+  (no outbound Internet connectivity). Use this for databases, internal services,
+  or workloads that must not reach the Internet. Fixes #177.
+
+  Example:
+  ```
+  isolated_subnet_ids = ["subnet-0d4e5f6a", "subnet-0b7c8d9e"]
+  ```
+  EOF
+  value = [
+    for key in try(local.private_per_az, []) :
+    aws_subnet.private[key].id
+    if !contains(local.private_subnets_nat_routed, split("/", key)[0])
+  ]
+}
+
+output "route_table_ids_by_type_by_az" {
+  description = <<-EOF
+  Map of route table type to map of AZ to route table ID. Provides simple ID
+  access without needing to extract .id from the full resource objects in
+  rt_attributes_by_type_by_az.
+
+  Example:
+  ```
+  route_table_ids_by_type_by_az = {
+    "private" = {
+      "private/us-east-1a" = "rtb-0a1b2c3d"
+      "private/us-east-1b" = "rtb-0e4f5a6b"
+    }
+    "public" = {
+      "us-east-1a" = "rtb-0c7d8e9f"
+    }
+    "transit_gateway" = {
+      "us-east-1a" = "rtb-0d4e5f6a"
+    }
+    "core_network" = {}
+  }
+  ```
+  EOF
+  value = {
+    "private"         = { for k, v in aws_route_table.private : k => v.id }
+    "public"          = { for k, v in aws_route_table.public : k => v.id }
+    "transit_gateway" = { for k, v in aws_route_table.tgw : k => v.id }
+    "core_network"    = { for k, v in aws_route_table.cwan : k => v.id }
+  }
 }
