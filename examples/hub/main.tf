@@ -105,6 +105,19 @@ module "vpc" {
     }
   }
 
+  # The endpoint producer can consume subnet outputs from this module and return
+  # one existing GWLB endpoint ID per AZ without creating a dependency cycle.
+  routes = {
+    inspected-services = {
+      from_group  = "firewall"
+      destination = { type = "ipv4_cidr", value = "203.0.113.0/24" }
+      target = {
+        type      = "vpc_endpoint"
+        ids_by_az = var.gwlb_endpoint_ids_by_az
+      }
+    }
+  }
+
   # Stable caller keys are attachment identity and are also selected by routes.
   transit_gateway_attachments = {
     east = {

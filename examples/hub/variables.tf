@@ -19,6 +19,20 @@ variable "transit_gateway_ids" {
   }
 }
 
+variable "gwlb_endpoint_ids_by_az" {
+  description = "Existing GWLB endpoint IDs targeted by the hub's late-bound route, keyed by Availability Zone."
+  type        = map(string)
+  nullable    = false
+
+  validation {
+    condition = (
+      toset(keys(var.gwlb_endpoint_ids_by_az)) == toset(["us-west-2a", "us-west-2b", "us-west-2c"]) &&
+      alltrue([for id in values(var.gwlb_endpoint_ids_by_az) : can(regex("^vpce-[0-9a-f]{8,17}$", id))])
+    )
+    error_message = "gwlb_endpoint_ids_by_az must contain valid VPC endpoint IDs for us-west-2a, us-west-2b, and us-west-2c."
+  }
+}
+
 variable "vpc_peering_connection_id" {
   description = "Existing VPC peering connection targeted by the generic security-services route."
   type        = string

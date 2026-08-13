@@ -77,6 +77,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import textwrap
 
 root = Path(sys.argv[1])
 header = (root / ".header.md").read_text()
@@ -111,10 +112,10 @@ required_docs = [
     "docs/outputs.md",
     "docs/UPGRADE-GUIDE-5.0.md",
     "docs/migration-v4-reference.md",
-    "docs/rfc/v5-contract.md",
 ]
 for relative in required_docs:
     assert (root / relative).is_file(), f"missing {relative}"
+assert not (root / "docs/rfc").exists(), "docs/rfc must not be published"
 assert not (root / "docs/how-to-use-outputs.md").exists(), "old outputs guide path remains"
 
 upgrade = (root / "docs/UPGRADE-GUIDE-5.0.md").read_text()
@@ -146,6 +147,34 @@ for heading in [
 outputs = (root / "docs/outputs.md").read_text()
 for heading in ["## Tier 1: stable composition", "## Tier 2: migrate v4 consumers, then remove them", "## Tier 3: use the escape hatch deliberately"]:
     assert heading in outputs, f"outputs guide missing {heading}"
+
+routing = (root / "docs/subnets-and-routing.md").read_text()
+for heading in ["## Managed and injected route tables", "## Fail-closed isolated tables", "## Generic typed routes", "## Late-bound top-level routes"]:
+    assert heading in routing, f"routing guide missing {heading}"
+for contract in [
+    "subnets.<group>.routes",
+    "transit_gateway_attachments",
+    "target.ids_by_az",
+    "<route-key>/<az>",
+    "<route-key>/shared",
+    "acknowledge_gateway_endpoint_coexistence",
+]:
+    assert contract in routing, f"routing guide missing top-level route contract: {contract}"
+
+route_example = """routes = {
+  inspected-services = {
+    from_group  = "firewall"
+    destination = { type = "ipv4_cidr", value = "203.0.113.0/24" }
+    target = {
+      type      = "vpc_endpoint"
+      ids_by_az = var.gwlb_endpoint_ids_by_az
+    }
+  }
+}"""
+hub_main = (root / "examples/hub/main.tf").read_text()
+hub_readme = (root / "examples/hub/README.md").read_text()
+assert textwrap.indent(route_example, "  ") in hub_main, "hub main.tf missing the canonical zonal route example"
+assert route_example in hub_readme, "hub README zonal route excerpt must match main.tf"
 
 # Resolve local Markdown links and parse every copyable HCL fence.
 tracked = subprocess.run(

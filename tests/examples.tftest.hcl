@@ -197,9 +197,14 @@ run "hub_example" {
       west = "tgw-0223456789abcdef0"
     }
     vpc_peering_connection_id = "pcx-0123456789abcdef0"
-    core_network_id           = "cnet-0123456789abcdef0"
-    core_network_arn          = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
-    flow_log_destination_arn  = "arn:aws:firehose:us-west-2:123456789012:deliverystream/network-hub-vpc-flow-logs"
+    gwlb_endpoint_ids_by_az = {
+      us-west-2a = "vpce-01111111111111111"
+      us-west-2b = "vpce-02222222222222222"
+      us-west-2c = "vpce-03333333333333333"
+    }
+    core_network_id          = "cnet-0123456789abcdef0"
+    core_network_arn         = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
+    flow_log_destination_arn = "arn:aws:firehose:us-west-2:123456789012:deliverystream/network-hub-vpc-flow-logs"
     nat_eip_allocation_ids = {
       us-west-2a = "eipalloc-01111111111111111"
       us-west-2b = "eipalloc-02222222222222222"
@@ -222,13 +227,19 @@ run "hub_example" {
       output.public_nat_gateway_evidence.managed_eip_count == 0 &&
       output.public_nat_gateway_evidence.nat_route_count == 6 &&
       output.igw_count == 1 && output.generic_route_count == 3 &&
+      output.zonal_route_evidence.route_count == 3 &&
+      output.zonal_route_evidence.targets_by_az == {
+        us-west-2a = "vpce-01111111111111111"
+        us-west-2b = "vpce-02222222222222222"
+        us-west-2c = "vpce-03333333333333333"
+      } &&
       toset(keys(output.transit_gateway_attachment_ids)) == toset(["east", "west"]) &&
       toset(keys(output.route_tables)) == toset(["cwan", "edge", "firewall", "public", "tgw"]) &&
       alltrue(flatten([for group in ["public", "edge", "firewall", "tgw", "cwan"] : [
         for cidr in values(output.subnet_ipv6_cidrs[group]) : cidr != null && cidr != ""
       ]]))
     )
-    error_message = "The hub example must plan one public Regional NAT Gateway with injected EIPs, six NAT routes, two private inspection NAT Gateways, and the documented hub resources."
+    error_message = "The hub example must plan one public Regional NAT Gateway with injected EIPs, six NAT routes, three AZ-specific GWLB endpoint routes, two private inspection NAT Gateways, and the documented hub resources."
   }
 }
 

@@ -55,6 +55,20 @@ subnets = {
 
 An injected route table may be a computed upstream value because `manage_route_table` fixes ownership and cardinality before the ID is known.
 
+Changing `manage_route_table` after deployment is an ownership handoff, not an in-place toggle. A direct change from `true` to `false` removes the managed route tables from configuration and re-keys top-level routes from `<route-key>/<az>` to `<route-key>/shared`. Preserve any table that must survive with caller-root `removed` blocks using `destroy = false`, select the shared table through `route_table_key` and `route_table_id`, and stage route-state moves when an interruption is unacceptable.
+
+```hcl
+removed {
+  from = module.vpc.aws_route_table.main["application/us-east-1a"]
+
+  lifecycle {
+    destroy = false
+  }
+}
+```
+
+Rehearse ownership changes against copied state. Preserved tables that are not selected as the injected shared table become caller-owned and require deliberate cleanup.
+
 ## Fail-closed isolated tables
 
 The module always rejects an injected route table for an `isolated` group unless `isolated_accepts_uninspected_route_table = true`. The AWS provider's route-table data source does not expose every propagated or service-managed route class, so plan-time inspection cannot prove that an unmanaged table is isolated.
@@ -98,6 +112,37 @@ routes = {
 ```
 
 Destination types are `ipv4_cidr`, `ipv6_cidr`, and `prefix_list`. Target types are `vpc_peering`, `vpc_endpoint`, `network_interface`, `virtual_private_gateway`, `local_gateway`, and `carrier_gateway`. Generic routes are not permitted on isolated groups.
+
+## Late-bound top-level routes
+
+Use top-level `routes` when the route target is produced by a resource or module that consumes this VPC's subnet or route-table outputs. This dependency direction supports service-insertion modules such as AWS Network Firewall or Gateway Load Balancer, which can create one endpoint per AZ after receiving the VPC topology. Keep targets that are already available to the VPC module under `subnets.<group>.routes` so routing intent remains co-located with the subnet group.
+
+Use the attachment-aware `transit_gateway_attachments`, `transit_gateway_attachments_ipv6`, `core_network`, and `core_network_ipv6` fields for TGW and Cloud WAN routes. Those surfaces coordinate attachment identity and readiness; top-level `routes` is for the generic target types documented above.
+
+```hcl
+routes = {
+  inspected-default = {
+    from_group = "application"
+    destination = {
+      type  = "ipv4_cidr"
+      value = "0.0.0.0/0"
+    }
+    target = {
+      type      = "vpc_endpoint"
+      ids_by_az = module.inspection.endpoint_ids_by_az
+    }
+  }
+}
+```
+
+Each route key is caller-owned state identity and cannot contain `/`. Exactly one target form is required:
+
+- `target.id` applies one target to every module-managed AZ, or creates one route on an injected shared table.
+- `target.ids_by_az` selects the matching target for each configured AZ. It requires module-managed per-AZ route tables and a target ID for every configured AZ.
+
+Managed tables create `<route-key>/<az>` instances. An injected route table represents one physical table across its subnets, so it creates one `<route-key>/shared` instance and rejects `ids_by_az`. Destination and target IDs remain values and can be unknown during planning, which lets endpoint modules consume VPC outputs and return their computed AZ maps without a dependency cycle.
+
+Top-level routes fail closed for `isolated` groups and for injected tables shared with an isolated group. Destination collision checks span both route surfaces and reject more than one generic declaration for the same physical table and destination. A `prefix_list` destination on a table associated with an S3 or DynamoDB gateway endpoint also fails unless `acknowledge_gateway_endpoint_coexistence = true`; set it only after independently verifying that the explicit prefix list differs from the service-managed endpoint route.
 
 ## Gateway endpoints
 

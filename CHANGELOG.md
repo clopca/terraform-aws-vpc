@@ -11,13 +11,14 @@ All notable changes to this module are documented in this file. The format follo
 - Deterministic subnet allocation with explicit AZ CIDRs, calculated netmasks, optional pinned CIDR indices, subnet IPAM, dual-stack, and IPv6-native modes.
 - Plural Transit Gateway attachments with caller-owned keys, typed IPv4/IPv6 destination maps, and up to five distinct TGWs per VPC.
 - Cloud WAN attachment acceptance controls, generic typed routes, S3 and DynamoDB gateway endpoints, per-group network ACLs, default-resource adoption, Regional VPC Block Public Access, and DHCP option sets.
+- Late-bound top-level routes with scalar or AZ-specific targets for composing endpoint-producing modules without dependency cycles.
 - Zonal public/private NAT and public Regional NAT with module-created, BYOIP, existing, automatic, and injected address or Gateway ownership options where supported.
 - Native CloudWatch Flow Logs destinations and IAM roles, plus externally owned S3 and Kinesis Data Firehose destinations.
 - Tier 1 stable composition outputs, a Tier 3 internal-resource escape hatch, thematic contract guides, standardized scenario guides, and a v4-to-v5 migration runbook and reference.
 
 ### Changed
 
-- Replaced the v4 flat and loosely typed interface with 13 typed top-level inputs and explicit create-or-inject selectors.
+- Replaced the v4 flat and loosely typed interface with 14 typed top-level inputs and explicit create-or-inject selectors.
 - Made caller-owned map keys durable Terraform state identity for secondary CIDRs, subnet groups, route tables, routes, attachments, endpoints, Flow Logs, exclusions, and ACL rules.
 - Co-located subnet role, addressing, route-table ownership, routing, public options, network ACLs, and attachment options under each subnet group.
 - Made explicit Availability Zone names and AZ-keyed CIDRs the recommended persistent-environment contract; count-based AZ discovery is development-only.

@@ -78,6 +78,16 @@ output "generic_route_count" {
   value       = length(module.vpc.resources.routes.custom)
 }
 
+output "zonal_route_evidence" {
+  description = "Top-level route count and AZ-specific GWLB endpoint targets."
+  value = {
+    route_count = length(module.vpc.resources.routes.top_level)
+    targets_by_az = {
+      for key, route in module.vpc.resources.routes.top_level : split("/", key)[1] => route.vpc_endpoint_id
+    }
+  }
+}
+
 output "core_network_attachment_id" {
   description = "ID of the hub Cloud WAN Core Network attachment."
   value       = module.vpc.core_network_attachment_id

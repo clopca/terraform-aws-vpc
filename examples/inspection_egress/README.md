@@ -10,6 +10,8 @@ This example creates a three-AZ inspection VPC where spoke traffic arrives throu
 - `nat_gateway.mode = "all_azs"` places one public NAT Gateway in each selected AZ.
 - Tier 1 subnet and route-table outputs form the input contract for `aws-ia/networkfirewall/aws`.
 
+When a firewall implementation returns AZ-keyed endpoint IDs but does not manage VPC routes, use top-level `routes[*].target.ids_by_az`; the optional Network Firewall composition shown here manages those routes itself.
+
 ## Relevant configuration
 
 The complete deployable configuration is in [`main.tf`](./main.tf). The Network Firewall module block is intentionally commented there; this excerpt shows the VPC routing and composition boundary:
