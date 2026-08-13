@@ -81,6 +81,8 @@ nat_gateway = {
 
 ## Prerequisites and cost
 
+This is an integration example: a real apply requires live Transit Gateways, one GWLB endpoint per AZ, a VPC peering connection, a Core Network whose policy authorizes the Cloud WAN attachment and acceptance path, unassociated EIPs, and a Firehose delivery stream. Placeholder identifiers satisfy validation and planning only; AWS rejects nonexistent dependencies during apply.
+
 - Terraform `>= 1.5` and AWS provider `>= 6.29`.
 - AWS credentials with VPC, TGW attachment, Cloud WAN attachment and acceptance, NAT Gateway, Elastic IP association, and flow-log permissions.
 - Two distinct Transit Gateways, an existing Cloud WAN Core Network, an existing VPC peering connection, three existing GWLB endpoints keyed by AZ, three unassociated Elastic IPs, and an existing Firehose delivery stream.
