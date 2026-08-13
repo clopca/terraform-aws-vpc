@@ -93,7 +93,7 @@ module "vpc" {
     manage_network_acl    = true
     manage_route_table    = true
     tags = {
-      SecurityBoundary = "air-gapped"
+      SecurityBoundary = "no-internet-or-transit-routing"
     }
   }
 
@@ -109,12 +109,12 @@ module "vpc" {
     domain_name_servers = ["AmazonProvidedDNS"]
     ntp_servers         = ["169.254.169.123"]
     tags = {
-      SecurityBoundary = "air-gapped"
+      SecurityBoundary = "no-internet-or-transit-routing"
     }
   }
 
   tags = {
     Environment      = "restricted"
-    SecurityBoundary = "air-gapped"
+    SecurityBoundary = "no-internet-or-transit-routing"
   }
 }

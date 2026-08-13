@@ -1,6 +1,6 @@
 # Secure isolated enclave
 
-This example combines the v5 D6 controls into an enclave/air-gapped topology:
+This example combines the v5 D6 controls into a topology without Internet or transit routing:
 
 - VPC Block Public Access in `block-bidirectional` mode;
 - a custom DHCP option set with a private domain, Amazon-provided DNS, and Amazon Time Sync;

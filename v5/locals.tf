@@ -302,7 +302,7 @@ locals {
   )
 
   # ─── Flat Subnet Map: "name/az" → config ────────────────────────────────
-  # This is the master map that drives aws_subnet.main for_each.
+  # This is the canonical map that drives aws_subnet.main for_each.
   # Every subnet instance has a unique key "subnet_name/az".
 
   subnet_map = merge([

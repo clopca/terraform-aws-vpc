@@ -59,8 +59,22 @@ module "vpc" {
         Statement = [{
           Effect    = "Allow"
           Principal = "*"
-          Action    = "dynamodb:*"
-          Resource  = "*"
+          Action = [
+            "dynamodb:BatchGetItem",
+            "dynamodb:BatchWriteItem",
+            "dynamodb:ConditionCheckItem",
+            "dynamodb:DeleteItem",
+            "dynamodb:DescribeTable",
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:Query",
+            "dynamodb:Scan",
+            "dynamodb:UpdateItem",
+          ]
+          Resource = [
+            "arn:aws:dynamodb:us-east-1:123456789012:table/application-data",
+            "arn:aws:dynamodb:us-east-1:123456789012:table/application-data/index/*",
+          ]
         }]
       })
     }
