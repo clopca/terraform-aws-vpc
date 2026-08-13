@@ -730,13 +730,45 @@ resources.
 ### Frozen structural reservations
 
 These shapes are naming/compatibility commitments, not accepted no-op inputs in
-5.0: `nat_gateways = map(object({ az_keys = set(string), ... }))` for caller-keyed
-NAT domains; `availability_zones.ids` as the exclusive ID-based alternative to
-`names/count`; and `subnets[*].az_keys` for sparse placement. The singular NAT
-handle remains a future compatibility adapter. Plural IPv6 associations and
-per-subnet parent selection are implemented; `vpc_ipv6_cidr_block` is only a
-deprecated first-sorted-key adapter. BYOIPv6 and network-border-group ownership
-remain deferred.
+5.0:
+
+```text
+nat_gateways = map(object({
+  az_keys = set(string)
+}))
+
+availability_zones = {
+  ids = list(string)
+}
+
+addressing.secondary = {
+  key = {
+    ipv6 = {
+      network_border_group = optional(string)
+    }
+  }
+}
+
+subnets = {
+  group = {
+    az_keys = set(string)
+    routing = {
+      nat_gateway_key = optional(string)
+    }
+  }
+}
+```
+
+`subnets[*].routing.nat_gateway_key` is the reserved selector for a future
+caller-keyed NAT domain. `addressing.secondary[*].ipv6.network_border_group` is
+the only reserved placement for IPv6 network-border-group selection. `az_keys` is
+the single placement dimension for Regional Availability Zones, Local Zones, and
+Wavelength Zones; no parallel `zones` axis will be introduced.
+
+The singular NAT handle remains a future compatibility adapter. Plural IPv6
+associations and per-subnet parent selection are implemented;
+`vpc_ipv6_cidr_block` is only a deprecated first-sorted-key adapter. BYOIPv6 and
+network-border-group ownership remain deferred.
 
 The additive reservations from #176/#178 use these exact defaults and omission
 semantics: `core_network_options.dns_support = optional(bool, false)`,
