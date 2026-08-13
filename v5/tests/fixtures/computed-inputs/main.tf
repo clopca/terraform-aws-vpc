@@ -86,9 +86,10 @@ module "vpc" {
       role = "private"
       ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.1.0/24" } }
       ipv6 = {
-        ipam_pool_id   = terraform_data.ipv6_pool.output
-        netmask_length = 64
-        auto_assign    = true
+        secondary_cidr_key = "ipv6"
+        ipam_pool_id       = terraform_data.ipv6_pool.output
+        netmask_length     = 64
+        auto_assign        = true
       }
       routing = { core_network = ["10.200.0.0/16"] }
     }

@@ -75,7 +75,7 @@ run "inject_all_remaining_boundaries" {
         create       = false
         existing_ids = { us-east-1a = "subnet-01111111111111111" }
         ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
-        ipv6         = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200::/64" } }
+        ipv6         = { secondary_cidr_key = "ipv6", cidrs_by_az = { "us-east-1a" = "2001:db8:4200::/64" } }
         routing      = { egress_only_igw = true }
       }
       tgw = {
@@ -168,7 +168,7 @@ run "reject_missing_injected_eigw" {
       app = {
         role    = "private"
         ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
-        ipv6    = { auto_assign = true }
+        ipv6    = { secondary_cidr_key = "ipv6", auto_assign = true }
         routing = { egress_only_igw = true }
       }
     }
@@ -263,7 +263,7 @@ run "injected_ipv6_association_selector_is_stable" {
       app = {
         role = "private"
         ipv4 = { cidrs_by_az = { us-east-1a = "10.0.10.0/24" } }
-        ipv6 = { auto_assign = true }
+        ipv6 = { secondary_cidr_key = "ipv6", auto_assign = true }
       }
     }
   }

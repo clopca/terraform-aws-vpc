@@ -18,7 +18,7 @@ module "vpc" {
     public = {
       role = "public"
       ipv4 = { netmask = 24 }
-      ipv6 = { auto_assign = true }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true }
       routing = {
         internet_gateway = true
       }
@@ -30,7 +30,7 @@ module "vpc" {
     app = {
       role = "private"
       ipv4 = { netmask = 22 }
-      ipv6 = { auto_assign = true }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true }
       routing = {
         nat_gateway               = true
         egress_only_igw           = true

@@ -32,6 +32,13 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_vpc_ipv6_cidr_block_association" {
+    defaults = {
+      id              = "vpc-cidr-assoc-mock"
+      ipv6_cidr_block = "2001:db8:4200::/56"
+    }
+  }
+
   mock_data "aws_vpc" {
     defaults = {
       id         = "vpc-mock"
@@ -183,7 +190,7 @@ run "ipam_example" {
 
   assert {
     condition = (
-      toset(keys(output.secondary_cidr_association_ids)) == toset(["analytics", "legacy"]) &&
+      toset(keys(output.secondary_cidr_association_ids)) == toset(["analytics", "ipv6-ipam", "legacy"]) &&
       toset(keys(output.subnet_ids)) == toset(["analytics", "application", "legacy"]) &&
       alltrue([for subnets in values(output.subnet_ids) : length(subnets) == 2])
     )

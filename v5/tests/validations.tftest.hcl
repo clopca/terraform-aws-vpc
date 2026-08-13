@@ -236,7 +236,7 @@ run "reject_isolated_dns64" {
       data = {
         role    = "isolated"
         ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
-        ipv6    = { auto_assign = true }
+        ipv6    = { secondary_cidr_key = "ipv6", auto_assign = true }
         routing = { dns64 = true }
       }
     }
@@ -399,7 +399,7 @@ run "reject_ipv6_orphan_netmask_length" {
       app = {
         role = "private"
         ipv4 = { cidrs_by_az = { us-east-1a = "10.115.0.0/24" } }
-        ipv6 = { auto_assign = true, netmask_length = 64 }
+        ipv6 = { secondary_cidr_key = "ipv6", auto_assign = true, netmask_length = 64 }
       }
     }
   }
@@ -418,7 +418,7 @@ run "reject_ipv6_native_with_ipv4" {
       app = {
         role = "private"
         ipv4 = { cidrs_by_az = { us-east-1a = "10.116.0.0/24" } }
-        ipv6 = { native_only = true, auto_assign = true }
+        ipv6 = { secondary_cidr_key = "ipv6", native_only = true, auto_assign = true }
       }
     }
   }

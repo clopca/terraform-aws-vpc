@@ -161,7 +161,7 @@ run "reject_ipv6_igw_and_eigw_same_destination" {
       app = {
         role    = "private"
         ipv4    = { cidrs_by_az = { us-east-1a = "10.100.0.0/24" } }
-        ipv6    = { auto_assign = true }
+        ipv6    = { secondary_cidr_key = "ipv6", auto_assign = true }
         routing = { internet_gateway = true, egress_only_igw = true }
       }
     }

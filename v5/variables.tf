@@ -455,12 +455,13 @@ variable "subnets" {
 
     # ── IPv6 Addressing ──
     ipv6 = optional(object({
-      auto_assign    = optional(bool, false)
-      cidrs_by_az    = optional(map(string))
-      ipam_pool_id   = optional(string)
-      netmask_length = optional(number)
-      native_only    = optional(bool, false)
-      cidr_index     = optional(number)
+      secondary_cidr_key = optional(string)
+      auto_assign        = optional(bool, false)
+      cidrs_by_az        = optional(map(string))
+      ipam_pool_id       = optional(string)
+      netmask_length     = optional(number)
+      native_only        = optional(bool, false)
+      cidr_index         = optional(number)
     }))
 
     # ── Naming, Tags, and Route Table Injection ──
@@ -958,13 +959,26 @@ variable "subnets" {
 
   validation {
     condition = length(distinct([
-      for k, v in var.subnets : v.ipv6.cidr_index
+      for k, v in var.subnets : "${v.ipv6.secondary_cidr_key}/${v.ipv6.cidr_index}"
       if v.ipv6 != null && v.ipv6.cidr_index != null
       ])) == length([
       for k, v in var.subnets : k
       if v.ipv6 != null && v.ipv6.cidr_index != null
     ])
-    error_message = "IPv6 subnet groups must have unique ipv6.cidr_index values."
+    error_message = "IPv6 subnet groups must have unique cidr_index values within each secondary_cidr_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.subnets : v.ipv6 == null ? true : (
+        v.ipv6.secondary_cidr_key == null ? false : (
+          length(trimspace(v.ipv6.secondary_cidr_key)) > 0 &&
+          can(regex("^[a-z0-9][a-z0-9_-]*$", v.ipv6.secondary_cidr_key)) &&
+          !strcontains(v.ipv6.secondary_cidr_key, "/")
+        )
+      )
+    ])
+    error_message = "subnets[*].ipv6.secondary_cidr_key must be a stable lowercase addressing.secondary key without '/'."
   }
 
   validation {

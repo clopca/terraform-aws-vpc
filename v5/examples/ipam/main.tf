@@ -41,9 +41,10 @@ module "vpc" {
         netmask_length = 24
       }
       ipv6 = {
-        ipam_pool_id   = var.subnet_ipv6_ipam_pool_id
-        netmask_length = 64
-        auto_assign    = true
+        secondary_cidr_key = "ipv6-ipam"
+        ipam_pool_id       = var.subnet_ipv6_ipam_pool_id
+        netmask_length     = 64
+        auto_assign        = true
       }
     }
 
@@ -55,9 +56,10 @@ module "vpc" {
         secondary_cidr_key = "analytics"
       }
       ipv6 = {
-        ipam_pool_id   = var.subnet_ipv6_ipam_pool_id
-        netmask_length = 64
-        auto_assign    = true
+        secondary_cidr_key = "ipv6-ipam"
+        ipam_pool_id       = var.subnet_ipv6_ipam_pool_id
+        netmask_length     = 64
+        auto_assign        = true
       }
     }
 

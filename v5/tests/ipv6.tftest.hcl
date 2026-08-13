@@ -47,13 +47,13 @@ run "generated_dual_stack_dns64_eigw" {
       public = {
         role    = "public"
         ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
-        ipv6    = { auto_assign = true, cidr_index = 0 }
+        ipv6    = { secondary_cidr_key = "ipv6", auto_assign = true, cidr_index = 0 }
         routing = { internet_gateway = true }
       }
       app = {
         role    = "private"
         ipv4    = { cidrs_by_az = { "us-east-1a" = "10.0.10.0/24", "us-east-1b" = "10.0.11.0/24" } }
-        ipv6    = { auto_assign = true, cidr_index = 2 }
+        ipv6    = { secondary_cidr_key = "ipv6", auto_assign = true, cidr_index = 2 }
         routing = { egress_only_igw = true, dns64 = true }
       }
     }
@@ -106,7 +106,7 @@ run "vpc_and_subnet_ipv6_ipam" {
       application = {
         role = "private"
         ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
-        ipv6 = { ipam_pool_id = "ipam-pool-subnet", netmask_length = 64, auto_assign = true }
+        ipv6 = { secondary_cidr_key = "ipv6", ipam_pool_id = "ipam-pool-subnet", netmask_length = 64, auto_assign = true }
       }
     }
   }
@@ -142,7 +142,7 @@ run "explicit_vpc_ipv6_ipam_cidr" {
     subnets = {
       native = {
         role = "private"
-        ipv6 = { native_only = true, auto_assign = true }
+        ipv6 = { secondary_cidr_key = "ipv6", native_only = true, auto_assign = true }
       }
     }
   }
@@ -177,13 +177,23 @@ run "multiple_ipv6_secondaries_are_caller_keyed" {
         amazon = { ipv6 = { amazon_assigned = true } }
         ipam = {
           ipv6 = {
-            ipam_pool_id   = "ipam-pool-vpc"
-            netmask_length = 52
+            ipam_pool_id = "ipam-pool-vpc"
+            cidr_block   = "2001:db8:5200::/52"
           }
         }
       }
     }
     availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      amazon-native = {
+        role = "private"
+        ipv6 = { secondary_cidr_key = "amazon", native_only = true, auto_assign = true, cidr_index = 0 }
+      }
+      ipam-native = {
+        role = "private"
+        ipv6 = { secondary_cidr_key = "ipam", native_only = true, auto_assign = true, cidr_index = 0 }
+      }
+    }
   }
 
   assert {
@@ -191,9 +201,61 @@ run "multiple_ipv6_secondaries_are_caller_keyed" {
       toset(keys(aws_vpc_ipv6_cidr_block_association.secondary)) == toset(["amazon", "ipam"]) &&
       aws_vpc_ipv6_cidr_block_association.secondary["amazon"].assign_generated_ipv6_cidr_block &&
       aws_vpc_ipv6_cidr_block_association.secondary["ipam"].ipv6_ipam_pool_id == "ipam-pool-vpc" &&
-      aws_vpc_ipv6_cidr_block_association.secondary["ipam"].ipv6_netmask_length == 52 &&
+      aws_vpc_ipv6_cidr_block_association.secondary["ipam"].ipv6_cidr_block == "2001:db8:5200::/52" &&
       toset(keys(output.vpc_ipv6_cidr_blocks)) == toset(["amazon", "ipam"])
     )
     error_message = "Every IPv6 secondary must retain caller-owned identity and independent source arguments."
   }
+
+  assert {
+    condition = (
+      aws_subnet.main["amazon-native/us-east-1a"].ipv6_cidr_block == "2001:db8:4200::/64" &&
+      aws_subnet.main["ipam-native/us-east-1a"].ipv6_cidr_block == "2001:db8:5200::/64" &&
+      aws_subnet.main["amazon-native/us-east-1a"].ipv6_native &&
+      aws_subnet.main["ipam-native/us-east-1a"].ipv6_native
+    )
+    error_message = "IPv6-only subnets must derive deterministic /64s from their selected secondary range; equal pins are valid across different ranges."
+  }
+}
+
+run "reject_ipv6_subnet_without_secondary_key" {
+  command = plan
+
+  variables {
+    vpc                = { name = "missing-ipv6-key" }
+    addressing         = { primary = { cidr_block = "10.11.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { netmask = 24 }
+        ipv6 = { auto_assign = true }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
+
+run "reject_unknown_ipv6_secondary_key" {
+  command = plan
+
+  variables {
+    vpc                = { name = "unknown-ipv6-key" }
+    addressing         = { primary = { cidr_block = "10.12.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { netmask = 24 }
+        ipv6 = {
+          secondary_cidr_key = "missing"
+          ipam_pool_id       = "ipam-pool-subnet"
+          netmask_length     = 64
+        }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_ipv6_secondary_cidr_validation["app/us-east-1a"]]
 }

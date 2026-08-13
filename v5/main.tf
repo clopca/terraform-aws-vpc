@@ -197,6 +197,22 @@ resource "terraform_data" "subnet_secondary_cidr_validation" {
   }
 }
 
+resource "terraform_data" "subnet_ipv6_secondary_cidr_validation" {
+  for_each = {
+    for key, subnet in local.subnet_map : key => subnet
+    if subnet.ipv6_secondary_cidr_key != null
+  }
+
+  input = try(local.secondary_ipv6_cidr_association_ids[each.value.ipv6_secondary_cidr_key], null)
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.secondary_ipv6_cidrs), each.value.ipv6_secondary_cidr_key)
+      error_message = "Subnet '${each.key}' references unknown IPv6 secondary CIDR key '${each.value.ipv6_secondary_cidr_key}'."
+    }
+  }
+}
+
 # ─── AZ count discovery must satisfy the requested cardinality ──────────
 resource "terraform_data" "availability_zone_count_validation" {
   count = var.availability_zones.count != null ? 1 : 0

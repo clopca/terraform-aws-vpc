@@ -25,7 +25,7 @@ module "vpc" {
       ipv4 = {
         cidrs_by_az = { "us-west-2a" = "10.1.0.0/24", "us-west-2b" = "10.1.1.0/24", "us-west-2c" = "10.1.2.0/24" }
       }
-      ipv6 = { auto_assign = true, cidr_index = 0 }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 0 }
       routing = {
         internet_gateway = true
       }
@@ -40,7 +40,7 @@ module "vpc" {
       ipv4 = {
         cidrs_by_az = { "us-west-2a" = "10.1.3.0/24", "us-west-2b" = "10.1.4.0/24", "us-west-2c" = "10.1.5.0/24" }
       }
-      ipv6 = { auto_assign = true, cidr_index = 1 }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 1 }
       routing = {
         internet_gateway = true
       }
@@ -55,7 +55,7 @@ module "vpc" {
       ipv4 = {
         cidrs_by_az = { "us-west-2a" = "10.1.16.0/28", "us-west-2b" = "10.1.16.16/28", "us-west-2c" = "10.1.16.32/28" }
       }
-      ipv6 = { auto_assign = true, cidr_index = 2 }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 2 }
       routing = {
         nat_gateway = true
         # Multiple TGW destinations [R1-C3], including IPv6.
@@ -74,7 +74,7 @@ module "vpc" {
         netmask    = 28
         cidr_index = 64 # 10.1.24.0/28+, outside all explicit ranges
       }
-      ipv6 = { auto_assign = true, cidr_index = 3 }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 3 }
       routing = {
         nat_gateway = true
       }
@@ -94,7 +94,7 @@ module "vpc" {
         netmask    = 28
         cidr_index = 65 # 10.1.24.96/28+, outside all explicit ranges
       }
-      ipv6 = { auto_assign = true, cidr_index = 4 }
+      ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 4 }
       core_network_options = {
         id                 = var.core_network_id
         arn                = var.core_network_arn

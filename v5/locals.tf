@@ -189,10 +189,10 @@ locals {
     if end >= local.available_cidr_units
   ]
 
-  # ─── Deterministic IPv6 /64 calculation ───────────────────────────────
-  # All AWS IPv6 subnets are /64. The engine mirrors IPv4 state stability:
-  # six AZ slots per group, absolute pinned group slots, then alphabetical
-  # packing of unpinned groups after the highest pin.
+  # ─── Deterministic IPv6 /64 calculation by secondary association ──────
+  # Every group explicitly selects one secondary IPv6 CIDR. Allocation mirrors
+  # IPv4 stability independently inside each selected parent: six AZ slots per
+  # group, absolute pins, then alphabetical packing after the highest pin.
   subnets_with_calculated_ipv6 = {
     for name, cfg in var.subnets : name => cfg
     if cfg.ipv6 != null && cfg.ipv6.cidrs_by_az == null && cfg.ipv6.netmask_length == null && cfg.ipv6.auto_assign
@@ -203,36 +203,57 @@ locals {
     name => cfg.ipv6.cidr_index * local.cidr_az_stride
     if cfg.ipv6.cidr_index != null
   }
-  ipv6_pinned_reserved_slots = length(local.ipv6_pinned_group_start) == 0 ? 0 : max([
-    for start in values(local.ipv6_pinned_group_start) : start + local.cidr_az_stride
-  ]...)
-  ipv6_unpinned_group_order = sort([
-    for name, cfg in local.subnets_with_calculated_ipv6 : name
-    if cfg.ipv6.cidr_index == null
-  ])
+  ipv6_pinned_reserved_slots_by_secondary = {
+    for secondary_key in keys(local.secondary_ipv6_cidrs) : secondary_key => (
+      length([
+        for name, start in local.ipv6_pinned_group_start : start
+        if var.subnets[name].ipv6.secondary_cidr_key == secondary_key
+        ]) == 0 ? 0 : max([
+        for name, start in local.ipv6_pinned_group_start : start + local.cidr_az_stride
+        if var.subnets[name].ipv6.secondary_cidr_key == secondary_key
+      ]...)
+    )
+  }
+  ipv6_unpinned_group_order_by_secondary = {
+    for secondary_key in keys(local.secondary_ipv6_cidrs) : secondary_key => sort([
+      for name, cfg in local.subnets_with_calculated_ipv6 : name
+      if cfg.ipv6.secondary_cidr_key == secondary_key && cfg.ipv6.cidr_index == null
+    ])
+  }
   ipv6_calculated_group_start = merge(
     local.ipv6_pinned_group_start,
-    {
-      for name in local.ipv6_unpinned_group_order :
-      name => local.ipv6_pinned_reserved_slots + index(local.ipv6_unpinned_group_order, name) * local.cidr_az_stride
-    },
+    merge(concat([{}], [
+      for secondary_key, names in local.ipv6_unpinned_group_order_by_secondary : {
+        for name in names : name => (
+          local.ipv6_pinned_reserved_slots_by_secondary[secondary_key] +
+          index(names, name) * local.cidr_az_stride
+        )
+      }
+    ])...),
   )
-  vpc_ipv6_prefix_length = local.vpc_ipv6_cidr == null ? null : tonumber(split("/", local.vpc_ipv6_cidr)[1])
-  calculated_ipv6_cidrs = merge([
+  ipv6_parent_cidr_by_group = {
+    for name, cfg in local.subnets_with_calculated_ipv6 :
+    name => try(local.secondary_ipv6_cidr_blocks[cfg.ipv6.secondary_cidr_key], null)
+  }
+  ipv6_parent_prefix_length_by_group = {
+    for name, cidr in local.ipv6_parent_cidr_by_group :
+    name => cidr == null ? null : tonumber(split("/", cidr)[1])
+  }
+  calculated_ipv6_cidrs = merge(concat([{}], [
     for name, cfg in local.subnets_with_calculated_ipv6 : {
       for ai, az in local.azs : "${name}/${az}" => try(cidrsubnet(
-        local.vpc_ipv6_cidr,
-        64 - local.vpc_ipv6_prefix_length,
+        local.ipv6_parent_cidr_by_group[name],
+        64 - local.ipv6_parent_prefix_length_by_group[name],
         local.ipv6_calculated_group_start[name] + ai,
-      ), local.vpc_ipv6_cidr)
+      ), local.ipv6_parent_cidr_by_group[name])
     }
-  ]...)
+  ])...)
   invalid_calculated_ipv6_keys = [
     for name, cfg in local.subnets_with_calculated_ipv6 : name
     if !alltrue([
       for ai, az in local.azs : can(cidrsubnet(
-        local.vpc_ipv6_cidr,
-        64 - local.vpc_ipv6_prefix_length,
+        local.ipv6_parent_cidr_by_group[name],
+        64 - local.ipv6_parent_prefix_length_by_group[name],
         local.ipv6_calculated_group_start[name] + ai,
       ))
     ])
@@ -335,7 +356,8 @@ locals {
         netmask_length     = try(cfg.ipv4.netmask_length, null)
         secondary_cidr_key = try(cfg.ipv4.secondary_cidr_key, null)
 
-        # IPv6: explicit > deterministic VPC /64 > subnet IPAM.
+        # IPv6: every mode selects a VPC secondary association explicitly.
+        ipv6_secondary_cidr_key = try(cfg.ipv6.secondary_cidr_key, null)
         ipv6_cidr = (
           try(cfg.ipv6.cidrs_by_az, null) != null ? try(cfg.ipv6.cidrs_by_az[az], null) :
           contains(keys(local.subnets_with_calculated_ipv6), name) ? local.calculated_ipv6_cidrs["${name}/${az}"] :

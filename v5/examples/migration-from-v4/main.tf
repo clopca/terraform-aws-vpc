@@ -26,7 +26,7 @@ module "vpc" {
       name_format = "{group}-{az}" # v4: "${name_prefix || key}-${az}"
       ipv4        = { cidrs_by_az = { "us-east-1a" = "10.42.0.0/24", "us-east-1b" = "10.42.1.0/24" } }
       # Replace with the prefixes already recorded in v4 state.
-      ipv6 = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200:1::/64", "us-east-1b" = "2001:db8:4200:2::/64" }, auto_assign = true }
+      ipv6 = { secondary_cidr_key = "v4-ipv6", cidrs_by_az = { "us-east-1a" = "2001:db8:4200:1::/64", "us-east-1b" = "2001:db8:4200:2::/64" }, auto_assign = true }
       routing = {
         internet_gateway     = true
         transit_gateway      = ["10.0.0.0/8"]
@@ -41,7 +41,7 @@ module "vpc" {
       role        = "private"
       name_format = "{group}-{az}"
       ipv4        = { cidrs_by_az = { "us-east-1a" = "10.42.16.0/20", "us-east-1b" = "10.42.32.0/20" } }
-      ipv6        = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200:10::/64", "us-east-1b" = "2001:db8:4200:11::/64" }, auto_assign = true }
+      ipv6        = { secondary_cidr_key = "v4-ipv6", cidrs_by_az = { "us-east-1a" = "2001:db8:4200:10::/64", "us-east-1b" = "2001:db8:4200:11::/64" }, auto_assign = true }
       routing = {
         nat_gateway          = true
         egress_only_igw      = true
@@ -56,7 +56,7 @@ module "vpc" {
       role        = "transit_gateway"
       name_format = "{group}-{az}"
       ipv4        = { cidrs_by_az = { "us-east-1a" = "10.42.240.0/28", "us-east-1b" = "10.42.240.16/28" } }
-      ipv6        = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200:f0::/64", "us-east-1b" = "2001:db8:4200:f1::/64" } }
+      ipv6        = { secondary_cidr_key = "v4-ipv6", cidrs_by_az = { "us-east-1a" = "2001:db8:4200:f0::/64", "us-east-1b" = "2001:db8:4200:f1::/64" } }
       routing     = { nat_gateway = true }
       transit_gateway_options = {
         id = "tgw-0123456789abcdef0"
@@ -67,7 +67,7 @@ module "vpc" {
       role        = "core_network"
       name_format = "{group}-{az}"
       ipv4        = { cidrs_by_az = { "us-east-1a" = "10.42.241.0/28", "us-east-1b" = "10.42.241.16/28" } }
-      ipv6        = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200:f2::/64", "us-east-1b" = "2001:db8:4200:f3::/64" } }
+      ipv6        = { secondary_cidr_key = "v4-ipv6", cidrs_by_az = { "us-east-1a" = "2001:db8:4200:f2::/64", "us-east-1b" = "2001:db8:4200:f3::/64" } }
       routing     = { nat_gateway = true }
       core_network_options = {
         id  = "cnet-0123456789abcdef0"
