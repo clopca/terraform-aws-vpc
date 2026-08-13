@@ -126,7 +126,11 @@
 
    `removed.from` addresses modules, not module instances: Terraform Core rejects `[0]` keys on `module.flow_logs` and `module.cloudwatch_log_group`. Omitting those two module instance keys matches all instances selected by the configuration; the indexed addresses remain valid for `terraform state show` and the IAM-role `moved` block.
 
-   Declarative import requires Terraform >= 1.5; non-destructive `removed` requires Terraform >= 1.7. Therefore this ownership-preserving migration procedure has a Terraform >= 1.7 runner floor even though the v5 module itself remains compatible with Terraform >= 1.5. Keep the IAM role moved block active and preserve its exact `role_name_prefix`. The complete normal plan in section D evaluates the v5 configuration, all selected moves, three non-destructive forgets, the log-group import, and the optional IPv6 association import together; there is no preliminary state-materialization plan or CLI state surgery. The IPv6 import changes only Terraform ownership and must preserve zero destroy and zero replace.
+   Declarative import requires Terraform >= 1.5; non-destructive `removed` requires Terraform >= 1.7. Therefore this ownership-preserving migration procedure has a Terraform >= 1.7 runner floor even though the v5 module itself remains compatible with Terraform >= 1.5. Keep the IAM role moved block active and preserve its exact `role_name_prefix`.
+
+   The v5 `aws_vpc.main` resource deliberately ignores its four legacy embedded IPv6 fields: `assign_generated_ipv6_cidr_block`, `ipv6_cidr_block`, `ipv6_ipam_pool_id`, and `ipv6_netmask_length`. This lifecycle bridge is mandatory. Without it, AWS provider 6.59 treats removal of the v4 arguments as an update and disassociates the live prefix even if the standalone resource is imported in the same plan. The bridge suppresses that physical mutation while the standalone keyed resource acquires ownership.
+
+   The complete normal plan in section D evaluates the v5 configuration, all selected moves, three non-destructive forgets, the log-group import, and the optional IPv6 association import together; there is no preliminary state-materialization plan or CLI state surgery. The plan must show no change at `module.vpc.aws_vpc.main[0]`, including no `assign_generated_ipv6_cidr_block = true -> null` update.
 
 ### D. Complete-plan gate
 
@@ -139,7 +143,7 @@
 
    The gate criteria are:
 
-   - **Required:** zero `destroy` and zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive.
+   - **Required:** zero `destroy` and zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive. `module.vpc.aws_vpc.main[0]` must have no planned update: any removal of embedded IPv6 arguments, especially `assign_generated_ipv6_cidr_block = true -> null`, fails the gate.
    - **Expected state-only transitions:** the selected `moved` pairs, three `removed { destroy = false }` forgets for the old log group/managed policy/attachment, one log-group import, and—when v4 IPv6 exists—one import of its existing association into `secondary["v4-ipv6"]`. Re-keyed routes whose destination is unchanged have no residual create/delete.
    - **Allowed creates:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role, plus the expected built-in `terraform_data` precondition records. These records exist only in Terraform state and perform no AWS API operations. For the remediation-3 fixture the exact seven were:
      - `module.vpc.terraform_data.attachment_contract_validation`;
@@ -379,7 +383,7 @@ that selector establishes the association dependency for a normal apply.
 
 | v4 state | v5 disposition | Why / workaround |
 |---|---|---|
-| v4 IPv6 association embedded in `module.vpc.aws_vpc.main[0]` | `module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]` | Capture `ipv6_association_id` and declaratively import it at the standalone v5 address. An embedded VPC attribute cannot be the source of a `moved` block; this is state ownership transfer only and must plan zero destroy/zero replace. |
+| v4 IPv6 association embedded in `module.vpc.aws_vpc.main[0]` | `module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]` | Capture the association identity and declaratively import it at the standalone v5 address. An embedded VPC attribute cannot be the source of a `moved` block. The v5 resource's `ignore_changes` bridge must preserve all four legacy embedded IPv6 fields; reject any plan that updates IPv6 on `aws_vpc.main[0]`. With that bridge, the import transfers state ownership without disassociating the live prefix. |
 | `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main` | `module.vpc.aws_cloudwatch_log_group.flow_logs["default"]` | Capture the generated `name`, configure it as `cloudwatch_options.name`, forget the old address with `removed { destroy=false }`, and import that name at the v5 address in the same plan. A direct move can converge after provider-6.x refresh, but the declarative handoff makes ownership explicit and independently refreshes the final address. |
 | `...aws_iam_role.main` | `module.vpc.aws_iam_role.flow_logs["default"]` | Keep the moved block, but first configure `role_name_prefix` with the exact v4 state `name_prefix`. Trust policy, description, and tags may update in place; the role ID and generated name must not change. |
 | `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main` | `module.vpc.aws_iam_role_policy.flow_logs["default"]` | Resource type changes, so forget the v4 managed policy with the unindexed-module `removed { destroy=false }` address. After the zero-destroy apply and delivery verification, delete the captured policy ARN with the documented AWS CLI cleanup. |

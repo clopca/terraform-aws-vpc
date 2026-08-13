@@ -148,6 +148,9 @@ module "vpc" {
 # }
 #
 # # v4 stores this association inside aws_vpc.main; no moved block can target it.
+# # The v5 module ignores the legacy embedded IPv6 fields on aws_vpc.main so the
+# # provider cannot disassociate the live prefix while this import takes ownership.
+# # Reject the migration plan if aws_vpc.main shows any IPv6 argument update.
 # import {
 #   to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
 #   id = var.v4_ipv6_association_id

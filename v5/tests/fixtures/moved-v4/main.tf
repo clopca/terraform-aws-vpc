@@ -10,8 +10,10 @@ terraform {
 }
 
 resource "aws_vpc" "main" {
-  count      = 1
-  cidr_block = "10.42.0.0/16"
+  count                                = 1
+  cidr_block                           = "10.42.0.0/16"
+  assign_generated_ipv6_cidr_block     = true
+  ipv6_cidr_block_network_border_group = "us-east-1"
 }
 
 resource "aws_subnet" "public" {
@@ -45,4 +47,8 @@ output "route_table_id" {
 
 output "association_id" {
   value = aws_route_table_association.public["us-east-1a"].id
+}
+
+output "vpc_assign_generated_ipv6_cidr_block" {
+  value = aws_vpc.main[0].assign_generated_ipv6_cidr_block
 }

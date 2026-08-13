@@ -12,6 +12,15 @@ terraform {
 resource "aws_vpc" "main" {
   count      = 1
   cidr_block = "10.42.0.0/16"
+
+  lifecycle {
+    ignore_changes = [
+      assign_generated_ipv6_cidr_block,
+      ipv6_cidr_block,
+      ipv6_ipam_pool_id,
+      ipv6_netmask_length,
+    ]
+  }
 }
 
 resource "aws_subnet" "main" {
@@ -67,4 +76,8 @@ output "association_id" {
 
 output "subnet_keys" {
   value = keys(aws_subnet.main)
+}
+
+output "vpc_assign_generated_ipv6_cidr_block" {
+  value = aws_vpc.main[0].assign_generated_ipv6_cidr_block
 }

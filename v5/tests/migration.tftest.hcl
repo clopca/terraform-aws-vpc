@@ -31,9 +31,10 @@ run "seed_representative_v4_state" {
 
   assert {
     condition = (
-      output.subnet_id != null && output.route_table_id != null && output.association_id != null
+      output.subnet_id != null && output.route_table_id != null && output.association_id != null &&
+      output.vpc_assign_generated_ipv6_cidr_block
     )
-    error_message = "The mocked v4 fixture must seed subnet, route-table, and association state."
+    error_message = "The mocked v4 fixture must seed subnet, route-table, association, and embedded IPv6 VPC state."
   }
 }
 
@@ -61,6 +62,14 @@ run "plan_representative_v5_moves" {
       output.association_id == run.seed_representative_v4_state.association_id
     )
     error_message = "Route-table and association IDs must remain known and unchanged after state moves."
+  }
+
+  assert {
+    condition = (
+      output.vpc_assign_generated_ipv6_cidr_block ==
+      run.seed_representative_v4_state.vpc_assign_generated_ipv6_cidr_block
+    )
+    error_message = "The v5 VPC lifecycle bridge must preserve embedded IPv6 state; true-to-null would make the provider disassociate the live prefix."
   }
 }
 

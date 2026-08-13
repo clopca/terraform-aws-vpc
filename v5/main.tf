@@ -62,6 +62,17 @@ resource "aws_vpc" "main" {
   })
 
   lifecycle {
+    # A v4-created VPC stores IPv6 association arguments in this resource state.
+    # v5 transfers that association to a standalone keyed resource. Ignoring the
+    # legacy embedded fields prevents the provider from disassociating the live
+    # prefix while the declarative import transfers Terraform ownership.
+    ignore_changes = [
+      assign_generated_ipv6_cidr_block,
+      ipv6_cidr_block,
+      ipv6_ipam_pool_id,
+      ipv6_netmask_length,
+    ]
+
     precondition {
       condition = (
         var.addressing.primary.cidr_block != null || var.addressing.primary.ipam_pool_id != null
