@@ -397,6 +397,12 @@ resource "aws_route53_zone" "private" {
     Name    = each.value.name
     Pattern = "centralized-endpoints-dns"
   }
+
+  # Standalone associations own every spoke; the inline block owns only the
+  # creation-time hub association and must not absorb refreshed spoke VPCs.
+  lifecycle {
+    ignore_changes = [vpc]
+  }
 }
 
 resource "aws_route53_record" "private" {

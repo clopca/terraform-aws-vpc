@@ -514,6 +514,7 @@ run "centralized_endpoints_dns_example" {
       output.resolver_rule_evidence.allow_external == false &&
       output.private_zone_evidence.zones == ["shared"] &&
       output.private_zone_evidence.record_count == 1 &&
+      output.private_zone_evidence.initial_vpc_association_count == 1 &&
       output.private_zone_evidence.spoke_association_count == 2
     )
     error_message = "Forwarding rules must be associated separately to both spokes, shared through RAM, and accompanied by direct custom-zone associations."

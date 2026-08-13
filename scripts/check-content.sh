@@ -33,6 +33,7 @@ grep -Fq 'resource "aws_route53profiles_resource_association" "interface_endpoin
 grep -Fq 'resource "aws_route53profiles_association" "vpcs"' "$example12/main.tf"
 grep -Fq 'resource "aws_route53_resolver_rule_association" "spokes"' "$example12/main.tf"
 grep -Fq 'resource "aws_ram_resource_association" "resolver_rules"' "$example12/main.tf"
+grep -Fq 'ignore_changes = [vpc]' "$example12/main.tf"
 grep -Fq 'resource_arn = each.value.arn' "$example12/main.tf"
 grep -Fq 'role = "private"' "$example12/main.tf"
 grep -Fq 'role = "transit_gateway"' "$example12/main.tf"

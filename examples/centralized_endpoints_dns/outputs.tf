@@ -116,9 +116,10 @@ output "resolver_rule_evidence" {
 output "private_zone_evidence" {
   description = "Private hosted zone, record, and direct spoke association evidence."
   value = {
-    zones                   = keys(aws_route53_zone.private)
-    record_count            = length(aws_route53_record.private)
-    spoke_association_count = length(aws_route53_zone_association.private_spokes)
+    zones                         = keys(aws_route53_zone.private)
+    record_count                  = length(aws_route53_record.private)
+    initial_vpc_association_count = sum([for zone in values(aws_route53_zone.private) : length(zone.vpc)])
+    spoke_association_count       = length(aws_route53_zone_association.private_spokes)
   }
 }
 

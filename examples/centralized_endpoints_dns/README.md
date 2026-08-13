@@ -108,6 +108,7 @@ Amazon ECR needs separate API and DKR endpoints, a wildcard DKR name in the clas
 
 - Terraform `>= 1.5` and AWS provider `>= 6.29, < 7.0`.
 - AWS credentials with permissions for VPC, TGW, PrivateLink, Route 53 Profiles, Route 53 hosted zones, Route 53 Resolver, security groups, and RAM.
+- The default `allow_external_principals = false` requires AWS RAM sharing with AWS Organizations to be enabled for the account.
 - At least two distinct AZs. Resolver creates one inbound and one outbound IP/ENI per AZ; every interface endpoint creates one endpoint ENI per AZ.
 - `consumer_cidrs` must include every remote HTTPS consumer and the return prefixes reachable through the TGW. They must not overlap `10.250.0.0/16`.
 - On-premises routing must connect the TGW to the declared DNS resolver network, and on-premises DNS must conditionally forward AWS/private domains to both inbound endpoint IPs.
