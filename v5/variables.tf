@@ -235,6 +235,17 @@ variable "addressing" {
   }
 
   validation {
+    condition = length(distinct(concat(
+      [for key, secondary in var.addressing.secondary : secondary.ipv4.association_id if secondary.ipv4 != null && !secondary.ipv4.create],
+      [for key, secondary in var.addressing.secondary : secondary.ipv6.association_id if secondary.ipv6 != null && !secondary.ipv6.create],
+      ))) == length(concat(
+      [for key, secondary in var.addressing.secondary : secondary.ipv4.association_id if secondary.ipv4 != null && !secondary.ipv4.create],
+      [for key, secondary in var.addressing.secondary : secondary.ipv6.association_id if secondary.ipv6 != null && !secondary.ipv6.create],
+    ))
+    error_message = "Injected addressing.secondary association_id values must be unique. One physical VPC association cannot use multiple caller keys."
+  }
+
+  validation {
     condition = alltrue([
       for key, secondary in var.addressing.secondary : secondary.ipv6 == null ? true : (
         secondary.ipv6.netmask_length == null ? true : (

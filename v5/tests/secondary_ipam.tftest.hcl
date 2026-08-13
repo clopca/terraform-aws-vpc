@@ -260,3 +260,41 @@ run "reject_explicit_ipv4_outside_selected_parent" {
 
   expect_failures = [terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"]]
 }
+
+run "reject_duplicate_injected_ipv4_association" {
+  command = plan
+
+  variables {
+    vpc = { name = "duplicate-injected-ipv4" }
+    addressing = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        blue = {
+          ipv4 = {
+            create         = false
+            association_id = "vpc-cidr-assoc-0123456789abcdef0"
+          }
+        }
+        green = {
+          ipv4 = {
+            create         = false
+            association_id = "vpc-cidr-assoc-0123456789abcdef0"
+          }
+        }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      blue = {
+        role = "private"
+        ipv4 = { netmask = 24, cidr_index = 0, secondary_cidr_key = "blue" }
+      }
+      green = {
+        role = "private"
+        ipv4 = { netmask = 24, cidr_index = 0, secondary_cidr_key = "green" }
+      }
+    }
+  }
+
+  expect_failures = [var.addressing]
+}
