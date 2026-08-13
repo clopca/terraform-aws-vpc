@@ -67,6 +67,8 @@ Regional NAT follows network-interface presence across AZs, preserves zonal affi
 
 Regional mode is an operational simplification, not an hourly-cost reduction. AWS charges for every active AZ, including AZs that remain active because network interfaces are present. AZ expansion commonly takes 15–20 minutes and can take up to 60 minutes; traffic may cross AZs and incur transfer charges while expansion completes.
 
+During Regional NAT destroy, the provider can report `Plugin did not respond` while AWS continues deleting asynchronously; retrying the destroy converges.
+
 Use manual BYOIP or existing addresses when external allowlists require deterministic public IPv4 values. Use automatic `eip.mode = "create"` when AWS-managed address and AZ lifecycle is acceptable.
 
 ## Routing and DNS64

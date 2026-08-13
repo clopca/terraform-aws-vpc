@@ -99,6 +99,8 @@ Up to five security groups may be supplied in create mode. Private DNS defaults 
 
 DNS option changes replace the VPC Lattice association under provider semantics. Review private DNS changes as attachment cutovers and preserve the association key `vpc` during migrations.
 
+During VPC Lattice association destroy, the provider can report `Plugin did not respond` while AWS continues deleting asynchronously; retrying the destroy converges.
+
 ## Composition outputs
 
 Prefer these Tier 1 handles:

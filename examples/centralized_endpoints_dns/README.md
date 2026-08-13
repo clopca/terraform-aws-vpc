@@ -117,6 +117,8 @@ Amazon ECR needs separate API and DKR endpoints, a wildcard DKR name in the clas
 
 Check current Service Quotas before applying. Resolver endpoints default to four per account/Region and six IPs per endpoint; interface endpoints and Route 53 Profile associations also have regional quotas.
 
+Route 53 Profile association waiters can run for about 97 seconds; if the provider reports `Plugin did not respond` while AWS completes asynchronously, retrying the same operation converges.
+
 ## Run
 
 Create `centralized-endpoints-dns.tfvars` with real network values when replacing the documentation-only on-premises addresses:
