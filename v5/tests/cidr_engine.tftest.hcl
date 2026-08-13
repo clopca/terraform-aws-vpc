@@ -360,3 +360,42 @@ run "mixed_netmasks_pack_without_overlap" {
     error_message = "Mixed netmasks must pack largest-first without overlapping their six-AZ reservations."
   }
 }
+
+run "explicit_ipv4_inside_primary_parent" {
+  command = plan
+
+  variables {
+    vpc                = { name = "primary-containment-positive" }
+    addressing         = { primary = { cidr_block = "10.20.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.20.10.0/24" } }
+      }
+    }
+  }
+
+  assert {
+    condition     = aws_subnet.main["app/us-east-1a"].cidr_block == "10.20.10.0/24"
+    error_message = "An explicit IPv4 CIDR inside the primary VPC CIDR must remain valid."
+  }
+}
+
+run "reject_explicit_ipv4_outside_primary_parent" {
+  command = plan
+
+  variables {
+    vpc                = { name = "primary-containment-negative" }
+    addressing         = { primary = { cidr_block = "10.20.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "192.168.10.0/24" } }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"]]
+}

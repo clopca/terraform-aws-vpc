@@ -446,10 +446,12 @@ locals {
   }
   explicit_ipv4_parent_checks = {
     for key, subnet in local.subnet_map : key => {
-      child  = subnet.cidr_block
-      parent = try(local.secondary_ipv4_cidr_blocks[subnet.secondary_cidr_key], null)
+      child = subnet.cidr_block
+      parent = subnet.secondary_cidr_key == null ? local.vpc_cidr : (
+        try(local.secondary_ipv4_cidr_blocks[subnet.secondary_cidr_key], null)
+      )
     }
-    if subnet.secondary_cidr_key != null && subnet.cidr_block != null
+    if subnet.cidr_block != null
   }
   explicit_ipv4_containment_octets = {
     for key, check in local.explicit_ipv4_parent_checks : key => {

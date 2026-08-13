@@ -238,10 +238,10 @@ resource "terraform_data" "subnet_secondary_cidr_validation" {
 
     precondition {
       condition = (
-        each.value.secondary_cidr_key == null || each.value.cidr_block == null ||
+        each.value.cidr_block == null ||
         try(local.explicit_ipv4_cidrs_within_parent[each.key], false)
       )
-      error_message = "Subnet '${each.key}' IPv4 CIDR must be contained in the addressing.secondary IPv4 block selected by secondary_cidr_key."
+      error_message = "Subnet '${each.key}' IPv4 CIDR must be contained in its selected primary or secondary VPC CIDR block."
     }
   }
 }
