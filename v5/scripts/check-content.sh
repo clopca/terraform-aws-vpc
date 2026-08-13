@@ -39,3 +39,8 @@ if grep -RIn --exclude='check-content.sh' 'Complete dual-stack and IPv6-native t
   echo "Overbroad IPv6 completeness claim found" >&2
   exit 1
 fi
+
+grep -Fq 'core_network_options.dns_support = optional(bool, false)' "$repo_root/v5/.header.md"
+grep -Fq 'core_network_options.security_group_referencing_support = optional(bool, true)' "$repo_root/v5/.header.md"
+grep -Fq 'core_network_options.routing_policy_label = optional(string)' "$repo_root/v5/.header.md"
+grep -Fq 'nat_gateway.eip.ipam_pool_id = optional(string)' "$repo_root/v5/.header.md"

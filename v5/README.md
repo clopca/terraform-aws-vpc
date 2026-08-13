@@ -168,11 +168,13 @@ The v5 object boundaries intentionally reserve compatible 5.x growth inside
 names are:
 
 - `subnets[*].dns_on_launch` for A/AAAA resource-name records and hostname type;
-- `core_network_options.dns_support`,
-  `core_network_options.security_group_referencing_support`, and
-  `core_network_options.routing_policy_label`; and
+- `core_network_options.dns_support = optional(bool, false)`,
+  `core_network_options.security_group_referencing_support = optional(bool, true)`,
+  and `core_network_options.routing_policy_label = optional(string)` (default
+  `null`, so no label is sent); and
 - `nat_gateway.eip.mode = "ipam_pool"` with
-  `nat_gateway.eip.ipam_pool_id`, mutually exclusive with BYOIP
+  `nat_gateway.eip.ipam_pool_id = optional(string)` (default `null`). Selecting
+  `ipam_pool` requires a non-empty pool ID and is mutually exclusive with BYOIP
   `public_ipv4_pool` and existing `allocation_ids`.
 
 These fields are documented reservations only and are not accepted or applied in

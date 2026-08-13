@@ -721,6 +721,14 @@ compatibility adapters rather than parallel primary APIs. v5.0's IPv6 guarantee 
 complete only within one selected VPC association; multi-association/BYOIPv6 and
 network-border-group ownership remain deferred.
 
+The additive reservations from #176/#178 use these exact defaults and omission
+semantics: `core_network_options.dns_support = optional(bool, false)`,
+`security_group_referencing_support = optional(bool, true)`, and
+`routing_policy_label = optional(string)` with `null` meaning no label. Public
+IPAM EIPs use `nat_gateway.eip.mode = "ipam_pool"` plus
+`ipam_pool_id = optional(string)`; that mode requires a non-empty ID and excludes
+`public_ipv4_pool` and `allocation_ids`.
+
 - **Phase 2**: Route table injection via `subnets[*].route_table_id` — ✅ DONE
 - **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
 - **Phase 2**: IGW injection via `vpc.igw_create=false` + `vpc.igw_id` — ✅ DONE
