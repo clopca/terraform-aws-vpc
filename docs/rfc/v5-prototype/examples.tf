@@ -152,9 +152,9 @@ locals {
     egress_only_internet_gateway = true
 
     flow_logs = {
-      enabled      = true
-      destination  = "s3"
-      traffic_type = "ALL"
+      enabled         = true
+      destination     = "s3"
+      traffic_type    = "ALL"
       log_destination = "arn:aws:s3:::my-flow-logs-bucket"
       s3_options = {
         file_format                = "parquet"
@@ -224,7 +224,7 @@ locals {
           id                              = "tgw-0123456789abcdef0"
           default_route_table_association = false # custom routing
           default_route_table_propagation = false
-          appliance_mode_support          = true  # for inspection VPC
+          appliance_mode_support          = true # for inspection VPC
           dns_support                     = true
         }
       }

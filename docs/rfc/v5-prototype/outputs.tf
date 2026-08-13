@@ -17,11 +17,11 @@ locals {
   )
 
   # Derive subnet groups by role
-  public_subnets  = { for k, v in var.subnets : k => v if v.role == "public" }
-  private_subnets = { for k, v in var.subnets : k => v if v.role == "private" }
+  public_subnets   = { for k, v in var.subnets : k => v if v.role == "public" }
+  private_subnets  = { for k, v in var.subnets : k => v if v.role == "private" }
   isolated_subnets = { for k, v in var.subnets : k => v if v.role == "isolated" }
-  tgw_subnets     = { for k, v in var.subnets : k => v if v.role == "transit_gateway" }
-  cwan_subnets    = { for k, v in var.subnets : k => v if v.role == "core_network" }
+  tgw_subnets      = { for k, v in var.subnets : k => v if v.role == "transit_gateway" }
+  cwan_subnets     = { for k, v in var.subnets : k => v if v.role == "core_network" }
 
   # Build the unified key space: "subnet_name/az" for all subnets
   all_subnet_keys = flatten([
@@ -90,7 +90,7 @@ output "subnet_ids_by_role" {
     Shape: map(subnet_name, list(subnet_id))
     Example: { "public" = ["subnet-abc", "subnet-def"], "app" = [...] }
   EOT
-  value = local.subnet_ids_by_role
+  value       = local.subnet_ids_by_role
 }
 
 output "subnet_ids_by_role_by_az" {
@@ -99,7 +99,7 @@ output "subnet_ids_by_role_by_az" {
     Shape: map(subnet_name, map(az, subnet_id))
     Example: { "app" = { "us-east-1a" = "subnet-abc", "us-east-1b" = "subnet-def" } }
   EOT
-  value = local.subnet_ids_by_role_by_az
+  value       = local.subnet_ids_by_role_by_az
 }
 
 output "route_table_ids" {
@@ -107,7 +107,7 @@ output "route_table_ids" {
     Route table IDs indexed by subnet group name and AZ.
     Shape: map(subnet_name, map(az, route_table_id))
   EOT
-  value = local.route_table_ids
+  value       = local.route_table_ids
 }
 
 output "nat_gateway_ids" {
@@ -115,7 +115,7 @@ output "nat_gateway_ids" {
     NAT Gateway IDs indexed by AZ. Empty map if nat_gateway.mode = "none".
     Shape: map(az, nat_gateway_id)
   EOT
-  value = local.nat_gateway_ids
+  value       = local.nat_gateway_ids
 }
 
 output "nat_public_ips" {
@@ -123,7 +123,7 @@ output "nat_public_ips" {
     NAT Gateway public IPs indexed by AZ. Useful for allowlisting.
     Shape: map(az, public_ip)
   EOT
-  value = local.nat_public_ips
+  value       = local.nat_public_ips
 }
 
 output "internet_gateway_id" {
