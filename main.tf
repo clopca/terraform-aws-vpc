@@ -489,6 +489,7 @@ resource "terraform_data" "top_level_routes_validation" {
     gateway_endpoint_coexistence_conflicts = local.top_level_route_gateway_endpoint_coexistence_conflicts
     invalid_groups                         = local.invalid_top_level_route_groups
     isolation_conflicts                    = local.top_level_route_isolation_conflicts
+    middlebox_subnet_cidr_conflicts        = local.top_level_route_middlebox_subnet_cidr_conflicts
     missing_azs                            = local.top_level_route_missing_azs
     shared_table_zonal_target_conflicts    = local.top_level_route_shared_table_zonal_target_conflicts
   }
@@ -502,6 +503,14 @@ resource "terraform_data" "top_level_routes_validation" {
     precondition {
       condition     = length(local.top_level_route_missing_azs) == 0
       error_message = "Top-level routes using ids_by_az must provide a target for every AZ in from_group. Missing AZs: ${join(", ", [for route_key, azs in local.top_level_route_missing_azs : "${route_key}=[${join(", ", azs)}]"])}."
+    }
+
+    precondition {
+      condition = length(local.top_level_route_middlebox_subnet_cidr_conflicts) == 0
+      error_message = "Top-level middlebox routes that are more specific than the VPC local route must exactly match a module-managed subnet CIDR. Conflicts: ${join(", ", [
+        for route_key, conflict in local.top_level_route_middlebox_subnet_cidr_conflicts :
+        "${route_key}=${conflict.destination} overlaps [${join(", ", conflict.managed_subnets)}]"
+      ])}."
     }
 
     precondition {

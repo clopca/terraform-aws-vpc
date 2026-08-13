@@ -852,6 +852,64 @@ locals {
     )
   }
 
+  # AWS middlebox routes inside a VPC local route must name one complete subnet
+  # CIDR. Validate overlaps with plan-known, module-managed IPv4 subnets. An
+  # injected VPC, injected subnet, or IPAM-derived CIDR remains caller-validated.
+  managed_ipv4_subnet_cidr_checks = {
+    for subnet_key, subnet in local.subnet_map : subnet_key => {
+      cidr = subnet.cidr_block
+      parent_cidr = subnet.secondary_cidr_key == null ? var.addressing.primary.cidr_block : try(
+        var.addressing.secondary[subnet.secondary_cidr_key].ipv4.cidr_block,
+        null,
+      )
+    }
+    if var.vpc.create && subnet.create && subnet.cidr_block != null && (
+      subnet.secondary_cidr_key == null ? var.addressing.primary.cidr_block != null : try(
+        var.addressing.secondary[subnet.secondary_cidr_key].ipv4.create &&
+        var.addressing.secondary[subnet.secondary_cidr_key].ipv4.cidr_block != null,
+        false,
+      )
+    )
+  }
+  managed_ipv4_subnet_cidr_ranges = {
+    for subnet_key, check in local.managed_ipv4_subnet_cidr_checks : subnet_key => {
+      subnet_first  = sum([for i, octet in split(".", cidrhost(check.cidr, 0)) : tonumber(octet) * pow(256, 3 - i)])
+      subnet_last   = sum([for i, octet in split(".", cidrhost(check.cidr, -1)) : tonumber(octet) * pow(256, 3 - i)])
+      parent_first  = sum([for i, octet in split(".", cidrhost(check.parent_cidr, 0)) : tonumber(octet) * pow(256, 3 - i)])
+      parent_last   = sum([for i, octet in split(".", cidrhost(check.parent_cidr, -1)) : tonumber(octet) * pow(256, 3 - i)])
+      parent_prefix = tonumber(split("/", check.parent_cidr)[1])
+    }
+  }
+  top_level_middlebox_ipv4_route_ranges = {
+    for route_key, route in var.routes : route_key => {
+      destination = route.destination.value
+      first       = sum([for i, octet in split(".", cidrhost(route.destination.value, 0)) : tonumber(octet) * pow(256, 3 - i)])
+      last        = sum([for i, octet in split(".", cidrhost(route.destination.value, -1)) : tonumber(octet) * pow(256, 3 - i)])
+      prefix      = tonumber(split("/", route.destination.value)[1])
+    }
+    if route.destination.type == "ipv4_cidr" && contains(["vpc_endpoint", "network_interface"], route.target.type)
+  }
+  top_level_route_middlebox_subnet_cidr_conflicts = {
+    for route_key, route in local.top_level_middlebox_ipv4_route_ranges : route_key => {
+      destination = route.destination
+      managed_subnets = sort([
+        for subnet_key, subnet in local.managed_ipv4_subnet_cidr_ranges : subnet_key
+        if route.first <= subnet.subnet_last && subnet.subnet_first <= route.last &&
+        route.first >= subnet.parent_first && route.last <= subnet.parent_last &&
+        route.prefix > subnet.parent_prefix
+      ])
+    }
+    if length([
+      for subnet_key, subnet in local.managed_ipv4_subnet_cidr_ranges : subnet_key
+      if route.first <= subnet.subnet_last && subnet.subnet_first <= route.last &&
+      route.first >= subnet.parent_first && route.last <= subnet.parent_last &&
+      route.prefix > subnet.parent_prefix
+      ]) > 0 && !anytrue([
+      for subnet in values(local.managed_ipv4_subnet_cidr_ranges) :
+      route.first == subnet.subnet_first && route.last == subnet.subnet_last
+    ])
+  }
+
   # Managed tables preserve <route-key>/<az> identity. Injected tables are one
   # physical table across all AZs, so a static target has one /shared instance.
   top_level_routes = merge(

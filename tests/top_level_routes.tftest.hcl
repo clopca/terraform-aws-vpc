@@ -112,6 +112,113 @@ run "top_level_zonal_targets_cover_all_destination_types" {
   }
 }
 
+run "reject_aggregated_managed_subnet_destination_for_vpc_endpoint" {
+  command = plan
+
+  variables {
+    vpc                = { name = "aggregated-middlebox-destination" }
+    addressing         = { primary = { cidr_block = "10.152.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      application = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.152.10.0/24", us-east-1b = "10.152.11.0/24" } }
+      }
+      firewall = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.152.20.0/24", us-east-1b = "10.152.21.0/24" } }
+      }
+    }
+    routes = {
+      invalid-return = {
+        from_group  = "firewall"
+        destination = { type = "ipv4_cidr", value = "10.152.10.0/23" }
+        target = {
+          type      = "vpc_endpoint"
+          ids_by_az = { us-east-1a = "vpce-a", us-east-1b = "vpce-b" }
+        }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.top_level_routes_validation]
+}
+
+run "allow_exact_managed_subnet_destination_for_vpc_endpoint" {
+  command = plan
+
+  variables {
+    vpc                = { name = "exact-middlebox-destination" }
+    addressing         = { primary = { cidr_block = "10.153.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      application = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.153.10.0/24", us-east-1b = "10.153.11.0/24" } }
+      }
+      firewall = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.153.20.0/24", us-east-1b = "10.153.21.0/24" } }
+      }
+    }
+    routes = {
+      application-a-return = {
+        from_group  = "firewall"
+        destination = { type = "ipv4_cidr", value = "10.153.10.0/24" }
+        target = {
+          type      = "vpc_endpoint"
+          ids_by_az = { us-east-1a = "vpce-a", us-east-1b = "vpce-b" }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(aws_route.top_level) == 2 &&
+      alltrue([for route in values(aws_route.top_level) : route.destination_cidr_block == "10.153.10.0/24"])
+    )
+    error_message = "A VPC endpoint route that exactly matches a managed subnet CIDR must plan successfully."
+  }
+}
+
+run "allow_unverifiable_injected_subnet_destination_for_vpc_endpoint" {
+  command = plan
+
+  variables {
+    vpc                = { name = "injected-subnet-middlebox-destination" }
+    addressing         = { primary = { cidr_block = "10.154.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      external-application = {
+        role         = "private"
+        create       = false
+        existing_ids = { us-east-1a = "subnet-external-a", us-east-1b = "subnet-external-b" }
+        ipv4         = { cidrs_by_az = { us-east-1a = "10.154.10.0/24", us-east-1b = "10.154.11.0/24" } }
+      }
+      firewall = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.154.20.0/24", us-east-1b = "10.154.21.0/24" } }
+      }
+    }
+    routes = {
+      external-return = {
+        from_group  = "firewall"
+        destination = { type = "ipv4_cidr", value = "10.154.10.0/23" }
+        target = {
+          type      = "vpc_endpoint"
+          ids_by_az = { us-east-1a = "vpce-a", us-east-1b = "vpce-b" }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_route.top_level) == 2
+    error_message = "Routes for injected subnet CIDRs must remain caller-validated because the module does not own that subnet topology."
+  }
+}
+
 run "computed_zonal_targets_do_not_create_a_module_cycle" {
   command = plan
 

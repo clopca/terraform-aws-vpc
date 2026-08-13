@@ -142,6 +142,8 @@ Each route key is caller-owned state identity and cannot contain `/`. Exactly on
 
 Managed tables create `<route-key>/<az>` instances. An injected route table represents one physical table across its subnets, so it creates one `<route-key>/shared` instance and rejects `ids_by_az`. Destination and target IDs remain values and can be unknown during planning, which lets endpoint modules consume VPC outputs and return their computed AZ maps without a dependency cycle.
 
+AWS requires routes toward a VPC endpoint that are more specific than the local route to exactly match a subnet CIDR block. The module applies this middlebox constraint to `vpc_endpoint` and `network_interface` targets when the destination overlaps a plan-known IPv4 CIDR of a module-managed VPC and subnet. CIDRs for injected VPCs, injected subnets, and IPAM-derived subnets are not plan-time verifiable; validate those destinations against the live subnet inventory before apply.
+
 Top-level routes fail closed for `isolated` groups and for injected tables shared with an isolated group. Destination collision checks span both route surfaces and reject more than one generic declaration for the same physical table and destination. A `prefix_list` destination on a table associated with an S3 or DynamoDB gateway endpoint also fails unless `acknowledge_gateway_endpoint_coexistence = true`; set it only after independently verifying that the explicit prefix list differs from the service-managed endpoint route.
 
 ## Gateway endpoints

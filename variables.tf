@@ -1135,7 +1135,14 @@ variable "routes" {
     tables. Exactly one of `id` and `ids_by_az` must be set. A `prefix_list`
     destination on a table with an S3 or DynamoDB gateway endpoint is rejected
     unless `acknowledge_gateway_endpoint_coexistence=true`, because the endpoint's
-    service-managed prefix-list ID cannot be compared during planning. Destination
+    service-managed prefix-list ID cannot be compared during planning.
+
+    AWS requires routes toward a VPC endpoint that are more specific than the local
+    route to exactly match a subnet CIDR block. The module applies this middlebox
+    constraint to `vpc_endpoint` and `network_interface` targets when a destination
+    overlaps a plan-known IPv4 CIDR of a module-managed VPC and subnet. CIDRs of an
+    injected VPC, injected subnets, and IPAM-derived subnets cannot be checked at
+    plan time; AWS enforces the constraint when the route is created. Destination
     and target types use the same closed unions as `subnets[*].routes`.
   EOT
   type = map(object({
