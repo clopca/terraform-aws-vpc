@@ -1,28 +1,32 @@
 variable "aws_region" {
-  description = "AWS Region containing the injected hub dependencies."
+  description = "AWS Region containing the hub dependencies."
   type        = string
   default     = "us-west-2"
 }
 
-variable "existing_igw_id" {
-  description = "Existing Internet Gateway ID attached to the hub VPC."
-  type        = string
+variable "transit_gateway_ids" {
+  description = "Distinct Transit Gateway IDs keyed by stable east and west attachment identities."
+  type        = map(string)
   nullable    = false
 
   validation {
-    condition     = can(regex("^igw-[0-9a-f]{8,17}$", var.existing_igw_id))
-    error_message = "existing_igw_id must be a valid Internet Gateway ID."
+    condition = (
+      toset(keys(var.transit_gateway_ids)) == toset(["east", "west"]) &&
+      length(distinct(values(var.transit_gateway_ids))) == 2 &&
+      alltrue([for id in values(var.transit_gateway_ids) : can(regex("^tgw-[0-9a-f]{8,17}$", id))])
+    )
+    error_message = "transit_gateway_ids must contain distinct valid Transit Gateway IDs under exactly the keys east and west."
   }
 }
 
-variable "transit_gateway_id" {
-  description = "Transit Gateway ID used by the hub and inspection VPC attachments."
+variable "vpc_peering_connection_id" {
+  description = "Existing VPC peering connection targeted by the generic security-services route."
   type        = string
   nullable    = false
 
   validation {
-    condition     = can(regex("^tgw-[0-9a-f]{8,17}$", var.transit_gateway_id))
-    error_message = "transit_gateway_id must be a valid Transit Gateway ID."
+    condition     = can(regex("^pcx-[0-9a-f]{8,17}$", var.vpc_peering_connection_id))
+    error_message = "vpc_peering_connection_id must be a valid VPC peering connection ID."
   }
 }
 

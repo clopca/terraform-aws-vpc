@@ -2,9 +2,7 @@ module "vpc" {
   source = "../.."
 
   vpc = {
-    name       = "network-hub-vpc"
-    igw_create = false
-    igw_id     = var.existing_igw_id # Inject existing IGW [R1-H2]
+    name = "network-hub-vpc"
   }
 
   addressing = {
@@ -19,7 +17,7 @@ module "vpc" {
   }
 
   subnets = {
-    # Multiple public groups allowed [R1-C1]
+    # Multiple public groups model distinct edge responsibilities.
     public = {
       role = "public"
       ipv4 = {
@@ -34,7 +32,7 @@ module "vpc" {
       }
     }
 
-    # Second public group for edge/GWLB [R1-C1]
+    # A second public group reserves stable caller-owned edge identity.
     edge = {
       role = "public"
       ipv4 = {
@@ -58,12 +56,22 @@ module "vpc" {
       ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 2 }
       routing = {
         nat_gateway = true
-        # Multiple TGW destinations [R1-C3], including IPv6.
-        transit_gateway      = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
-        transit_gateway_ipv6 = ["2001:db8:100::/48"]
+        transit_gateway_attachments = {
+          east = ["10.0.0.0/8", "172.16.0.0/12"]
+          west = ["192.168.0.0/16"]
+        }
+        transit_gateway_attachments_ipv6 = {
+          east = ["2001:db8:100::/48"]
+        }
         # Route workload traffic to Cloud WAN from a non-attachment group.
         core_network      = ["100.64.0.0/10"]
         core_network_ipv6 = ["2001:db8:200::/48"]
+      }
+      routes = {
+        security-services = {
+          destination = { type = "ipv4_cidr", value = "198.18.0.0/15" }
+          target      = { type = "vpc_peering", id = var.vpc_peering_connection_id }
+        }
       }
       tags = { Purpose = "network-firewall-endpoints" }
     }
@@ -77,14 +85,6 @@ module "vpc" {
       ipv6 = { secondary_cidr_key = "amazon-ipv6", auto_assign = true, cidr_index = 3 }
       routing = {
         nat_gateway = true
-      }
-      transit_gateway_options = {
-        id                              = var.transit_gateway_id
-        default_route_table_association = false
-        default_route_table_propagation = false
-        appliance_mode_support          = true
-        dns_support                     = true
-        security_group_referencing      = true
       }
     }
 
@@ -102,6 +102,28 @@ module "vpc" {
         require_acceptance = true
         accept_attachment  = true
       }
+    }
+  }
+
+  # Stable caller keys are attachment identity and are also selected by routes.
+  transit_gateway_attachments = {
+    east = {
+      subnet_group                    = "tgw"
+      id                              = var.transit_gateway_ids["east"]
+      default_route_table_association = false
+      default_route_table_propagation = false
+      appliance_mode_support          = true
+      dns_support                     = true
+      security_group_referencing      = true
+    }
+    west = {
+      subnet_group                    = "tgw"
+      id                              = var.transit_gateway_ids["west"]
+      default_route_table_association = false
+      default_route_table_propagation = false
+      appliance_mode_support          = true
+      dns_support                     = true
+      security_group_referencing      = true
     }
   }
 
@@ -153,17 +175,16 @@ module "inspection_vpc" {
       role = "private"
       ipv4 = { netmask = 24 }
       routing = {
-        nat_gateway     = true
-        transit_gateway = ["10.0.0.0/8"]
+        nat_gateway = true
+        transit_gateway_attachments = {
+          inspection = ["10.0.0.0/8"]
+        }
       }
     }
 
     tgw = {
       role = "transit_gateway"
       ipv4 = { netmask = 28 }
-      transit_gateway_options = {
-        id = var.transit_gateway_id
-      }
     }
 
     # Private NAT needs a subnet to live in — but private NAT doesn't require
@@ -171,6 +192,13 @@ module "inspection_vpc" {
     nat-host = {
       role = "private"
       ipv4 = { netmask = 28 }
+    }
+  }
+
+  transit_gateway_attachments = {
+    inspection = {
+      subnet_group = "tgw"
+      id           = var.transit_gateway_ids["east"]
     }
   }
 

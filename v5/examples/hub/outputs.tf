@@ -19,8 +19,13 @@ output "subnets_by_role" {
 }
 
 output "igw_id" {
-  description = "Injected Internet Gateway ID used by the hub VPC."
+  description = "Module-owned Internet Gateway ID used by the hub VPC."
   value       = module.vpc.internet_gateway_id
+}
+
+output "igw_count" {
+  description = "Number of Internet Gateways created by the hub module."
+  value       = length(module.vpc.resources.internet_gateway)
 }
 
 output "nat_gateway_ids" {
@@ -53,9 +58,14 @@ output "inspection_nat_ids" {
   value       = module.inspection_vpc.nat_gateway_ids
 }
 
-output "transit_gateway_attachment_id" {
-  description = "ID of the hub Transit Gateway attachment."
-  value       = module.vpc.transit_gateway_attachment_id
+output "transit_gateway_attachment_ids" {
+  description = "Hub Transit Gateway attachment IDs by stable caller key."
+  value       = module.vpc.transit_gateway_attachment_ids
+}
+
+output "generic_route_count" {
+  description = "Number of generic typed VPC peering routes created by the hub module."
+  value       = length(module.vpc.resources.routes.custom)
 }
 
 output "core_network_attachment_id" {
