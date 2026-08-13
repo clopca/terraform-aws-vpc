@@ -22,6 +22,11 @@ moved {
   to   = module.vpc.aws_vpc.main[0]
 }
 
+import {
+  to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
+  id = "vpc-cidr-assoc-0123456789abcdef0"
+}
+
 output "vpc_id" {
   value = module.vpc.vpc_id
 }

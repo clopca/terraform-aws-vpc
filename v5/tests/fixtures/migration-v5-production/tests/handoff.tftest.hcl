@@ -44,6 +44,10 @@ run "plan_production_module_handoff" {
   command   = plan
   state_key = "production-ipv6-handoff"
 
+  # Terraform test mock providers cannot execute importers. This override supplies
+  # only the imported read values; test-migration-handoff.sh asserts that the plan
+  # action is import (never create), while test-ipv6-import-shape.sh exercises the
+  # real AWS provider 6.59 importer.
   override_resource {
     target          = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
     override_during = plan
