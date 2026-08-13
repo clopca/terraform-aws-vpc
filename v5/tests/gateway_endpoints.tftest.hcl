@@ -46,6 +46,7 @@ run "create_inject_and_associate_gateway_endpoints" {
         role               = "private"
         ipv4               = { cidrs_by_az = { "us-east-1a" = "10.70.2.0/24", "us-east-1b" = "10.70.3.0/24" } }
         manage_route_table = false
+        route_table_key    = "shared"
         route_table_id     = "rtb-shared"
         routing            = { s3_gateway_endpoint = true }
       }
@@ -82,7 +83,7 @@ run "create_inject_and_associate_gateway_endpoints" {
       "app/us-east-1b/gateway-endpoint/s3",
       "app/us-east-1a/gateway-endpoint/dynamodb",
       "app/us-east-1b/gateway-endpoint/dynamodb",
-      "shared/injected/gateway-endpoint/s3",
+      "injected/shared/gateway-endpoint/s3",
     ])
     error_message = "Endpoint associations must use stable service/group/route-table keys and de-duplicate injected shared route tables."
   }

@@ -306,6 +306,26 @@ resource "terraform_data" "dns64_requires_nat_gateway" {
   }
 }
 
+# ─── Injected route-table physical identity ──────────────────────────────
+resource "terraform_data" "injected_route_table_identity_validation" {
+  count = length(local.injected_route_table_ids_by_key) > 0 ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition = alltrue([
+        for key, groups in local.injected_route_table_groups_by_key :
+        length(distinct([for group in groups : var.subnets[group].route_table_id])) == 1
+      ])
+      error_message = "All subnet groups sharing one route_table_key must use the same route_table_id."
+    }
+
+    precondition {
+      condition     = length(distinct(values(local.injected_route_table_ids_by_key))) == length(local.injected_route_table_ids_by_key)
+      error_message = "One injected route_table_id cannot use multiple route_table_key values; reuse the same physical identity key across groups."
+    }
+  }
+}
+
 # ─── Shared injected route table cannot select a per-AZ NAT target ────────
 resource "terraform_data" "injected_route_table_all_az_nat_validation" {
   for_each = var.nat_gateway.mode == "all_azs" ? {

@@ -267,6 +267,7 @@ locals {
         )
         tags               = cfg.tags
         manage_route_table = cfg.manage_route_table
+        route_table_key    = cfg.route_table_key
         route_table_id     = cfg.route_table_id
 
         # CIDR resolution: explicit > calculated > IPAM (null, resolved at apply)
@@ -505,11 +506,19 @@ locals {
     )
   }
 
-  # Route declarations are materialized once per created RT, or once per group
-  # for an injected shared RT. This avoids duplicate routes to the same injected
-  # table when a subnet group spans multiple AZs.
-  route_table_targets = merge([
-    for name, cfg in var.subnets : cfg.manage_route_table ? {
+  # A caller-owned key represents each injected physical route table. Multiple
+  # groups may reference one key; their routing intent is unioned and resources
+  # are materialized once for that physical identity.
+  injected_route_table_groups_by_key = {
+    for name, cfg in var.subnets : cfg.route_table_key => name...
+    if !cfg.manage_route_table
+  }
+  injected_route_table_ids_by_key = {
+    for key, groups in local.injected_route_table_groups_by_key :
+    key => var.subnets[groups[0]].route_table_id
+  }
+  managed_route_table_targets = merge([
+    for name, cfg in var.subnets : {
       for az in local.azs : "${name}/${az}" => {
         name           = name
         az             = az
@@ -517,16 +526,32 @@ locals {
         routing        = local.resolved_routing[name]
         has_ipv6       = cfg.ipv6 != null
       }
-      } : {
-      "${name}/injected" = {
-        name           = name
-        az             = null
-        route_table_id = cfg.route_table_id
-        routing        = local.resolved_routing[name]
-        has_ipv6       = cfg.ipv6 != null
-      }
-    }
+    } if cfg.manage_route_table
   ]...)
+  injected_route_table_targets = {
+    for key, groups in local.injected_route_table_groups_by_key : "injected/${key}" => {
+      name           = key
+      az             = null
+      route_table_id = local.injected_route_table_ids_by_key[key]
+      routing = {
+        internet_gateway          = anytrue([for group in groups : local.resolved_routing[group].internet_gateway])
+        nat_gateway               = anytrue([for group in groups : local.resolved_routing[group].nat_gateway])
+        egress_only_igw           = anytrue([for group in groups : local.resolved_routing[group].egress_only_igw])
+        dns64                     = anytrue([for group in groups : local.resolved_routing[group].dns64])
+        s3_gateway_endpoint       = anytrue([for group in groups : local.resolved_routing[group].s3_gateway_endpoint])
+        dynamodb_gateway_endpoint = anytrue([for group in groups : local.resolved_routing[group].dynamodb_gateway_endpoint])
+        transit_gateway           = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].transit_gateway, [])]))
+        transit_gateway_ipv6      = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].transit_gateway_ipv6, [])]))
+        core_network              = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network, [])]))
+        core_network_ipv6         = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network_ipv6, [])]))
+      }
+      has_ipv6 = anytrue([for group in groups : var.subnets[group].ipv6 != null])
+    }
+  }
+  route_table_targets = merge(
+    local.managed_route_table_targets,
+    local.injected_route_table_targets,
+  )
 
   # ─── TGW ID resolution (from subnet group with role = transit_gateway) ──
   tgw_id = try([

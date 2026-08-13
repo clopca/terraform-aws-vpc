@@ -218,7 +218,7 @@ run "existing_vpc_example" {
       output.module_ownership.vpcs == 0 &&
       output.module_ownership.internet_gateways == 0 &&
       output.module_ownership.elastic_ips == 0 &&
-      toset(keys(output.module_ownership.injected_route_tables)) == toset(["public"])
+      toset(keys(output.module_ownership.injected_route_tables)) == toset(["external-public"])
     )
     error_message = "The existing-VPC example must inject its VPC, IGW, public route table, and NAT EIPs while creating subnets and two NAT Gateways."
   }

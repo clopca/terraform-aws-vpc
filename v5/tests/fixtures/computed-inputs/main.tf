@@ -54,6 +54,7 @@ module "vpc" {
     public = {
       role               = "public"
       manage_route_table = false
+      route_table_key    = "external-public"
       route_table_id     = terraform_data.route_table_id.output
       ipv4               = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
       routing            = { internet_gateway = true }

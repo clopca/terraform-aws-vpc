@@ -524,15 +524,12 @@ output "resources" {
     injected_subnets               = data.aws_subnet.existing
     subnet_ids                     = local.subnet_ids
     route_tables                   = aws_route_table.main
-    injected_route_table_ids = {
-      for name, cfg in var.subnets : name => cfg.route_table_id
-      if !cfg.manage_route_table
-    }
-    route_table_associations = aws_route_table_association.main
-    network_acls             = aws_network_acl.this
-    network_acl_rules        = aws_network_acl_rule.this
-    network_acl_associations = aws_network_acl_association.this
-    network_acl_ids          = local.network_acl_ids
+    injected_route_table_ids       = local.injected_route_table_ids_by_key
+    route_table_associations       = aws_route_table_association.main
+    network_acls                   = aws_network_acl.this
+    network_acl_rules              = aws_network_acl_rule.this
+    network_acl_associations       = aws_network_acl_association.this
+    network_acl_ids                = local.network_acl_ids
     default_resources = {
       security_groups = aws_default_security_group.this
       network_acls    = aws_default_network_acl.this

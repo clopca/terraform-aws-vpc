@@ -309,12 +309,13 @@ variable "subnets" {
         as a non-breaking change.
       - core_network: limited to 1 group (same AWS API constraint)
 
-    Set `manage_route_table = false` plus `route_table_id` to inject one existing
-    route table for the whole subnet group. The module will not create route tables
-    for that group; it associates
-    every AZ subnet with the injected table and adds all routes declared in
-    `routing` to it. A shared injected table cannot provide per-AZ NAT targets, so
-    `nat_gateway.mode = "all_azs"` is rejected when that group requests NAT/NAT64.
+    Set `manage_route_table = false` plus `route_table_key` and `route_table_id`
+    to inject an existing route table. `route_table_key` is caller-owned physical
+    identity: groups sharing one table must use the same key and ID. The module
+    associates every subnet while materializing each route and gateway-endpoint
+    association only once per physical key. A shared injected table cannot provide
+    per-AZ NAT targets, so `nat_gateway.mode = "all_azs"` is rejected when any
+    referencing group requests NAT/NAT64.
 
     `name_format` controls the complete subnet Name tag with `{vpc}`, `{group}`,
     and `{az}` placeholders. `{group}` resolves `name_prefix` or the map key.
@@ -363,7 +364,8 @@ variable "subnets" {
     route_table_name_format = optional(string)
     tags                    = optional(map(string), {})
     manage_route_table      = optional(bool, true)
-    route_table_id          = optional(string) # required when manage_route_table=false
+    route_table_key         = optional(string) # stable physical identity when injecting
+    route_table_id          = optional(string) # effective ID when injecting
 
     # ── Optional stateless Network ACL (one per subnet group) ──
     # Rule map keys are the explicit AWS rule numbers and therefore stable state
@@ -459,11 +461,14 @@ variable "subnets" {
 
   validation {
     condition = alltrue([
-      for k, v in var.subnets : v.manage_route_table ? v.route_table_id == null : (
+      for k, v in var.subnets : v.manage_route_table ? (
+        v.route_table_key == null && v.route_table_id == null
+        ) : (
+        v.route_table_key != null && can(regex("^[a-z0-9][a-z0-9_-]*$", v.route_table_key)) &&
         v.route_table_id != null && length(trimspace(v.route_table_id)) > 0
       )
     ])
-    error_message = "manage_route_table=true requires route_table_id=null; manage_route_table=false requires a non-empty route_table_id (which may be computed)."
+    error_message = "manage_route_table=true requires route_table_key/route_table_id=null; inject mode requires a stable lowercase route_table_key and non-empty route_table_id."
   }
 
   validation {

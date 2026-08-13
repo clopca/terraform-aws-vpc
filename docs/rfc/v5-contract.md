@@ -219,7 +219,8 @@ variable "subnets" {
     route_table_name_format = optional(string)  # defaults to name_format
     tags                    = optional(map(string), {})
     manage_route_table      = optional(bool, true)
-    route_table_id     = optional(string) # required when manage_route_table=false; may be computed
+    route_table_key         = optional(string) # caller-owned physical identity when injecting
+    route_table_id          = optional(string) # effective ID; may be computed
 
     # ── Routing (co-located, list-based destinations) [R1-C3] ──
     routing = optional(object({
@@ -291,11 +292,12 @@ variable "nat_gateway" {
 
 ### 3.3.1 Route Table and NAT Placement Injection Semantics
 
-- `subnets.<group>.manage_route_table=false` plus `route_table_id` injects one
-  existing route table shared by every AZ subnet in the group. The module skips
-  `aws_route_table` creation, associates those subnets to the injected table, and
-  adds the routes declared in `routing` to that existing table. Callers must avoid
-  destination conflicts with routes managed outside the module.
+- `subnets.<group>.manage_route_table=false` plus `route_table_key` and
+  `route_table_id` injects an existing table. `route_table_key` is caller-owned
+  physical identity: all groups sharing a table reuse that key and ID. The module
+  associates every subnet but unions routing intent and creates each route/endpoint
+  association once per physical key. Different IDs under one key, or one known ID
+  under multiple keys, fail contract validation.
 - Because a single shared route table cannot select a different zonal NAT Gateway
   per AZ, injected tables that request `nat_gateway` or `dns64` reject
   `nat_gateway.mode = "all_azs"`. They support `single_az` or `regional`, where one

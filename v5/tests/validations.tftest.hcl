@@ -171,6 +171,7 @@ run "reject_shared_route_table_with_all_az_nat" {
       app = {
         role               = "private"
         manage_route_table = false
+        route_table_key    = "shared-app"
         route_table_id     = "rtb-existing"
         ipv4               = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24", "us-east-1b" = "10.0.1.0/24" } }
         routing            = { nat_gateway = true }

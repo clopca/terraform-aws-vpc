@@ -69,6 +69,7 @@ module "vpc" {
         }
       }
       manage_route_table = false
+      route_table_key    = "external-public"
       route_table_id     = aws_route_table.public.id
       routing = {
         internet_gateway = true

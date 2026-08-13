@@ -6,7 +6,7 @@ The key settings are:
 
 - `vpc.create = false` plus `vpc.id` for the externally created VPC;
 - `vpc.igw_create = false` plus `vpc.igw_id` for the attached external IGW;
-- `manage_route_table = false` plus `route_table_id` for a shared external public route table;
+- `manage_route_table = false` plus stable `route_table_key` and `route_table_id` for a shared external public route table;
 - `nat_gateway.eip.mode = "existing"` with external EIP allocation IDs;
 - explicit booleans deciding ownership while IDs may remain computed until apply.
 
