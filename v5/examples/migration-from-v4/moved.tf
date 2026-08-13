@@ -6,10 +6,10 @@
 # has applied the upgrade. Terraform moved blocks do not support wildcards.
 #
 # 63 active moved blocks cover the union of all demonstrated features; they are
-# not a fixed quota for every deployment. The real remediation-3 fixture used 26
-# applicable moves and omitted 37 whose source resources were absent. Start from
-# `terraform state list`, keep only blocks with an existing source, and repeat the
-# private-group blocks for every actual v4 private group.
+# not a fixed quota for every deployment. The representative migration fixture
+# used 26 applicable moves and omitted 37 whose source resources were absent.
+# Start from `terraform state list`, keep only blocks with an existing source,
+# and repeat the private-group blocks for every actual v4 private group.
 #
 # Feature groups in this file:
 #   - public subnet/route table/association: 6 (2 AZs)

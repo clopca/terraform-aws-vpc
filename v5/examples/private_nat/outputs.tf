@@ -23,9 +23,9 @@ output "nat_public_ips" {
   value       = module.vpc.nat_public_ips
 }
 
-output "transit_gateway_attachment_id" {
-  description = "ID of the VPC attachment to the existing Transit Gateway."
-  value       = module.vpc.transit_gateway_attachment_id
+output "transit_gateway_attachment_ids" {
+  description = "Transit Gateway attachment IDs by stable caller key."
+  value       = module.vpc.transit_gateway_attachment_ids
 }
 
 output "route_counts" {

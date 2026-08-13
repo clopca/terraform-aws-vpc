@@ -31,7 +31,7 @@ flowchart LR
 4. Copy all three commented root `removed` blocks plus the `import` block from `main.tf`; their module segments intentionally omit `[0]` instance keys. Then run the saved normal-plan gate in the upgrade guide. Do not apply this sample unchanged.
 5. Require zero destroys and zero replacements, apply the reviewed plan, verify the inline policy and new log events, then run the documented IAM CLI cleanup.
 
-The example has two AZs and a feature-union catalog. The catalog size is not a migration target: the real remediation fixture selected 26 moves and omitted 37 absent sources.
+The example has two AZs and a feature-union catalog. The catalog size is not a migration target: the representative migration fixture selected 26 moves and omitted 37 absent sources.
 
 ## Why the CloudWatch log group is different
 
@@ -40,7 +40,7 @@ v4 configured `name_prefix`; v5 configures the exact fixed `name`. AWS provider 
 v4 gave the Flow Log `Name = var.name` but left the generated log group without a
 `Name` tag. The example therefore sets `flow_logs.default.name_format = "{vpc}"`
 and `cloudwatch_options.name_format = ""`; the two resources converge without the
-tag updates observed in rehearsal #3.
+tag updates observed in the migration rehearsal.
 
 The declarative handoff requires Terraform >= 1.7 because `removed { destroy = false }` is newer than import blocks. Terraform < 1.5 cannot run this v5 module. As an ownership plan B, set `create_destination = false` and inject the existing log-group ARN after a separate logging stack owns it; the VPC module then manages only the Flow Log.
 

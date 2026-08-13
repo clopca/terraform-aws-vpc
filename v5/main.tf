@@ -108,7 +108,7 @@ resource "aws_vpc_ipv6_cidr_block_association" "secondary" {
   ipv6_netmask_length              = each.value.netmask_length
 }
 
-# ─── Internet Gateway — create-or-inject [R1-H2] ─────────────────────────
+# ─── Internet Gateway — create-or-inject ─────────────────────────
 # Created only when needed (subnets with IGW routing) and not injected.
 
 resource "terraform_data" "igw_injection_validation" {
@@ -311,11 +311,11 @@ resource "terraform_data" "injected_ipv6_association_validation" {
   }
 }
 
-# ─── NAT Gateway precondition resource [R2-C3] ───────────────────────────
+# ─── NAT Gateway precondition resource ───────────────────────────
 # Validates that nat_gateway.az is within the resolved AZ list.
 # Uses a null_resource with precondition because this is a cross-variable
 # invariant that cannot be enforced in variable validation blocks.
-# [R2-H1]: Precondition on resource ensures evaluation even with unknown AZ names.
+# Precondition on resource ensures evaluation even with unknown AZ names.
 
 resource "terraform_data" "nat_gateway_az_validation" {
   count = var.nat_gateway.mode == "single_az" ? 1 : 0
@@ -361,7 +361,7 @@ resource "terraform_data" "ipv6_cidr_calculation_validation" {
   }
 }
 
-# ─── NAT Gateway placement validation [R1-H2 Phase 2] ────────────────────
+# ─── NAT Gateway placement validation ────────────────────
 # Only created NAT Gateways need a host subnet. Explicit subnet_group is
 # validated for existence and semantic compatibility; null uses the documented
 # first-compatible-group fallback.
@@ -499,7 +499,7 @@ resource "terraform_data" "eigw_requires_ipv6" {
   }
 }
 
-# ─── Explicit subnet CIDR keys vs AZ set validation [R1-H1] ─────────────
+# ─── Explicit subnet CIDR keys vs AZ set validation ─────────────
 # Explicit maps must name exactly the configured AZs. No list position can
 # silently reassign a CIDR when an AZ is inserted or reordered.
 

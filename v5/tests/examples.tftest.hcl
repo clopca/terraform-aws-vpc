@@ -195,7 +195,9 @@ run "ipam_example" {
 
   assert {
     condition = (
-      toset(keys(output.secondary_cidr_association_ids)) == toset(["analytics", "ipv6-ipam", "legacy"]) &&
+      toset(keys(output.secondary_ipv4_cidr_association_ids)) == toset(["analytics", "legacy"]) &&
+      toset(keys(output.secondary_ipv6_cidr_association_ids)) == toset(["ipv6-ipam"]) &&
+      toset(keys(output.vpc_ipv6_cidr_blocks)) == toset(["ipv6-ipam"]) &&
       toset(keys(output.subnet_ids)) == toset(["analytics", "application", "ipv6-native", "legacy"]) &&
       alltrue([for subnets in values(output.subnet_ids) : length(subnets) == 2])
     )

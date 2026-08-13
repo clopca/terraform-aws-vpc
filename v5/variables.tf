@@ -263,7 +263,7 @@ variable "addressing" {
 # ─────────────────────────────────────────────────────────────────────────────
 # AVAILABILITY ZONES
 #
-# IMPORTANT [R1-H4]: `count` mode takes the first N AZs alphabetically from the
+# IMPORTANT: `count` mode takes the first N AZs alphabetically from the
 # region. If AWS launches a new AZ that sorts before existing ones, your AZ set
 # changes. For PRODUCTION deployments, ALWAYS use explicit `names`. The `count`
 # mode is intended for development/prototyping where AZ stability is not critical.
@@ -374,7 +374,7 @@ variable "transit_gateway_attachments" {
 # ─────────────────────────────────────────────────────────────────────────────
 # SUBNETS — typed with explicit roles and co-located routing
 #
-# STATE KEY CONTRACT [R1-H1]:
+# STATE KEY CONTRACT:
 #   Map keys are IMMUTABLE after initial deployment. The state address of every
 #   subnet is `aws_subnet.main["<key>/<az>"]`. Renaming a key destroys and
 #   recreates all subnets in that group. To rename safely, use Terraform `moved`
@@ -384,7 +384,7 @@ variable "transit_gateway_attachments" {
 #   Keys must be stable identifiers (lowercase, alphanumeric + hyphens).
 #   If you need a display name different from the state key, use `name_prefix`.
 #
-# NETMASK STABILITY [R1-C2]:
+# NETMASK STABILITY:
 #   When using `ipv4.netmask`, CIDRs are calculated deterministically:
 #   - Every group reserves six AZ slots, so appending AZs does not move CIDRs
 #   - Pinned groups use absolute `cidr_index` slots and never move
@@ -408,7 +408,7 @@ variable "subnets" {
       - core_network:    dedicated small subnets for Cloud WAN attachments
 
     Multiple subnet groups per role are allowed:
-      - public: N groups allowed (e.g. DMZ, edge, GWLB) [R1-C1]
+      - public: N groups allowed (e.g. DMZ, edge, GWLB)
       - transit_gateway: N groups allowed; each plural attachment selects one group,
         and several attachments may intentionally reuse the same attachment subnets
       - core_network: limited to 1 group (Cloud WAN attachment adapter is singular)
@@ -447,7 +447,7 @@ variable "subnets" {
       cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      # Absolute CIDR group slot for pinning [R1-C2]. Each slot reserves six
+      # Absolute CIDR group slot for pinning. Each slot reserves six
       # AZ-sized CIDRs at this netmask. Pinned ranges never move when groups or AZs
       # are added/removed; overlapping pins across netmasks are rejected.
       cidr_index         = optional(number)
@@ -505,9 +505,9 @@ variable "subnets" {
     }))
 
     # ── Routing (co-located per subnet group) ──
-    # [R1-C3]: transit_gateway and core_network accept lists of destinations
+    # transit_gateway and core_network accept lists of destinations
     # to support multiple routes (e.g. 10.0.0.0/8 + 172.16.0.0/12 → TGW).
-    # [R2-H3]: internet_gateway defaults to null; auto-resolved as true for
+    # internet_gateway defaults to null; auto-resolved as true for
     # role="public", false otherwise. Set explicitly to override.
     routing = optional(object({
       nat_gateway                      = optional(bool, false)
@@ -518,8 +518,8 @@ variable "subnets" {
       transit_gateway_ipv6             = optional(list(string))          # DEPRECATED singular adapter
       transit_gateway_attachments      = optional(map(list(string)), {}) # attachment key => IPv4 CIDR/prefix-list destinations
       transit_gateway_attachments_ipv6 = optional(map(list(string)), {}) # attachment key => IPv6 CIDR/prefix-list destinations
-      core_network                     = optional(list(string))          # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
-      core_network_ipv6                = optional(list(string))          # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
+      core_network                     = optional(list(string))          # list of CIDRs/prefix-list IDs to route via CWAN
+      core_network_ipv6                = optional(list(string))          # list of IPv6 CIDRs/prefix-list IDs
       s3_gateway_endpoint              = optional(bool, false)
       dynamodb_gateway_endpoint        = optional(bool, false)
     }), {})
@@ -670,7 +670,7 @@ variable "subnets" {
     error_message = "Subnets with role 'core_network' must provide core_network_options."
   }
 
-  # Extended isolated validation [R1-M1]: prohibit ALL routing including TGW/CWAN.
+  # Extended isolated validation: prohibit ALL routing including TGW/CWAN.
   # Explicit empty route lists are equivalent to omission.
   validation {
     condition = alltrue([
@@ -764,7 +764,7 @@ variable "subnets" {
     error_message = "core_network_options.accept_attachment=true requires require_acceptance=true. Accepter settings are ignored when accept_attachment=false."
   }
 
-  # Netmask range validation [R2-M1]
+  # Netmask range validation
   validation {
     condition = alltrue([
       for k, v in var.subnets :
@@ -777,7 +777,7 @@ variable "subnets" {
     error_message = "Invalid ipv4.netmask values (allowed 16..28): ${join(", ", [for key, cfg in var.subnets : "${key}=${cfg.ipv4.netmask}" if cfg.ipv4 != null && cfg.ipv4.netmask != null && (cfg.ipv4.netmask < 16 || cfg.ipv4.netmask > 28)])}."
   }
 
-  # cidr_index must be a non-negative integer when provided [R1-C2]
+  # cidr_index must be a non-negative integer when provided
   validation {
     condition = alltrue([
       for k, v in var.subnets :
@@ -1082,7 +1082,7 @@ variable "subnets" {
 # ─────────────────────────────────────────────────────────────────────────────
 # NAT GATEWAY — top-level, VPC-wide concern with create-or-inject EIP
 #
-# [R1-H2]: nat_gateway.existing_ids allows injecting existing NAT Gateways
+# nat_gateway.existing_ids allows injecting existing NAT Gateways
 # instead of creating new ones (full create-or-inject pattern).
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1124,13 +1124,13 @@ variable "nat_gateway" {
     az                = optional(string)
     connectivity_type = optional(string, "public") # "public" | "private"
     subnet_group      = optional(string)           # explicit NAT host group; null = first compatible group
-    existing_ids      = optional(map(string))      # zonal: az → ID; regional: { regional = ID } [R1-H2]
+    existing_ids      = optional(map(string))      # zonal: az → ID; regional: { regional = ID }
     name_format       = optional(string, "{vpc}-nat-{az}")
     tags              = optional(map(string), {})
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
-      allocation_ids   = optional(map(string)) # R2-H2: default null instead of {}
+      allocation_ids   = optional(map(string)) # null unless existing EIPs are selected
       name_format      = optional(string)
       tags             = optional(map(string), {})
     }), { mode = "create" })
@@ -1164,7 +1164,7 @@ variable "nat_gateway" {
     error_message = "nat_gateway.mode = 'regional' requires connectivity_type = 'public'; private NAT remains zonal."
   }
 
-  # R2-H2: allocation_ids is now nullable (default null); validate != null for existing mode
+  # allocation_ids is nullable; existing mode requires a non-null map
   validation {
     condition = try(var.nat_gateway.eip.mode, "create") == "create" ? true : (
       var.nat_gateway.eip.mode == "byoip_pool" ? var.nat_gateway.eip.public_ipv4_pool != null :

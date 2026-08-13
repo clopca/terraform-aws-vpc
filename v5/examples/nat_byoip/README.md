@@ -26,14 +26,22 @@ The three zonal modules create two Gateways each. The Regional module creates on
 
 The defaults for the BYOIP pool and existing allocation IDs are syntax-safe placeholders. Replace them with resources from the selected account and Region before applying. This example creates six zonal NAT Gateways plus one Regional NAT billed per active AZ.
 
+Save the external values in `nat-byoip.tfvars`:
+
+```hcl
+public_ipv4_pool = "ipv4pool-ec2-REAL"
+existing_eip_allocation_ids = {
+  us-east-1a = "eipalloc-REAL1"
+  us-east-1b = "eipalloc-REAL2"
+}
+```
+
 ```shell
 terraform init
-terraform plan \
-  -var='public_ipv4_pool=ipv4pool-ec2-REAL' \
-  -var='existing_eip_allocation_ids={us-east-1a="eipalloc-REAL1",us-east-1b="eipalloc-REAL2"}'
-terraform apply
+terraform plan -out=tfplan -var-file=nat-byoip.tfvars
+terraform apply tfplan
 terraform output nat_eip_allocation_ids
-terraform destroy
+terraform destroy -var-file=nat-byoip.tfvars
 ```
 
 `existing_eip_allocation_ids` keys must exactly equal the NAT AZ set. The existing EIPs remain caller-owned after destroy; EIPs allocated in `create` and `byoip_pool` modes are module-owned.

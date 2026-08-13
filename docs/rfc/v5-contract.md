@@ -90,7 +90,7 @@ variable "addressing" {
 variable "availability_zones" {
   description = <<-EOT
     `count` sorts eligible AZs and selects exactly the first N.
-    ⚠️  `count` mode is for DEVELOPMENT ONLY [R1-H4].
+    ⚠️  `count` mode is for DEVELOPMENT ONLY.
     For production, always use explicit `names` to guarantee AZ stability.
   EOT
   type = object({
@@ -110,12 +110,12 @@ enabled. Their complete generated schemas are part of the module README.
 
 The core of v5. Each entry is a **subnet group** replicated across AZs.
 
-**State Key Immutability [R1-H1]:** Map keys become part of the Terraform state
+**State Key Immutability:** Map keys become part of the Terraform state
 address (`aws_subnet.main["key/az"]`). Renaming a key destroys and recreates all
 subnets in that group. Users must use `moved` blocks for safe renames. The
 `name_prefix` field provides a cosmetic display name decoupled from the state key.
 
-**Multiple Public Groups [R1-C1]:** Unlike v4, multiple subnet groups with
+**Multiple Public Groups:** Unlike v4, multiple subnet groups with
 `role = "public"` are supported (e.g., DMZ + edge + GWLB). The `transit_gateway`
 and `core_network` roles remain singleton due to AWS API constraints (1 VPC
 attachment per TGW/CWAN per VPC).
@@ -133,7 +133,7 @@ variable "subnets" {
       cidrs_by_az    = optional(map(string))  # explicit, one per AZ
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      cidr_index         = optional(number)   # pinning slot for netmask stability [R1-C2]
+      cidr_index         = optional(number)   # pinning slot for netmask stability
       secondary_cidr_key = optional(string)   # stable IPv4 entry in addressing.secondary
     }))
     ipv6 = optional(object({
@@ -155,15 +155,15 @@ variable "subnets" {
     route_table_key         = optional(string) # caller-owned physical identity when injecting
     route_table_id          = optional(string) # effective ID; may be computed
 
-    # ── Routing (co-located, list-based destinations) [R1-C3] ──
+    # ── Routing (co-located, list-based destinations) ──
     routing = optional(object({
       nat_gateway          = optional(bool, false)
       egress_only_igw      = optional(bool, false)
-      internet_gateway     = optional(bool)           # null = auto (true for public) [R2-H3]
+      internet_gateway     = optional(bool)           # null = auto (true for public)
       dns64                = optional(bool, false)    # Creates 64:ff9b::/96 -> NAT GW; NAT required
-      transit_gateway      = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
+      transit_gateway      = optional(list(string))   # list of CIDRs/prefix-list IDs
       transit_gateway_ipv6 = optional(list(string))
-      core_network         = optional(list(string))   # list of CIDRs/prefix-list IDs [R1-C3]
+      core_network         = optional(list(string))   # list of CIDRs/prefix-list IDs
       core_network_ipv6    = optional(list(string))
     }), {})
 
@@ -180,7 +180,7 @@ variable "subnets" {
       default_route_table_propagation = optional(bool, true)
       appliance_mode_support          = optional(bool, false)
       dns_support                     = optional(bool, true)
-      security_group_referencing      = optional(bool, true)  # requires provider >= 5.69 [R2-C1]
+      security_group_referencing      = optional(bool, true)  # requires provider >= 5.69
     }))
 
     core_network_options = optional(object({
@@ -227,7 +227,7 @@ variable "nat_gateway" {
     eip = optional(object({
       mode             = optional(string, "create")
       public_ipv4_pool = optional(string)
-      allocation_ids   = optional(map(string))  # nullable, required for "existing" [R2-H2]
+      allocation_ids   = optional(map(string))  # nullable, required for "existing"
       name_format      = optional(string)        # defaults to NAT format
       tags             = optional(map(string), {})
     }), { mode = "create" })
@@ -376,7 +376,7 @@ created by the module.
 | `aws_nat_gateway.main` | `"us-east-1a"` | `"nat/us-east-1a"` |
 | `aws_route_table.*` | follows parent | follows parent |
 
-### 3.5 CIDR Calculation Algorithm [R1-C2]
+### 3.5 CIDR Calculation Algorithm
 
 **Deterministic allocation with two-tier pinning:**
 
@@ -492,7 +492,7 @@ objects are complete except `flow_log_roles`, whose entries are projected to
 provider's deprecated `inline_policy` attribute. Its shape may change in any
 release.
 
-### 3.7 Cross-Variable Invariants (enforced via preconditions) [R2-C2, R2-C3, R2-H1]
+### 3.7 Cross-Variable Invariants (enforced via preconditions)
 
 These cannot be expressed as variable validations (Terraform limitation: no cross-var refs).
 They are enforced as `lifecycle.precondition` on the relevant resource, which means they
@@ -501,18 +501,18 @@ AZ names come from `data.aws_availability_zones`; preconditions that depend on t
 are unknown during the initial plan and Terraform defers them to apply time. Production
 callers should use explicit `names` for stable AZ identity and plan-time diagnostics.
 
-1. **cidrs length == AZ count** [R2-C2]: IPv4 and IPv6 cardinality resources.
+1. **cidrs length == AZ count**: IPv4 and IPv6 cardinality resources.
 2. **count <= discovered AZs**: `terraform_data.availability_zone_count_validation`.
-3. **nat_gateway.az ∈ resolved AZs** [R2-C3]: `terraform_data.nat_gateway_az_validation`.
+3. **nat_gateway.az ∈ resolved AZs**: `terraform_data.nat_gateway_az_validation`.
 4. **VPC/subnet IPv6 sources exist and are exclusive**: IPv6 addressing preconditions.
-5. **Subnet addressing exists** [R2-H1]: `aws_subnet.main` precondition.
+5. **Subnet addressing exists**: `aws_subnet.main` precondition.
 6. **Injected IDs accompany explicit ownership flags**: variable/resource preconditions.
 7. **Secondary selector exists before subnet creation**: stable-key validation plus
    subnet dependency on created associations.
 8. **isolated has no Internet/transit routing**: IGW, NAT/NAT64, EIGW, TGW, and
    Cloud WAN are rejected; S3/DynamoDB gateway endpoint routes are allowed.
 
-### 3.8 Provider Floor [R2-H2]
+### 3.8 Provider Floor
 
 Required AWS provider: `>= 6.29`.
 
@@ -708,10 +708,10 @@ into a `create=true` resource address during migration.
 
 The normative mapping and state procedure is [v5-migration.md](v5-migration.md).
 The validateable skeleton under `v5/examples/migration-from-v4` contains a
-63-block feature union, not a required per-deployment count: the remediation-3
-fixture selected 26 applicable sources and omitted 37 absent-feature blocks. The
-v4 CloudWatch log group is intentionally excluded from moved blocks: ADR-F4-1
-configures the generated physical name and performs three declarative
+63-block feature union, not a required per-deployment count. The representative
+migration fixture selected 26 applicable sources and omitted 37 absent-feature
+blocks. The v4 CloudWatch log group is intentionally excluded from moved blocks:
+ADR-F4-1 configures the generated physical name and performs three declarative
 `removed { destroy=false }` forgets plus one log-group `import` in the same
 zero-destroy normal plan that serves as the acceptance gate. Static moved addresses are otherwise intentional:
 Terraform does not permit variables or wildcards in moved addresses, so callers
@@ -721,7 +721,7 @@ resources.
 ## 5. Open Questions (Resolved)
 
 1. ~~Should `isolated` be a distinct role?~~ → **YES.** Kept for validation guard value.
-2. ~~Multiple public groups?~~ → **YES.** [R1-C1] Singleton removed.
+2. ~~Multiple public groups?~~ → **YES.** Singleton removed.
 3. ~~Generator script for moved blocks?~~ → Generator approach kept (dynamic `moved` experimental).
 4. ~~NAT top-level vs nested?~~ → **Top-level confirmed** (VPC-wide concern).
 
@@ -789,4 +789,4 @@ IPAM EIPs use `nat_gateway.eip.mode = "ipam_pool"` plus
 - **Phase 5**: Native plan-only contract tests, stateful moved fixture, examples, and generated docs — ✅ DONE (`a5fb279`, `2db15d7`)
 - **Remediation 1**: IPv6/AZ count/computed-ID selectors/routing coherence — ✅ DONE (`db758f7`, `0a1f424`)
 - **Remediation 2**: D6, stable secondary IPAM, boundary injection, TFLint/CI — ✅ DONE (`3f96aba`, `606fc47`)
-- **Post-v5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch [R1-H1]
+- **Post-v5**: `stable_key` alternative to map-key-as-state-identity — evaluate need post-launch

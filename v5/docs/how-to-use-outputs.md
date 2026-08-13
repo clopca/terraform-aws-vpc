@@ -79,8 +79,7 @@ Multiple groups may share a role, so per-role/per-AZ outputs contain lists:
 
 ```hcl
 locals {
-  private_subnets_in_first_az =
-    module.vpc.subnet_ids_by_semantic_role_by_az.private[var.availability_zones[0]]
+  private_subnets_in_first_az = module.vpc.subnet_ids_by_semantic_role_by_az.private[var.availability_zones[0]]
 }
 ```
 
@@ -104,10 +103,13 @@ resource "aws_route53_resolver_endpoint" "outbound" {
 }
 
 locals {
-  nat_ids             = module.vpc.nat_gateway_ids
-  internet_gateway_id = module.vpc.internet_gateway_id
-  tgw_attachment_id   = module.vpc.transit_gateway_attachment_id
-  audit_flow_log_id   = module.vpc.flow_log_ids["audit"]
+  nat_ids                       = module.vpc.nat_gateway_ids
+  internet_gateway_id            = module.vpc.internet_gateway_id
+  tgw_attachment_ids             = module.vpc.transit_gateway_attachment_ids
+  vpc_ipv6_cidr_blocks           = module.vpc.vpc_ipv6_cidr_blocks
+  secondary_ipv4_association_ids = module.vpc.secondary_ipv4_cidr_association_ids
+  secondary_ipv6_association_ids = module.vpc.secondary_ipv6_cidr_association_ids
+  audit_flow_log_id              = module.vpc.flow_log_ids["audit"]
 }
 ```
 
@@ -122,9 +124,9 @@ locals {
 
 ## Tier 2: migrate v4 consumers, then remove them
 
-Tier 2 aliases retain v4 names and outer keys so a module upgrade and downstream refactor can be separate changes. For example:
+Tier 2 aliases retain v4 names and outer keys so a module upgrade and downstream refactor can be separate changes. The following is an attribute fragment rather than a complete root module:
 
-```hcl
+```text
 # Temporary v4-compatible dependency during migration.
 subnet_id = module.vpc.private_subnet_attributes_by_az["application/us-east-1a"].id
 
@@ -142,8 +144,7 @@ The v4-to-v5 mapping and state procedure are in [Upgrade guide 5.0](UPGRADE-GUID
 
 ```hcl
 locals {
-  application_subnet_tags =
-    module.vpc.resources.subnets["application/us-east-1a"].tags_all
+  application_subnet_tags = module.vpc.resources.subnets["application/us-east-1a"].tags_all
 }
 ```
 
@@ -151,7 +152,7 @@ Treat every Tier 3 reference as coupled to this module's implementation and the 
 
 `resources.flow_log_roles` is intentionally **not** a complete `aws_iam_role` object. Each entry is projected to the useful, non-deprecated attributes:
 
-```hcl
+```text
 {
   arn       = string
   id        = string
@@ -173,7 +174,7 @@ terraform console
 
 Examples in the console:
 
-```hcl
+```console
 module.vpc.subnet_ids_by_group_by_az
 module.vpc.subnet_ids_by_semantic_role.private
 module.vpc.route_table_ids_by_group_by_az.application

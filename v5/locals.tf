@@ -7,7 +7,7 @@
 #   3. NETMASK (calculated): deterministic derivation from VPC CIDR.
 #
 # ═══════════════════════════════════════════════════════════════════════════════
-# DETERMINISTIC CIDR CALCULATION — STABILITY PROOF [R1-C2]
+# DETERMINISTIC CIDR CALCULATION — STABILITY PROOF
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # Algorithm (two-tier with fixed six-AZ reservations):
@@ -281,7 +281,7 @@ locals {
     ])
   ]
 
-  # ─── Routing: resolve internet_gateway default [R2-H3] ──────────────────
+  # ─── Routing: resolve internet_gateway default ──────────────────
   # null = auto: true for public role, false for everything else
   resolved_routing = {
     for name, cfg in var.subnets : name => {

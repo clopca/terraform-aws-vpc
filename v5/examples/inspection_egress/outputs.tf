@@ -18,9 +18,9 @@ output "nat_gateway_ids" {
   value       = module.vpc.nat_gateway_ids
 }
 
-output "transit_gateway_attachment_id" {
-  description = "Appliance-mode Transit Gateway attachment ID."
-  value       = module.vpc.transit_gateway_attachment_id
+output "transit_gateway_attachment_ids" {
+  description = "Appliance-mode Transit Gateway attachment IDs by stable caller key."
+  value       = module.vpc.transit_gateway_attachment_ids
 }
 
 output "network_firewall_inputs" {

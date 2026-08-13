@@ -3,9 +3,9 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
-output "vpc_ipv6_cidr_block" {
-  description = "Amazon-provided VPC IPv6 CIDR."
-  value       = module.vpc.vpc_ipv6_cidr_block
+output "vpc_ipv6_cidr_blocks" {
+  description = "Amazon-provided VPC IPv6 CIDRs by stable secondary key."
+  value       = module.vpc.vpc_ipv6_cidr_blocks
 }
 
 output "subnet_ipv6_cidrs" {

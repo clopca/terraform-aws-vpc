@@ -25,20 +25,23 @@ The pool hierarchy and allocations must already exist in VPC IPAM and be shareab
 
 ## Run
 
-Replace every placeholder pool ID with IDs from the selected Region:
+Replace every placeholder pool ID with IDs from the selected Region and save them in `ipam.tfvars`:
+
+```hcl
+vpc_ipv4_ipam_pool_id              = "ipam-pool-REAL"
+secondary_ipv4_ipam_pool_id        = "ipam-pool-REAL"
+subnet_ipv4_ipam_pool_id           = "ipam-pool-REAL"
+secondary_subnet_ipv4_ipam_pool_id = "ipam-pool-REAL"
+vpc_ipv6_ipam_pool_id              = "ipam-pool-REAL"
+subnet_ipv6_ipam_pool_id           = "ipam-pool-REAL"
+```
 
 ```shell
 terraform init
-terraform plan \
-  -var='vpc_ipv4_ipam_pool_id=ipam-pool-REAL' \
-  -var='secondary_ipv4_ipam_pool_id=ipam-pool-REAL' \
-  -var='subnet_ipv4_ipam_pool_id=ipam-pool-REAL' \
-  -var='secondary_subnet_ipv4_ipam_pool_id=ipam-pool-REAL' \
-  -var='vpc_ipv6_ipam_pool_id=ipam-pool-REAL' \
-  -var='subnet_ipv6_ipam_pool_id=ipam-pool-REAL'
-terraform apply
+terraform plan -out=tfplan -var-file=ipam.tfvars
+terraform apply tfplan
 terraform output
-terraform destroy
+terraform destroy -var-file=ipam.tfvars
 ```
 
 Keep the `analytics` and `legacy` map keys stable: they are Terraform resource identity for the secondary associations. IPAM-allocated CIDRs are apply-time values, while their pool IDs, netmasks, and association keys remain plan-known.

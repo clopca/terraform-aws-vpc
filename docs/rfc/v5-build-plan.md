@@ -1,14 +1,11 @@
 # Plan de construcción v5 — terraform-aws-vpc (rama explore/v5-typed-contract)
 
-> Método: cada fase la implementa un agente builder y la auditan DOS revisores
-> independientes expertos en Terraform antes de pasar a la siguiente:
-> - **R1 (primitives/diseño)**: ¿la abstracción es la correcta? ¿create-or-inject en
->   toda la frontera? ¿claves de state estables ante cualquier mutación de config?
->   ¿algo aquí generará deuda técnica o breaking changes futuros?
-> - **R2 (calidad Terraform)**: idempotencia, for_each vs count, dependencias
->   implícitas, validaciones plan-time, compatibilidad provider, estilo, docs.
-> Gate: la fase no se cierra hasta que ambos revisores no tengan findings Critical/High
-> abiertos. Findings y resoluciones se registran en docs/rfc/reviews/fase-N.md.
+> Método: cada fase combina una revisión independiente del diseño con otra de
+> calidad Terraform. El gate exige abstracciones correctas, fronteras
+> create-or-inject completas, identidad de estado estable, idempotencia,
+> dependencias explícitas, validaciones tempranas, compatibilidad del provider y
+> cero hallazgos Critical/High abiertos. Las resoluciones se registran en
+> `docs/rfc/reviews/fase-N.md`.
 
 ## Fases
 
@@ -16,11 +13,11 @@
 |---|---|---|
 | 0 | RFC + prototipo del contrato (validado) | ✅ ea2b21d |
 | 1 | Núcleo: aws_vpc + addressing + motor de subnets tipado + CIDRs deterministas + claves "name/az" | ✅ afe42fb |
-| 1-gate | Cierre findings R1+R2: C1 multi-public, C2 pinning, C3 list routing, H1-H4 docs+inject+outputs, R2-C1/C2/C3 provider+preconditions | ✅ e434caf |
+| 1-gate | Cierre de hallazgos: multi-public, pinning, list routing, documentación, inyección, outputs, provider y preconditions | ✅ e434caf |
 | 2 | NAT (create-or-inject EIP+NAT GW), IGW/EIGW impl, routing co-localizado (DNS64/NAT64, private NAT) | ✅ 89eba29 |
-| 2-gate | Cierre R1+R2: claves CIDR estables, placement NAT explícito, RT injection, NAT64, coverage y docs de unknowns | ✅ 97c89ee |
+| 2-gate | Cierre de diseño y calidad: claves CIDR estables, placement NAT explícito, RT injection, NAT64, coverage y docs de unknowns | ✅ 97c89ee |
 | 3 | Attachments TGW y Cloud WAN (sin replace destructivo by-design), flow logs, Lattice | ✅ implementada |
-| 3-gate | Cierre R1+R2: dependencias attachment/accepter, floor 6.32, IAM hardened, destinos de datos externos y ADRs | ✅ `a9be661` |
+| 3-gate | Cierre de diseño y calidad: dependencias attachment/accepter, floor 6.32, IAM hardened, destinos de datos externos y ADRs | ✅ `a9be661` |
 
 ### Entrega fase 3
 
@@ -40,7 +37,7 @@
 - Los tres ejemplos ejercitan la sintaxis de fase 3; los tests de apply/races
   permanecen en la fase 5 según ADR del gate.
 | 4 | Outputs Tier 1/2/3 + moved blocks generados + herramienta/guía de migración v4→v5 | ✅ `9a4bb9c` |
-| 4-gate | Cierre R1+R2: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
+| 4-gate | Cierre de diseño y calidad: floor 6.29 consistente, Flow Logs replacement-safe, plan completo con allowlist y verificación post-apply, orden AZ documentado | ✅ `9834664` + `724c964` |
 | 5 | Tests: unit plan-only del motor de subnets + asserts de shape Tier 1/Tier 2 + fixture stateful de migración + 3 examples + terraform-docs | ✅ `a5fb279` + `2db15d7` |
 | 6 | Auditoría final integral + gap-check contra RFC y contra demanda del backlog | 🟡 auditada; remediaciones 1, 2 y 4 cerradas localmente; revalidación AWS stateful pendiente |
 
@@ -68,8 +65,8 @@
   `destination_prefix_list_id`.
 - Los asserts ejecutables de shape para los 15 aliases Tier 2 y handles Tier 1, y
   la fixture stateful de moved/import, permanecen explícitamente en Fase 5
-  (R1-M1/R2 recomendación de cobertura); no bloquean el gate documental de Fase 4.
-- Gate R1+R2 de fase 4 cerrado: 0 Critical/High abiertos.
+  (recomendación de cobertura); no bloquean el gate documental de Fase 4.
+- Gate de fase 4 cerrado: 0 Critical/High abiertos.
 
 ### Entrega fase 5
 
@@ -91,7 +88,7 @@
 - `v5/.terraform-docs.yaml`, `.header.md` y el `README.md` generado documentan
   uso, ejemplos, garantías Tier 1/2/3, estabilidad de direcciones y migración.
 - `terraform test`: 28 passed, 0 failed; `fmt -check`, `validate` del módulo y
-  de los cuatro ejemplos: PASS. Gate R1+R2 de fase 5 queda pendiente.
+  de los cuatro ejemplos: PASS. El gate de fase 5 queda pendiente.
 
 ## Remediación tanda 1 — Criticals + Highs acoplados
 
@@ -164,15 +161,15 @@ Commits locales: `f0db68e` (contrato Name/tagging/tests/ADRs) y `dcaab57`
 5. `terraform fmt` + `init -backend=false` + `validate` en verde antes de cada commit.
 6. Sin dependencias de módulos externos con deprecations activas.
 7. Commits pequeños y descriptivos por fase; no push (rama local hasta decisión con Pablo).
-8. Provider floor >= 6.29 (por `aws_subnet.ipv4_ipam_pool_id` y `ipv4_netmask_length` — R2-H2).
-9. Cross-variable invariants via preconditions en recursos, no solo en variables (R2-H1).
+8. Provider floor >= 6.29 (por `aws_subnet.ipv4_ipam_pool_id` y `ipv4_netmask_length`).
+9. Cross-variable invariants via preconditions en recursos, no solo en variables.
 
 ## Registro de revisiones
 
-- [docs/rfc/reviews/fase-1.md](reviews/fase-1.md) — R1+R2 findings, resolución, tabla completa.
-- [docs/rfc/reviews/fase-2.md](reviews/fase-2.md) — R1+R2 gate cerrado en `97c89ee`.
-- [docs/rfc/reviews/fase-3.md](reviews/fase-3.md) — R1+R2 gate cerrado.
-- [docs/rfc/reviews/fase-4.md](reviews/fase-4.md) — R1+R2 gate cerrado en `9834664` + `724c964`.
+- [docs/rfc/reviews/fase-1.md](reviews/fase-1.md) — hallazgos, resolución y tabla completa.
+- [docs/rfc/reviews/fase-2.md](reviews/fase-2.md) — gate cerrado en `97c89ee`.
+- [docs/rfc/reviews/fase-3.md](reviews/fase-3.md) — gate cerrado.
+- [docs/rfc/reviews/fase-4.md](reviews/fase-4.md) — gate cerrado en `9834664` + `724c964`.
 - docs/rfc/reviews/fase-5.md … fase-6.md — pendientes.
 - [docs/rfc/reviews/remediacion-1.md](reviews/remediacion-1.md) — cierre de Criticals y Highs acoplados de la primera tanda post-auditoría.
 - [docs/rfc/reviews/remediacion-2.md](reviews/remediacion-2.md) — cierre de D6, IPAM secondary, fronteras y quality gates de la segunda tanda.
@@ -180,15 +177,15 @@ Commits locales: `f0db68e` (contrato Name/tagging/tests/ADRs) y `dcaab57`
 
 ## Cambios del contrato introducidos en Gate 1
 
-- `routing.transit_gateway` / `core_network`: `string` → `list(string)` [R1-C3]
-- Public role: N grupos permitidos (singleton eliminado) [R1-C1]
-- `ipv4.cidr_index`: nuevo campo para CIDR pinning [R1-C2]
-- `vpc.igw_id`: inject-or-create para IGW [R1-H2]
-- `nat_gateway.existing_ids`: inject-or-create para NAT GW [R1-H2]
-- `allocation_ids`: default null (no `{}`) [R2-H2]
-- Outputs renombrados: `*_by_role` → `*_by_group` + nuevo `*_by_semantic_role` [R1-H3]
-- Provider floor: `>= 6.29` [R2-H2]; 5.69 queda supersedido por el schema IPAM de subnet.
-- Preconditions: cidrs↔AZs, nat_gateway.az∈AZs [R2-C2, R2-C3]
+- `routing.transit_gateway` / `core_network`: `string` → `list(string)`
+- Public role: N grupos permitidos (singleton eliminado)
+- `ipv4.cidr_index`: nuevo campo para CIDR pinning
+- `vpc.igw_id`: inject-or-create para IGW
+- `nat_gateway.existing_ids`: inject-or-create para NAT GW
+- `allocation_ids`: default null (no `{}`)
+- Outputs renombrados: `*_by_role` → `*_by_group` + nuevo `*_by_semantic_role`
+- Provider floor: `>= 6.29`; 5.69 queda supersedido por el schema IPAM de subnet.
+- Preconditions: cidrs↔AZs, nat_gateway.az∈AZs
 - IPv6: VPC Amazon/IPAM/CIDR; subnet explícita/IPAM/calculada, `native_only` y `ipv6.cidr_index`.
 - Ownership plan-known: `vpc.create`, `vpc.igw_create`, `manage_route_table`,
   `nat_gateway.create`, flags de Flow Logs y `vpc_lattice.enabled`.
