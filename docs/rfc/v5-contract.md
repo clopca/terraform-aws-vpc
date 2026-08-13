@@ -235,7 +235,7 @@ variable "subnets" {
 
     # ── Role-specific blocks ──
     public_options = optional(object({
-      map_public_ip = optional(bool, true)
+      map_public_ip = optional(bool, false)
     }))
 
     transit_gateway_options = optional(object({

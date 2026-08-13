@@ -296,7 +296,7 @@ locals {
         routing = local.resolved_routing[name]
 
         # Role-specific
-        map_public_ip           = cfg.role == "public" && !try(cfg.ipv6.native_only, false) ? try(cfg.public_options.map_public_ip, true) : false
+        map_public_ip           = cfg.role == "public" && !try(cfg.ipv6.native_only, false) ? try(cfg.public_options.map_public_ip, false) : false
         transit_gateway_options = cfg.role == "transit_gateway" ? cfg.transit_gateway_options : null
         core_network_options    = cfg.role == "core_network" ? cfg.core_network_options : null
       }

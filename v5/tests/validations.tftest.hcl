@@ -292,3 +292,33 @@ run "reject_invalid_flow_log_name_format" {
 
   expect_failures = [var.flow_logs]
 }
+
+
+run "public_ip_assignment_is_opt_in" {
+  command = plan
+
+  variables {
+    vpc                = { name = "public-ip-opt-in" }
+    addressing         = { ipv4 = { cidr_block = "10.95.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      default_public = {
+        role = "public"
+        ipv4 = { netmask = 24, cidr_index = 0 }
+      }
+      explicit_public = {
+        role           = "public"
+        ipv4           = { netmask = 24, cidr_index = 1 }
+        public_options = { map_public_ip = true }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      aws_subnet.main["default_public/us-east-1a"].map_public_ip_on_launch == false &&
+      aws_subnet.main["explicit_public/us-east-1a"].map_public_ip_on_launch == true
+    )
+    error_message = "Public subnet IPv4 auto-assignment must default false and require explicit opt-in."
+  }
+}

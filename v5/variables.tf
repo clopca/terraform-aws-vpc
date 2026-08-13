@@ -320,6 +320,9 @@ variable "subnets" {
     and `{az}` placeholders. `{group}` resolves `name_prefix` or the map key.
     `route_table_name_format` can diverge; when omitted it inherits `name_format`.
 
+    `public_options.map_public_ip` is opt-in and defaults to false, matching v4:
+    a public route table does not imply automatic public IPv4 assignment to ENIs.
+
     `network_acl` is optional. When absent, the module creates no NACL resources or
     associations and AWS default-NACL behavior is retained. Create mode owns one ACL
     per group; inject mode uses an existing ID while still managing declared rules
@@ -412,7 +415,7 @@ variable "subnets" {
 
     # ── Public role options ──
     public_options = optional(object({
-      map_public_ip = optional(bool, true)
+      map_public_ip = optional(bool, false)
     }))
 
     # ── Transit Gateway attachment options ──

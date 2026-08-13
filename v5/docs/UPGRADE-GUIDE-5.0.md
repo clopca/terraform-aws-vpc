@@ -258,7 +258,7 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `subnets.<key>.tags` | `subnets.<key>.tags` | Copy unchanged. |
 | implicit key class | `subnets.<key>.role` | `public` -> `public`; `transit_gateway` -> `transit_gateway`; `core_network` -> `core_network`; every other v4 key -> normally `private` (use `isolated` only after removing all routes). |
 | `subnets.public.connect_to_igw` | `subnets.public.routing.internet_gateway` | Copy boolean; null still defaults true for the public role. |
-| `subnets.public.map_public_ip_on_launch` | `subnets.public.public_options.map_public_ip` | Copy boolean. |
+| `subnets.public.map_public_ip_on_launch` | `subnets.public.public_options.map_public_ip` | Copy boolean when true. Both v4 and v5 default to `false`, so omission preserves behavior. |
 | `subnets.public.nat_gateway_configuration` | `nat_gateway.mode` | Copy `none`, `single_az`, or `all_azs`. For `single_az`, set `nat_gateway.az` to the v4 first AZ explicitly. |
 | `subnets.<private>.connect_to_public_natgw` | `subnets.<private>.routing.nat_gateway` | Copy boolean. |
 | `subnets.<private>.connect_to_eigw` | `subnets.<private>.routing.egress_only_igw` | Copy boolean. |
