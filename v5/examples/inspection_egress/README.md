@@ -31,13 +31,15 @@ The example disables default TGW route-table association and propagation so the 
 
 ## Prefix-list return routing
 
-`firewall.routing.transit_gateway = [var.spoke_prefix_list_id]` demonstrates that the typed route list accepts customer-managed prefix list IDs (`pl-...`) as well as IPv4 CIDRs. Both forms can coexist in the same list, for example:
+`firewall.routing.transit_gateway_attachments.inspection = [var.spoke_prefix_list_id]` demonstrates that the typed route list accepts customer-managed prefix list IDs (`pl-...`) as well as IPv4 CIDRs. Both forms can coexist in the same list. The following is a fragment of `subnets.<group>.routing`, not a root argument:
 
-```hcl
-transit_gateway = [
-  var.spoke_prefix_list_id,
-  "192.168.0.0/16",
-]
+```text
+transit_gateway_attachments = {
+  inspection = [
+    var.spoke_prefix_list_id,
+    "192.168.0.0/16",
+  ]
+}
 ```
 
 The prefix list must contain the spoke destinations that return through the TGW. Keep it consistent with `spoke_network_cidr_blocks`, which the Network Firewall composition uses to install return routes in public route tables.

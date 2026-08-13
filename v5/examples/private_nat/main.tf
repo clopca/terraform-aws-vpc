@@ -42,7 +42,7 @@ module "vpc" {
       # The private NAT subnet forwards only the required remote 10/8 segments
       # to the TGW; no Internet Gateway or public EIP is involved.
       routing = {
-        transit_gateway = var.tgw_destination_cidrs
+        transit_gateway_attachments = { vpc = var.tgw_destination_cidrs }
       }
     }
 
@@ -52,14 +52,18 @@ module "vpc" {
         cidrs_by_az        = { "us-west-2a" = "100.64.0.32/28", "us-west-2b" = "100.64.0.48/28" }
         secondary_cidr_key = "translation"
       }
-      transit_gateway_options = {
-        id                              = var.transit_gateway_id
-        default_route_table_association = false
-        default_route_table_propagation = false
-        appliance_mode_support          = false
-        dns_support                     = true
-        security_group_referencing      = true
-      }
+    }
+  }
+
+  transit_gateway_attachments = {
+    vpc = {
+      subnet_group                    = "tgw"
+      id                              = var.transit_gateway_id
+      default_route_table_association = false
+      default_route_table_propagation = false
+      appliance_mode_support          = false
+      dns_support                     = true
+      security_group_referencing      = true
     }
   }
 

@@ -32,7 +32,7 @@ output "route_counts" {
   description = "Route counts proving the workload-to-private-NAT-to-TGW chain."
   value = {
     workload_to_nat = length(module.vpc.resources.routes.nat)
-    nat_to_tgw      = length(module.vpc.resources.routes.tgw)
+    nat_to_tgw      = length(module.vpc.resources.routes.tgw_attachment)
     internet        = length(module.vpc.resources.routes.igw_ipv4)
   }
 }

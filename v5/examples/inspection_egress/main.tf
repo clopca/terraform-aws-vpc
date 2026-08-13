@@ -43,7 +43,7 @@ module "vpc" {
 
         # Return traffic for spoke networks reaches the TGW. Managed prefix-list
         # IDs and IPv4 CIDRs may coexist in this typed destination list.
-        transit_gateway = [var.spoke_prefix_list_id]
+        transit_gateway_attachments = { inspection = [var.spoke_prefix_list_id] }
       }
       tags = {
         Purpose = "network-firewall-endpoints"
@@ -56,20 +56,24 @@ module "vpc" {
         netmask    = 28
         cidr_index = 2
       }
-      transit_gateway_options = {
-        id                              = var.transit_gateway_id
-        default_route_table_association = false
-        default_route_table_propagation = false
-
-        # Mandatory for stateful inspection: both directions of each flow stay
-        # pinned to the same AZ and therefore the same firewall endpoint.
-        appliance_mode_support     = true
-        dns_support                = true
-        security_group_referencing = true
-      }
       tags = {
         Purpose = "transit-gateway-attachment"
       }
+    }
+  }
+
+  transit_gateway_attachments = {
+    inspection = {
+      subnet_group                    = "tgw_attach"
+      id                              = var.transit_gateway_id
+      default_route_table_association = false
+      default_route_table_propagation = false
+
+      # Mandatory for stateful inspection: both directions of each flow stay
+      # pinned to the same AZ and therefore the same firewall endpoint.
+      appliance_mode_support     = true
+      dns_support                = true
+      security_group_referencing = true
     }
   }
 

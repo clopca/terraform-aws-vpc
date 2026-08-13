@@ -45,3 +45,78 @@ grep -Fq 'core_network_options.dns_support = optional(bool, false)' "$repo_root/
 grep -Fq 'core_network_options.security_group_referencing_support = optional(bool, true)' "$repo_root/v5/.header.md"
 grep -Fq 'core_network_options.routing_policy_label = optional(string)' "$repo_root/v5/.header.md"
 grep -Fq 'nat_gateway.eip.ipam_pool_id = optional(string)' "$repo_root/v5/.header.md"
+
+# Upstream-facing files must not expose internal review labels, local paths, or
+# private build-process vocabulary.
+if git -C "$repo_root" grep -nEiI \
+  '\[(R[0-9]+-)?[CHMLF][-_]?[0-9]+[^]]*\]|\[Finding[ :#-]*[0-9]+[^]]*\]|remedia(cion|tion)-[0-9]+|rehearsal #[0-9]+|Builder: Agent|/Users/clopca/|/tmp/|internal migration RFC' \
+  -- . ':(exclude)v5/scripts/check-content.sh'; then
+  echo "Internal review label, process wording, or local path found" >&2
+  exit 1
+fi
+
+grep -Fq '**Proposed v5 contract:** this branch contains an unreleased v5 design' "$repo_root/README.md"
+grep -Fq '**Proposed v5 contract:** this branch contains an unreleased v5 design' "$repo_root/.header.md"
+grep -Fq '[5.0 upgrade guide](v5/docs/UPGRADE-GUIDE-5.0.md)' "$repo_root/README.md"
+grep -Fq 'documentation below continue to describe the current v4 contract' "$repo_root/README.md"
+grep -Fq 'The branch ref shown below is intentionally mutable' "$repo_root/v5/.header.md"
+grep -Fq '`subnets[*].routing.nat_gateway_key`' "$repo_root/v5/.header.md"
+grep -Fq '`addressing.secondary[*].ipv6.network_border_group`' "$repo_root/v5/.header.md"
+grep -Fq 'the single placement dimension for Regional Availability Zones' "$repo_root/v5/.header.md"
+grep -Fq 'vpc_ipv6_cidr_blocks' "$repo_root/v5/examples/dual_stack/outputs.tf"
+grep -Fq 'transit_gateway_attachment_ids["vpc"]' "$repo_root/v5/docs/UPGRADE-GUIDE-5.0.md"
+grep -Fq 'transit_gateway_attachment_ids["vpc"]' "$repo_root/docs/rfc/v5-migration.md"
+for runbook in hub ipam nat_byoip; do
+  case "$runbook" in
+    hub) var_file=hub.tfvars ;;
+    ipam) var_file=ipam.tfvars ;;
+    nat_byoip) var_file=nat-byoip.tfvars ;;
+  esac
+  grep -Fq "terraform plan -out=tfplan -var-file=$var_file" "$repo_root/v5/examples/$runbook/README.md"
+  grep -Fq 'terraform apply tfplan' "$repo_root/v5/examples/$runbook/README.md"
+  grep -Fq "terraform destroy -var-file=$var_file" "$repo_root/v5/examples/$runbook/README.md"
+done
+
+if grep -REn 'transit_gateway_options|^[[:space:]]*transit_gateway[[:space:]]*=' \
+  "$repo_root/v5/examples/private_nat" "$repo_root/v5/examples/inspection_egress"; then
+  echo "Active non-migration example recommends a deprecated TGW adapter" >&2
+  exit 1
+fi
+
+grep -A2 -F 'fragment below omits required module inputs' "$repo_root/v5/docs/how-to-use-outputs.md" | grep -Fq '```text'
+grep -A2 -F 'fragment of `subnets.<group>.routing`' "$repo_root/v5/examples/inspection_egress/README.md" | grep -Fq '```text'
+
+python3 - "$repo_root" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+root = Path(sys.argv[1])
+tracked = subprocess.run(
+    ["git", "-C", str(root), "ls-files", "v5/.header.md", "v5/*.md", "v5/**/*.md"],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.splitlines()
+
+failures = []
+count = 0
+for relative in tracked:
+    text = (root / relative).read_text()
+    for index, block in enumerate(re.findall(r"^[ \t]*```hcl[ \t]*\n(.*?)^[ \t]*```[ \t]*$", text, re.MULTILINE | re.DOTALL), 1):
+        count += 1
+        result = subprocess.run(
+            ["terraform", "fmt", "-"],
+            input=block,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            failures.append(f"{relative} fence {index}: {result.stderr.strip()}")
+
+if failures:
+    print("\n".join(failures), file=sys.stderr)
+    raise SystemExit(1)
+print(f"Validated {count} copyable HCL fences")
+PY

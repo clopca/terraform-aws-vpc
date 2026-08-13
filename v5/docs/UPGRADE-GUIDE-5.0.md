@@ -395,7 +395,7 @@ that fallback must not broaden the allowlist to replacements or other tag change
 |---|---|---|
 | `vpc_attributes` | Tier 2 `vpc_attributes`; then Tier 1 `vpc_id`, `vpc_arn`, `vpc_cidr_block` | Tier 2 remains a full provider object. |
 | `azs` | Tier 1 `azs` | Exact `list(string)`. |
-| `transit_gateway_attachment_id` | Tier 1 `transit_gateway_attachment_id` | Exact scalar/null shape. |
+| `transit_gateway_attachment_id` | Tier 1 `transit_gateway_attachment_ids["vpc"]` | Use the keyed map for new consumers. The deprecated scalar output preserves the exact v4 scalar/null shape only as a temporary v5 migration adapter. |
 | `core_network_attachment` | Tier 2 `core_network_attachment`; then Tier 1 `core_network_attachment_id` | Tier 2 remains the full object. |
 | `private_subnet_attributes_by_az` | Tier 2 same name; then `subnet_ids_by_group_by_az` / `subnet_cidrs_by_group_by_az` | Exact composite keys `<group>/<az>` in Tier 2. |
 | `public_subnet_attributes_by_az` | Tier 2 same name; then group/semantic Tier 1 subnet outputs | Exact AZ keys when the group remains named `public`. |

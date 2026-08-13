@@ -16,9 +16,9 @@ If an integration can use a Tier 1 ID instead of an object, use the ID. This kee
 
 ### Select subnets by caller-owned group
 
-Group keys are the keys supplied in `var.subnets`. Use them when the consumer knows the topology name. The example uses the same pre-release Git source as the quick start. After v5 is published, replace it with `source = "aws-ia/vpc/aws"` and `version = "~> 5.0"`; Registry module sources do not include `//v5`.
+Group keys are the keys supplied in `var.subnets`. Use them when the consumer knows the topology name. The fragment below omits required module inputs and uses the same pre-release Git source as the quick start. After v5 is published, replace it with `source = "aws-ia/vpc/aws"` and `version = "~> 5.0"`; Registry module sources do not include `//v5`.
 
-```hcl
+```text
 module "vpc" {
   source = "git::https://github.com/clopca/terraform-aws-vpc.git//v5?ref=explore/v5-typed-contract"
 
