@@ -525,3 +525,114 @@ run "reject_ipv6_cidr_targeting_carrier_gateway" {
 
   expect_failures = [var.routes]
 }
+
+run "mixed_managed_and_injected_groups_keep_distinct_route_keys" {
+  command = plan
+
+  variables {
+    vpc                = { name = "mixed-route-table-ownership" }
+    addressing         = { primary = { cidr_block = "10.149.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      managed = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.149.0.0/24", us-east-1b = "10.149.1.0/24" } }
+      }
+      injected = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.149.10.0/24", us-east-1b = "10.149.11.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared-services"
+        route_table_id     = "rtb-shared-services"
+      }
+    }
+    routes = {
+      managed-route = {
+        from_group  = "managed"
+        destination = { type = "ipv4_cidr", value = "10.200.0.0/16" }
+        target      = { type = "vpc_peering", id = "pcx-managed" }
+      }
+      injected-route = {
+        from_group  = "injected"
+        destination = { type = "ipv4_cidr", value = "10.201.0.0/16" }
+        target      = { type = "vpc_peering", id = "pcx-injected" }
+      }
+    }
+  }
+
+  assert {
+    condition = toset(keys(aws_route.top_level)) == toset([
+      "managed-route/us-east-1a",
+      "managed-route/us-east-1b",
+      "injected-route/shared",
+    ])
+    error_message = "One routes map must retain <route-key>/<az> keys for managed tables and <route-key>/shared for an injected table."
+  }
+}
+
+run "gateway_endpoint_acknowledgement_is_evaluated_per_route" {
+  command = plan
+
+  variables {
+    vpc                = { name = "per-route-gateway-endpoint-acknowledgement" }
+    addressing         = { primary = { cidr_block = "10.150.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role    = "private"
+        ipv4    = { cidrs_by_az = { us-east-1a = "10.150.0.0/24" } }
+        routing = { s3_gateway_endpoint = true }
+      }
+    }
+    gateway_endpoints = { s3 = { service = "s3" } }
+    routes = {
+      acknowledged = {
+        from_group                               = "app"
+        acknowledge_gateway_endpoint_coexistence = true
+        destination                              = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+        target                                   = { type = "vpc_peering", id = "pcx-acknowledged" }
+      }
+      unacknowledged = {
+        from_group  = "app"
+        destination = { type = "prefix_list", value = "pl-0fedcba9876543210" }
+        target      = { type = "vpc_peering", id = "pcx-unacknowledged" }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.top_level_routes_validation]
+}
+
+run "reject_cross_surface_collision_on_injected_table" {
+  command = plan
+
+  variables {
+    vpc                = { name = "injected-cross-surface-collision" }
+    addressing         = { primary = { cidr_block = "10.151.0.0/16" } }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      app = {
+        role               = "private"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.151.0.0/24", us-east-1b = "10.151.1.0/24" } }
+        manage_route_table = false
+        route_table_key    = "shared-app"
+        route_table_id     = "rtb-shared-app"
+        routes = {
+          group-route = {
+            destination = { type = "ipv4_cidr", value = "10.202.0.0/16" }
+            target      = { type = "vpc_peering", id = "pcx-group" }
+          }
+        }
+      }
+    }
+    routes = {
+      late-route = {
+        from_group  = "app"
+        destination = { type = "ipv4_cidr", value = "10.202.0.0/16" }
+        target      = { type = "vpc_endpoint", id = "vpce-late" }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.route_table_routing_compatibility_validation]
+}
