@@ -53,6 +53,20 @@ destination. Collision checks cover `subnets[*].routes` against top-level
 keys. Top-level routes are rejected for `isolated` groups and for injected
 physical route tables shared with an isolated group.
 
+Gateway endpoints add service-managed prefix-list routes as a side effect of the
+route-table association. Their prefix-list IDs are not available to this module
+as plan-known values, so it cannot prove that a top-level `prefix_list`
+destination differs from S3 or DynamoDB. A top-level prefix-list route is
+therefore rejected on any table with a gateway endpoint association unless that
+route sets `acknowledge_gateway_endpoint_coexistence = true`. The acknowledgement
+means the caller has independently verified that the explicit prefix list is
+distinct and accepts responsibility for future service or configuration changes.
+
+The AWS provider also constrains destination/target pairs. Within this contract,
+`prefix_list` cannot target `vpc_endpoint`, and `ipv6_cidr` cannot target
+`carrier_gateway`; both combinations fail variable validation before provider
+planning.
+
 ### Choosing the route surface
 
 If the target is produced by a module or resource that consumes subnet outputs

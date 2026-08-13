@@ -483,10 +483,11 @@ resource "terraform_data" "route_table_routing_compatibility_validation" {
 
 resource "terraform_data" "top_level_routes_validation" {
   input = {
-    invalid_groups                      = local.invalid_top_level_route_groups
-    isolation_conflicts                 = local.top_level_route_isolation_conflicts
-    missing_azs                         = local.top_level_route_missing_azs
-    shared_table_zonal_target_conflicts = local.top_level_route_shared_table_zonal_target_conflicts
+    gateway_endpoint_coexistence_conflicts = local.top_level_route_gateway_endpoint_coexistence_conflicts
+    invalid_groups                         = local.invalid_top_level_route_groups
+    isolation_conflicts                    = local.top_level_route_isolation_conflicts
+    missing_azs                            = local.top_level_route_missing_azs
+    shared_table_zonal_target_conflicts    = local.top_level_route_shared_table_zonal_target_conflicts
   }
 
   lifecycle {
@@ -503,6 +504,11 @@ resource "terraform_data" "top_level_routes_validation" {
     precondition {
       condition     = length(local.top_level_route_shared_table_zonal_target_conflicts) == 0
       error_message = "Top-level routes using ids_by_az require module-managed per-AZ route tables. An injected route table is one shared physical table and cannot select a different target by AZ. Use target.id for one shared target or set manage_route_table=true. Conflicts: ${join(", ", [for route_key, group in local.top_level_route_shared_table_zonal_target_conflicts : "${route_key}=${group}"])}."
+    }
+
+    precondition {
+      condition     = length(local.top_level_route_gateway_endpoint_coexistence_conflicts) == 0
+      error_message = "Top-level prefix_list routes cannot share a physical route table with S3 or DynamoDB gateway endpoint associations unless acknowledge_gateway_endpoint_coexistence=true. Gateway endpoint service-managed prefix-list IDs are not plan-known here, so distinct destinations cannot be proven. Set the acknowledgement only after independently verifying a different prefix list. Conflicts: ${join(", ", [for route_key, table_keys in local.top_level_route_gateway_endpoint_coexistence_conflicts : "${route_key}=[${join(", ", table_keys)}]"])}."
     }
 
     precondition {

@@ -811,6 +811,33 @@ locals {
     for route_key, route in var.routes : route_key => route.from_group
     if try(!var.subnets[route.from_group].manage_route_table, false) && route.target.ids_by_az != null
   }
+  top_level_route_table_keys = {
+    for route_key, route in var.routes : route_key => try(
+      var.subnets[route.from_group].manage_route_table ?
+      [for az in local.azs : "${route.from_group}/${az}"] :
+      ["injected/${var.subnets[route.from_group].route_table_key}"],
+      [],
+    )
+  }
+  top_level_route_gateway_endpoint_coexistence_conflicts = {
+    for route_key, route in var.routes : route_key => [
+      for table_key in local.top_level_route_table_keys[route_key] : table_key
+      if try(
+        local.route_table_targets[table_key].routing.s3_gateway_endpoint ||
+        local.route_table_targets[table_key].routing.dynamodb_gateway_endpoint,
+        false,
+      )
+    ]
+    if route.destination.type == "prefix_list" &&
+    !route.acknowledge_gateway_endpoint_coexistence && length([
+      for table_key in local.top_level_route_table_keys[route_key] : table_key
+      if try(
+        local.route_table_targets[table_key].routing.s3_gateway_endpoint ||
+        local.route_table_targets[table_key].routing.dynamodb_gateway_endpoint,
+        false,
+      )
+    ]) > 0
+  }
   top_level_route_isolation_conflicts = {
     for route_key, route in var.routes : route_key => route.from_group
     if try(

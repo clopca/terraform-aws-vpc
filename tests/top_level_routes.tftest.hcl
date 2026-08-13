@@ -1,6 +1,10 @@
 mock_provider "aws" {
   override_during = plan
 
+  mock_data "aws_region" {
+    defaults = { region = "us-east-1" }
+  }
+
   mock_resource "aws_vpc" {
     defaults = {
       id         = "vpc-mock"
@@ -15,6 +19,10 @@ mock_provider "aws" {
 
   mock_resource "aws_route_table" {
     defaults = { id = "rtb-mock" }
+  }
+
+  mock_resource "aws_vpc_endpoint" {
+    defaults = { id = "vpce-s3" }
   }
 }
 
@@ -305,7 +313,7 @@ run "reject_top_level_route_for_isolated_group" {
     routes = {
       invalid = {
         from_group  = "data"
-        destination = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+        destination = { type = "ipv4_cidr", value = "0.0.0.0/0" }
         target      = { type = "vpc_endpoint", id = "vpce-static" }
       }
     }
@@ -411,4 +419,109 @@ run "reject_zonal_target_on_injected_shared_table" {
   }
 
   expect_failures = [terraform_data.top_level_routes_validation]
+}
+
+run "reject_prefix_list_route_with_gateway_endpoint_association" {
+  command = plan
+
+  variables {
+    vpc                = { name = "gateway-endpoint-prefix-conflict" }
+    addressing         = { primary = { cidr_block = "10.145.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role    = "private"
+        ipv4    = { cidrs_by_az = { us-east-1a = "10.145.0.0/24" } }
+        routing = { s3_gateway_endpoint = true }
+      }
+    }
+    gateway_endpoints = { s3 = { service = "s3" } }
+    routes = {
+      partner-service = {
+        from_group  = "app"
+        destination = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+        target      = { type = "vpc_peering", id = "pcx-documentation" }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.top_level_routes_validation]
+}
+
+run "allow_acknowledged_prefix_list_route_with_gateway_endpoint_association" {
+  command = plan
+
+  variables {
+    vpc                = { name = "gateway-endpoint-prefix-acknowledged" }
+    addressing         = { primary = { cidr_block = "10.146.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role    = "private"
+        ipv4    = { cidrs_by_az = { us-east-1a = "10.146.0.0/24" } }
+        routing = { s3_gateway_endpoint = true }
+      }
+    }
+    gateway_endpoints = { s3 = { service = "s3" } }
+    routes = {
+      partner-service = {
+        from_group                               = "app"
+        acknowledge_gateway_endpoint_coexistence = true
+        destination                              = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+        target                                   = { type = "vpc_peering", id = "pcx-documentation" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      toset(keys(aws_route.top_level)) == toset(["partner-service/us-east-1a"]) &&
+      toset(keys(aws_vpc_endpoint_route_table_association.gateway)) == toset(["app/us-east-1a/gateway-endpoint/s3"])
+    )
+    error_message = "An explicit acknowledgement must allow a distinct prefix-list route to coexist with a gateway endpoint association."
+  }
+}
+
+run "reject_prefix_list_targeting_vpc_endpoint" {
+  command = plan
+
+  variables {
+    vpc                = { name = "invalid-prefix-endpoint" }
+    addressing         = { primary = { cidr_block = "10.147.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = { role = "private", ipv4 = { cidrs_by_az = { us-east-1a = "10.147.0.0/24" } } }
+    }
+    routes = {
+      invalid = {
+        from_group  = "app"
+        destination = { type = "prefix_list", value = "pl-0123456789abcdef0" }
+        target      = { type = "vpc_endpoint", id = "vpce-static" }
+      }
+    }
+  }
+
+  expect_failures = [var.routes]
+}
+
+run "reject_ipv6_cidr_targeting_carrier_gateway" {
+  command = plan
+
+  variables {
+    vpc                = { name = "invalid-ipv6-carrier" }
+    addressing         = { primary = { cidr_block = "10.148.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = { role = "private", ipv4 = { cidrs_by_az = { us-east-1a = "10.148.0.0/24" } } }
+    }
+    routes = {
+      invalid = {
+        from_group  = "app"
+        destination = { type = "ipv6_cidr", value = "2001:db8:148::/48" }
+        target      = { type = "carrier_gateway", id = "cagw-documentation" }
+      }
+    }
+  }
+
+  expect_failures = [var.routes]
 }

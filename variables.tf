@@ -1127,11 +1127,15 @@ variable "routes" {
     `target.id` replicates one target to every module-managed AZ or creates one
     route on an injected shared table. `target.ids_by_az` selects the target
     matching each configured AZ and therefore requires module-managed per-AZ route
-    tables. Exactly one of `id` and `ids_by_az` must be set. Destination and target
-    types use the same closed unions as `subnets[*].routes`.
+    tables. Exactly one of `id` and `ids_by_az` must be set. A `prefix_list`
+    destination on a table with an S3 or DynamoDB gateway endpoint is rejected
+    unless `acknowledge_gateway_endpoint_coexistence=true`, because the endpoint's
+    service-managed prefix-list ID cannot be compared during planning. Destination
+    and target types use the same closed unions as `subnets[*].routes`.
   EOT
   type = map(object({
-    from_group = string
+    from_group                               = string
+    acknowledge_gateway_endpoint_coexistence = optional(bool, false)
     destination = object({
       type  = string
       value = string
@@ -1154,6 +1158,15 @@ variable "routes" {
       contains(["vpc_peering", "vpc_endpoint", "network_interface", "virtual_private_gateway", "local_gateway", "carrier_gateway"], route.target.type)
     ])
     error_message = "routes keys must be stable lowercase identifiers without '/'; from_group must be non-empty; destination.type and target.type must use the documented closed unions."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, route in var.routes :
+      !(route.destination.type == "prefix_list" && route.target.type == "vpc_endpoint") &&
+      !(route.destination.type == "ipv6_cidr" && route.target.type == "carrier_gateway")
+    ])
+    error_message = "routes destination/target combination is not supported by aws_route: prefix_list cannot target vpc_endpoint, and ipv6_cidr cannot target carrier_gateway."
   }
 
   validation {
