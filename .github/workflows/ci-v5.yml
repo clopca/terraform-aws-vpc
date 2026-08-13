@@ -43,6 +43,9 @@ jobs:
       - name: Check formatting
         run: terraform fmt -check -recursive v5
 
+      - name: Check README Usage initialization
+        run: v5/scripts/test-readme-usage.sh
+
       - name: Initialize TFLint plugins
         run: tflint --chdir=v5 --init
 
