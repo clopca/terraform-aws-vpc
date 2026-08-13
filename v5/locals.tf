@@ -84,97 +84,116 @@ locals {
   subnets_with_cidrs_by_az = {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs_by_az != null
   }
-  # ─── Deterministic CIDR Calculation with Pinning [R1-C2] ───────────────
-  #
-  # Two-tier allocation:
-  #   1. Pinned groups (cidr_index != null) — reserved slots, immune to changes
-  #   2. Unpinned groups — sequential after highest pinned slot, alphabetical
-
-  vpc_prefix_length = tonumber(split("/", local.vpc_cidr)[1])
-
-  # Calculated groups reserve the contract maximum of six AZ slots. The fixed
-  # stride makes AZ expansion append-only instead of multiplying offsets by the
-  # current AZ count and shifting every later group.
+  # ─── Deterministic IPv4 CIDR calculation by selected parent ──────────
+  # Calculated groups reserve six AZ slots. Primary and each caller-keyed
+  # secondary association form independent allocation domains, so selectors
+  # affect the actual parent rather than acting as dependency-only metadata.
   cidr_az_stride = 6
 
-  # Normalize every allocation to /28 units. This lets differently sized
-  # netmasks share one non-overlapping address space while cidr_index remains an
-  # absolute group slot at the configured netmask.
+  ipv4_parent_key_by_group = {
+    for name, cfg in local.subnets_with_netmask :
+    name => cfg.ipv4.secondary_cidr_key == null ? "primary" : "secondary:${cfg.ipv4.secondary_cidr_key}"
+  }
+  ipv4_parent_cidr_by_group = {
+    for name, cfg in local.subnets_with_netmask : name => (
+      cfg.ipv4.secondary_cidr_key == null
+      ? local.vpc_cidr
+      : try(local.secondary_ipv4_cidr_blocks[cfg.ipv4.secondary_cidr_key], null)
+    )
+  }
+  ipv4_parent_prefix_length_by_group = {
+    for name, cidr in local.ipv4_parent_cidr_by_group :
+    name => cidr == null ? null : tonumber(split("/", cidr)[1])
+  }
+  ipv4_parent_keys = distinct(values(local.ipv4_parent_key_by_group))
+
+  # Normalize every allocation to /28 units. Differently sized groups share a
+  # non-overlapping space inside the same parent while independent parents may
+  # safely reuse the same absolute cidr_index.
   cidr_units_per_group = {
     for name, cfg in local.subnets_with_netmask :
     name => local.cidr_az_stride * pow(2, 28 - cfg.ipv4.netmask)
   }
-
   pinned_group_start_unit = {
     for name, cfg in local.subnets_with_netmask :
     name => cfg.ipv4.cidr_index * local.cidr_units_per_group[name]
     if cfg.ipv4.cidr_index != null
   }
-
-
-  pinned_group_names_sorted = sort(keys(local.pinned_group_start_unit))
-  pinned_group_overlap_pairs = flatten([
-    for name in local.pinned_group_names_sorted : [
-      for other in local.pinned_group_names_sorted : "${name}/${other}"
-      if index(local.pinned_group_names_sorted, name) < index(local.pinned_group_names_sorted, other) &&
-      local.pinned_group_start_unit[name] <= local.pinned_group_end_unit[other] &&
-      local.pinned_group_start_unit[other] <= local.pinned_group_end_unit[name]
-    ]
-  ])
   pinned_group_end_unit = {
     for name, start in local.pinned_group_start_unit :
     name => start + local.cidr_units_per_group[name] - 1
   }
-
-  # Pinned groups reserve absolute ranges first. All unpinned groups are packed
-  # after the highest pinned /28 unit, ordered by larger subnet first and then
-  # group name. Because sizes descend, one initial alignment is sufficient.
-  pinned_reserved_units = length(local.pinned_group_end_unit) == 0 ? 0 : max(values(local.pinned_group_end_unit)...) + 1
-
-  unpinned_group_order = sort([
-    for name, cfg in local.subnets_with_netmask :
-    format("%02d|%s", cfg.ipv4.netmask, name)
-    if cfg.ipv4.cidr_index == null
+  pinned_group_names_sorted = sort(keys(local.pinned_group_start_unit))
+  pinned_group_overlap_pairs = flatten([
+    for name in local.pinned_group_names_sorted : [
+      for other in local.pinned_group_names_sorted : "${name}/${other}"
+      if local.ipv4_parent_key_by_group[name] == local.ipv4_parent_key_by_group[other] &&
+      index(local.pinned_group_names_sorted, name) < index(local.pinned_group_names_sorted, other) &&
+      local.pinned_group_start_unit[name] <= local.pinned_group_end_unit[other] &&
+      local.pinned_group_start_unit[other] <= local.pinned_group_end_unit[name]
+    ]
   ])
-
-  first_unpinned_group = try(split("|", local.unpinned_group_order[0])[1], null)
-  unpinned_base_unit = local.first_unpinned_group == null ? local.pinned_reserved_units : (
-    ceil(local.pinned_reserved_units / local.cidr_units_per_group[local.first_unpinned_group]) *
-    local.cidr_units_per_group[local.first_unpinned_group]
-  )
-
-  unpinned_group_start_unit = {
-    for entry in local.unpinned_group_order : split("|", entry)[1] => (
-      local.unpinned_base_unit + sum(concat([0], [
-        for prior in local.unpinned_group_order :
-        local.cidr_units_per_group[split("|", prior)[1]]
-        if index(local.unpinned_group_order, prior) < index(local.unpinned_group_order, entry)
-      ]))
+  pinned_reserved_units_by_parent = {
+    for parent_key in local.ipv4_parent_keys : parent_key => (
+      length([
+        for name, end in local.pinned_group_end_unit : end
+        if local.ipv4_parent_key_by_group[name] == parent_key
+        ]) == 0 ? 0 : max([
+        for name, end in local.pinned_group_end_unit : end
+        if local.ipv4_parent_key_by_group[name] == parent_key
+      ]...) + 1
     )
   }
-
+  unpinned_group_order_by_parent = {
+    for parent_key in local.ipv4_parent_keys : parent_key => sort([
+      for name, cfg in local.subnets_with_netmask : format("%02d|%s", cfg.ipv4.netmask, name)
+      if local.ipv4_parent_key_by_group[name] == parent_key && cfg.ipv4.cidr_index == null
+    ])
+  }
+  first_unpinned_group_by_parent = {
+    for parent_key, entries in local.unpinned_group_order_by_parent :
+    parent_key => try(split("|", entries[0])[1], null)
+  }
+  unpinned_base_unit_by_parent = {
+    for parent_key, first_name in local.first_unpinned_group_by_parent : parent_key => (
+      first_name == null ? local.pinned_reserved_units_by_parent[parent_key] : (
+        ceil(local.pinned_reserved_units_by_parent[parent_key] / local.cidr_units_per_group[first_name]) *
+        local.cidr_units_per_group[first_name]
+      )
+    )
+  }
+  unpinned_group_start_unit = merge(concat([{}], [
+    for parent_key, entries in local.unpinned_group_order_by_parent : {
+      for entry in entries : split("|", entry)[1] => (
+        local.unpinned_base_unit_by_parent[parent_key] + sum(concat([0], [
+          for prior in entries : local.cidr_units_per_group[split("|", prior)[1]]
+          if index(entries, prior) < index(entries, entry)
+        ]))
+      )
+    }
+  ])...)
   calculated_group_start_unit = merge(
     local.pinned_group_start_unit,
     local.unpinned_group_start_unit,
   )
 
-  # Materialize one CIDR per configured AZ. Each group's remaining reserved AZ
-  # slots stay unused, preserving all existing CIDRs when a new AZ is appended.
-  calculated_cidrs = merge([
+  # Materialize one CIDR per configured AZ from the selected parent. Remaining
+  # slots stay unused so appending AZs preserves existing subnet CIDRs.
+  calculated_cidrs = merge(concat([{}], [
     for name, cfg in local.subnets_with_netmask : {
       for ai, az in local.azs : "${name}/${az}" => try(cidrsubnet(
-        local.vpc_cidr,
-        cfg.ipv4.netmask - local.vpc_prefix_length,
+        local.ipv4_parent_cidr_by_group[name],
+        cfg.ipv4.netmask - local.ipv4_parent_prefix_length_by_group[name],
         (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
-      ), local.vpc_cidr)
+      ), local.ipv4_parent_cidr_by_group[name])
     }
-  ]...)
+  ])...)
   invalid_calculated_ipv4_keys = [
     for name, cfg in local.subnets_with_netmask : name
     if !alltrue([
       for ai, az in local.azs : can(cidrsubnet(
-        local.vpc_cidr,
-        cfg.ipv4.netmask - local.vpc_prefix_length,
+        local.ipv4_parent_cidr_by_group[name],
+        cfg.ipv4.netmask - local.ipv4_parent_prefix_length_by_group[name],
         (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
       ))
     ])
@@ -183,10 +202,13 @@ locals {
     for name, start in local.calculated_group_start_unit :
     name => start + local.cidr_units_per_group[name] - 1
   }
-  available_cidr_units = pow(2, 28 - local.vpc_prefix_length)
+  available_cidr_units_by_group = {
+    for name, prefix in local.ipv4_parent_prefix_length_by_group :
+    name => prefix == null ? null : pow(2, 28 - prefix)
+  }
   capacity_exceeded_ipv4_groups = [
     for name, end in local.calculated_group_end_unit : name
-    if end >= local.available_cidr_units
+    if local.available_cidr_units_by_group[name] != null && end >= local.available_cidr_units_by_group[name]
   ]
 
   # ─── Deterministic IPv6 /64 calculation by secondary association ──────
@@ -394,20 +416,105 @@ locals {
   secondary_ipv6_cidrs_to_create = {
     for key, secondary in local.secondary_ipv6_cidrs : key => secondary if secondary.create
   }
+  injected_secondary_ipv4_cidrs = {
+    for key, secondary in local.secondary_ipv4_cidrs : key => secondary if !secondary.create
+  }
   injected_secondary_ipv6_cidrs = {
     for key, secondary in local.secondary_ipv6_cidrs : key => secondary if !secondary.create
   }
-  ipv6_association_vpc = length(local.injected_secondary_ipv6_cidrs) == 0 ? null : (
+  secondary_association_vpc = (
+    length(local.injected_secondary_ipv4_cidrs) == 0 &&
+    length(local.injected_secondary_ipv6_cidrs) == 0
+    ) ? null : (
     local.create_vpc ? data.aws_vpc.managed_ipv6_associations[0] : data.aws_vpc.existing[0]
   )
-  secondary_ipv6_cidr_blocks = {
-    for key, secondary in local.secondary_ipv6_cidrs : key => (
-      secondary.create ? aws_vpc_ipv6_cidr_block_association.secondary[key].ipv6_cidr_block : try([
-        for association in local.ipv6_association_vpc.ipv6_cidr_block_associations : association.ipv6_cidr_block
+  secondary_ipv4_cidr_blocks = {
+    for key, secondary in local.secondary_ipv4_cidrs : key => (
+      secondary.create ? aws_vpc_ipv4_cidr_block_association.secondary[key].cidr_block : try([
+        for association in local.secondary_association_vpc.cidr_block_associations : association.cidr_block
         if association.state == "associated" && try(association.association_id, null) == secondary.association_id
       ][0], null)
     )
   }
+  secondary_ipv6_cidr_blocks = {
+    for key, secondary in local.secondary_ipv6_cidrs : key => (
+      secondary.create ? aws_vpc_ipv6_cidr_block_association.secondary[key].ipv6_cidr_block : try([
+        for association in local.secondary_association_vpc.ipv6_cidr_block_associations : association.ipv6_cidr_block
+        if association.state == "associated" && try(association.association_id, null) == secondary.association_id
+      ][0], null)
+    )
+  }
+  explicit_ipv4_parent_checks = {
+    for key, subnet in local.subnet_map : key => {
+      child  = subnet.cidr_block
+      parent = try(local.secondary_ipv4_cidr_blocks[subnet.secondary_cidr_key], null)
+    }
+    if subnet.secondary_cidr_key != null && subnet.cidr_block != null
+  }
+  explicit_ipv4_containment_octets = {
+    for key, check in local.explicit_ipv4_parent_checks : key => {
+      parent_first = try(split(".", cidrhost(check.parent, 0)), [])
+      parent_last  = try(split(".", cidrhost(check.parent, -1)), [])
+      child_first  = try(split(".", cidrhost(check.child, 0)), [])
+      child_last   = try(split(".", cidrhost(check.child, -1)), [])
+    }
+  }
+  explicit_ipv4_cidrs_within_parent = {
+    for key, octets in local.explicit_ipv4_containment_octets : key => (
+      length(octets.parent_first) == 4 && length(octets.parent_last) == 4 &&
+      length(octets.child_first) == 4 && length(octets.child_last) == 4
+      ) ? (
+      sum([for i, octet in octets.child_first : tonumber(octet) * pow(256, 3 - i)]) >=
+      sum([for i, octet in octets.parent_first : tonumber(octet) * pow(256, 3 - i)]) &&
+      sum([for i, octet in octets.child_last : tonumber(octet) * pow(256, 3 - i)]) <=
+      sum([for i, octet in octets.parent_last : tonumber(octet) * pow(256, 3 - i)])
+    ) : false
+  }
+
+  explicit_ipv6_parent_checks = {
+    for key, subnet in local.subnet_map : key => {
+      child  = subnet.ipv6_cidr
+      parent = try(local.secondary_ipv6_cidr_blocks[subnet.ipv6_secondary_cidr_key], null)
+    }
+    if subnet.ipv6_secondary_cidr_key != null && subnet.ipv6_cidr != null
+  }
+  explicit_ipv6_containment_parts = {
+    for key, check in local.explicit_ipv6_parent_checks : key => {
+      parent        = try(split(":", cidrhost(check.parent, 0)), [])
+      child         = try(split(":", cidrhost(check.child, 0)), [])
+      parent_prefix = try(tonumber(split("/", check.parent)[1]), null)
+      child_prefix  = try(tonumber(split("/", check.child)[1]), null)
+    }
+  }
+  explicit_ipv6_parent_hex = {
+    for key, parts in local.explicit_ipv6_containment_parts : key => (
+      length(parts.parent) == 0 ? null : join("", contains(parts.parent, "") ? concat(
+        [for i, part in parts.parent : format("%04s", lower(part)) if part != "" && i < index(parts.parent, "")],
+        [for i in range(8 - length([for part in parts.parent : part if part != ""])) : "0000"],
+        [for i, part in parts.parent : format("%04s", lower(part)) if part != "" && i > index(parts.parent, "")],
+      ) : [for part in parts.parent : format("%04s", lower(part))])
+    )
+  }
+  explicit_ipv6_child_hex = {
+    for key, parts in local.explicit_ipv6_containment_parts : key => (
+      length(parts.child) == 0 ? null : join("", contains(parts.child, "") ? concat(
+        [for i, part in parts.child : format("%04s", lower(part)) if part != "" && i < index(parts.child, "")],
+        [for i in range(8 - length([for part in parts.child : part if part != ""])) : "0000"],
+        [for i, part in parts.child : format("%04s", lower(part)) if part != "" && i > index(parts.child, "")],
+      ) : [for part in parts.child : format("%04s", lower(part))])
+    )
+  }
+  explicit_ipv6_cidrs_within_parent = {
+    for key, parts in local.explicit_ipv6_containment_parts : key => (
+      parts.parent_prefix != null && parts.child_prefix != null &&
+      local.explicit_ipv6_parent_hex[key] != null && local.explicit_ipv6_child_hex[key] != null
+      ) ? (
+      parts.child_prefix >= parts.parent_prefix &&
+      substr(local.explicit_ipv6_child_hex[key], 0, parts.parent_prefix / 4) ==
+      substr(local.explicit_ipv6_parent_hex[key], 0, parts.parent_prefix / 4)
+    ) : false
+  }
+
   secondary_ipv4_cidr_association_ids = {
     for key, secondary in local.secondary_ipv4_cidrs : key => (
       secondary.create ? aws_vpc_ipv4_cidr_block_association.secondary[key].id : secondary.association_id

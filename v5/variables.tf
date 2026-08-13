@@ -783,13 +783,13 @@ variable "subnets" {
 
   validation {
     condition = length(distinct([
-      for k, v in var.subnets : "${v.ipv4.netmask}/${v.ipv4.cidr_index}"
+      for k, v in var.subnets : "${coalesce(v.ipv4.secondary_cidr_key, "primary")}/${v.ipv4.netmask}/${v.ipv4.cidr_index}"
       if v.ipv4 != null && v.ipv4.netmask != null && v.ipv4.cidr_index != null
       ])) == length([
       for k, v in var.subnets : k
       if v.ipv4 != null && v.ipv4.netmask != null && v.ipv4.cidr_index != null
     ])
-    error_message = "Pinned ipv4.cidr_index values must be unique per netmask. Configured pins: ${join(", ", [for key, cfg in var.subnets : "${key}=/${cfg.ipv4.netmask}#${cfg.ipv4.cidr_index}" if cfg.ipv4 != null && cfg.ipv4.netmask != null && cfg.ipv4.cidr_index != null])}."
+    error_message = "Pinned ipv4.cidr_index values must be unique per selected parent and netmask. Configured pins: ${join(", ", [for key, cfg in var.subnets : "${key}=${coalesce(cfg.ipv4.secondary_cidr_key, "primary")}/${cfg.ipv4.netmask}#${cfg.ipv4.cidr_index}" if cfg.ipv4 != null && cfg.ipv4.netmask != null && cfg.ipv4.cidr_index != null])}."
   }
 
   validation {

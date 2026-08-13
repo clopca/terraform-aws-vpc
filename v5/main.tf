@@ -23,11 +23,14 @@ data "aws_vpc" "existing" {
   id    = var.vpc.id
 }
 
-# A managed VPC may inject pre-existing IPv6 associations during migration.
+# A managed VPC may inject pre-existing secondary associations during migration.
 # The explicit create flag keeps this lookup cardinality plan-known.
 data "aws_vpc" "managed_ipv6_associations" {
-  count = var.vpc.create && length(local.injected_secondary_ipv6_cidrs) > 0 ? 1 : 0
-  id    = local.vpc_id
+  count = var.vpc.create && (
+    length(local.injected_secondary_ipv4_cidrs) > 0 ||
+    length(local.injected_secondary_ipv6_cidrs) > 0
+  ) ? 1 : 0
+  id = local.vpc_id
 }
 
 data "aws_subnet" "existing" {
@@ -164,6 +167,8 @@ resource "aws_subnet" "main" {
   depends_on = [
     aws_vpc_ipv4_cidr_block_association.secondary,
     aws_vpc_ipv6_cidr_block_association.secondary,
+    terraform_data.subnet_secondary_cidr_validation,
+    terraform_data.subnet_ipv6_secondary_cidr_validation,
   ]
 
   lifecycle {
@@ -193,33 +198,58 @@ resource "terraform_data" "subnet_existing_ids_validation" {
 }
 
 resource "terraform_data" "subnet_secondary_cidr_validation" {
+  # Family-block presence determines cardinality; selector values may be unknown
+  # without making for_each unknown.
   for_each = {
     for key, subnet in local.subnet_map : key => subnet
-    if subnet.secondary_cidr_key != null
+    if var.subnets[subnet.name].ipv4 != null
   }
 
-  input = try(local.secondary_cidr_association_ids[each.value.secondary_cidr_key], null)
+  input = try(local.secondary_ipv4_cidr_association_ids[each.value.secondary_cidr_key], null)
 
   lifecycle {
     precondition {
-      condition     = contains(keys(local.secondary_ipv4_cidrs), each.value.secondary_cidr_key)
-      error_message = "Subnet '${each.key}' references unknown secondary CIDR key '${each.value.secondary_cidr_key}'."
+      condition = (
+        each.value.secondary_cidr_key == null ||
+        contains(keys(local.secondary_ipv4_cidrs), each.value.secondary_cidr_key)
+      )
+      error_message = "Subnet '${each.key}' references an unknown IPv4 secondary CIDR key."
+    }
+
+    precondition {
+      condition = (
+        each.value.secondary_cidr_key == null || each.value.cidr_block == null ||
+        try(local.explicit_ipv4_cidrs_within_parent[each.key], false)
+      )
+      error_message = "Subnet '${each.key}' IPv4 CIDR must be contained in the addressing.secondary IPv4 block selected by secondary_cidr_key."
     }
   }
 }
 
 resource "terraform_data" "subnet_ipv6_secondary_cidr_validation" {
+  # Every IPv6 block requires a selector, but its value may resolve at apply.
   for_each = {
     for key, subnet in local.subnet_map : key => subnet
-    if subnet.ipv6_secondary_cidr_key != null
+    if var.subnets[subnet.name].ipv6 != null
   }
 
   input = try(local.secondary_ipv6_cidr_association_ids[each.value.ipv6_secondary_cidr_key], null)
 
   lifecycle {
     precondition {
-      condition     = contains(keys(local.secondary_ipv6_cidrs), each.value.ipv6_secondary_cidr_key)
-      error_message = "Subnet '${each.key}' references unknown IPv6 secondary CIDR key '${each.value.ipv6_secondary_cidr_key}'."
+      condition = (
+        each.value.ipv6_secondary_cidr_key != null &&
+        contains(keys(local.secondary_ipv6_cidrs), each.value.ipv6_secondary_cidr_key)
+      )
+      error_message = "Subnet '${each.key}' must reference an existing IPv6 secondary CIDR key."
+    }
+
+    precondition {
+      condition = (
+        each.value.ipv6_cidr == null ||
+        try(local.explicit_ipv6_cidrs_within_parent[each.key], false)
+      )
+      error_message = "Subnet '${each.key}' IPv6 CIDR must be contained in the addressing.secondary IPv6 block selected by secondary_cidr_key."
     }
   }
 }

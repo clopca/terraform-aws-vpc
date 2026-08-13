@@ -159,8 +159,12 @@ module does not impose a cardinality cap, while AWS service quotas remain author
 | Subnet IPv6 | Exactly `/64`, whether explicit, subnet IPAM, or deterministically calculated. | Always names its parent secondary IPv6 key. |
 
 IPv4 and IPv6 calculated subnet engines both reserve six AZ slots per group and
-support absolute `cidr_index` pinning. IPv6 packing is independent per selected
-secondary range, so the same pin may be reused under different IPv6 associations.
+support absolute `cidr_index` pinning. IPv4 allocation is partitioned by the
+selected primary or secondary parent, and IPv6 packing is independent per selected
+secondary range, so the same pin may be reused under different associations.
+Explicit IPv4 and IPv6 subnet CIDRs are validated for containment in the selected
+parent whenever the parent is plan-known; provider-derived parents defer the same
+check to apply before subnet creation.
 `native_only=true` creates a real IPv6-only subnet; omitting it with both family
 blocks creates dual-stack. DNS64 creates the required `64:ff9b::/96` NAT Gateway
 route, and EIGW routing creates `::/0`.

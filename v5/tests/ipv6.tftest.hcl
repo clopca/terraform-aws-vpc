@@ -259,3 +259,35 @@ run "reject_unknown_ipv6_secondary_key" {
 
   expect_failures = [terraform_data.subnet_ipv6_secondary_cidr_validation["app/us-east-1a"]]
 }
+
+run "reject_explicit_ipv6_outside_selected_parent" {
+  command = plan
+
+  variables {
+    vpc = { name = "ipv6-containment" }
+    addressing = {
+      primary = { cidr_block = "10.13.0.0/16" }
+      secondary = {
+        blue = {
+          ipv6 = { ipam_pool_id = "ipam-pool-blue", cidr_block = "2001:db8:1000::/56" }
+        }
+        green = {
+          ipv6 = { ipam_pool_id = "ipam-pool-green", cidr_block = "2001:db8:2000::/56" }
+        }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.13.0.0/24" } }
+        ipv6 = {
+          secondary_cidr_key = "blue"
+          cidrs_by_az        = { us-east-1a = "2001:db8:2000::/64" }
+        }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_ipv6_secondary_cidr_validation["app/us-east-1a"]]
+}

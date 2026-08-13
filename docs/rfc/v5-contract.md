@@ -391,6 +391,13 @@ created by the module.
    sorted by netmask ascending (largest subnet first) and then group key. Mixed
    netmasks share one /28-normalized address space and cannot overlap.
 
+Primary IPv4 and every caller-keyed secondary IPv4 association are independent
+allocation domains. `ipv4.secondary_cidr_key` therefore selects the actual parent
+for calculated CIDRs, not only a dependency. Equal pins may be reused under
+different parents. Explicit IPv4 and IPv6 CIDRs must be contained in their selected
+parent; unknown provider-derived parents defer this precondition to apply before
+subnet creation.
+
 **Stability guarantees:**
 - Pinned groups: existing CIDRs never shift; conflicting absolute pins fail early.
 - Unpinned groups: may shift if a group that sorts before them is added/removed.

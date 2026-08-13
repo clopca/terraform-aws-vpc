@@ -40,6 +40,10 @@ resource "terraform_data" "ipv6_association_id" {
   input = "vpc-cidr-assoc-computed"
 }
 
+resource "terraform_data" "ipv6_selector" {
+  input = "ipv6"
+}
+
 resource "terraform_data" "cwan_attachment_id" {
   input = "attachment-computed"
 }
@@ -86,7 +90,7 @@ module "vpc" {
       role = "private"
       ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.1.0/24" } }
       ipv6 = {
-        secondary_cidr_key = "ipv6"
+        secondary_cidr_key = terraform_data.ipv6_selector.output
         ipam_pool_id       = terraform_data.ipv6_pool.output
         netmask_length     = 64
         auto_assign        = true

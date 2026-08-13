@@ -8,6 +8,18 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_vpc" {
+    defaults = {
+      id         = "vpc-mock"
+      cidr_block = "10.0.0.0/16"
+      cidr_block_associations = [{
+        association_id = "vpc-cidr-assoc-0123456789abcdef0"
+        cidr_block     = "100.64.0.0/16"
+        state          = "associated"
+      }]
+    }
+  }
+
   mock_resource "aws_vpc_ipv4_cidr_block_association" {
     defaults = { id = "vpc-cidr-assoc-mock" }
   }
@@ -186,4 +198,65 @@ run "reject_secondary_with_both_families" {
   }
 
   expect_failures = [var.addressing]
+}
+
+run "calculated_ipv4_uses_selected_secondary_parent" {
+  command = plan
+
+  variables {
+    vpc = { name = "secondary-calculation" }
+    addressing = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        legacy = { ipv4 = { cidr_block = "100.64.0.0/20" } }
+      }
+    }
+    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    subnets = {
+      primary = {
+        role = "private"
+        ipv4 = { netmask = 24, cidr_index = 0 }
+      }
+      legacy = {
+        role = "private"
+        ipv4 = { netmask = 24, cidr_index = 0, secondary_cidr_key = "legacy" }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      aws_subnet.main["primary/us-east-1a"].cidr_block == "10.0.0.0/24" &&
+      aws_subnet.main["legacy/us-east-1a"].cidr_block == "100.64.0.0/24" &&
+      aws_subnet.main["legacy/us-east-1b"].cidr_block == "100.64.1.0/24"
+    )
+    error_message = "Calculated IPv4 groups must allocate independently inside their selected primary or secondary parent."
+  }
+}
+
+run "reject_explicit_ipv4_outside_selected_parent" {
+  command = plan
+
+  variables {
+    vpc = { name = "secondary-containment" }
+    addressing = {
+      primary = { cidr_block = "10.0.0.0/16" }
+      secondary = {
+        blue  = { ipv4 = { cidr_block = "100.64.0.0/20" } }
+        green = { ipv4 = { cidr_block = "100.65.0.0/20" } }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = {
+          cidrs_by_az        = { us-east-1a = "100.65.0.0/24" }
+          secondary_cidr_key = "blue"
+        }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"]]
 }
