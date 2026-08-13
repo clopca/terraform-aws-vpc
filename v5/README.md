@@ -178,6 +178,49 @@ names are:
 These fields are documented reservations only and are not accepted or applied in
 5.0; adding optional attributes inside those existing objects is an additive change.
 
+## Deferred structural contract shapes
+
+The following post-5.0 shapes are reserved in documentation but are not accepted
+as no-op inputs. A future implementation must use these names rather than add a
+parallel singular API:
+
+```hcl
+nat_gateways = map(object({
+  az_keys = set(string) # each map key is one NAT-domain state identity
+  # additional per-domain ownership, placement, addressing, and route fields
+}))
+
+availability_zones = {
+  ids = list(string) # exclusive alternative to names/count
+}
+
+subnets = {
+  group = {
+    az_keys = set(string) # sparse subset of the selected global AZ keys
+    ipv6 = {
+      association_key = string
+    }
+  }
+}
+
+addressing = {
+  ipv6 = {
+    associations = map(object({
+      create         = bool
+      association_id = optional(string)
+      # one create/inject addressing source plus optional network border group
+    }))
+  }
+}
+```
+
+The singular `nat_gateway` object and singular IPv6 output remain compatibility
+adapters when these collections arrive. v5.0 fully models subnet allocation and
+routing for one selected VPC IPv6 association; it does not claim complete
+multi-association or BYOIPv6 coverage. For an injected VPC with multiple
+associations, `addressing.ipv6.association_id` selects the one association used by
+all v5.0 subnet calculations.
+
 ## NAT Gateway availability modes
 
 `nat_gateway.mode` supports `none`, `single_az`, `all_azs`, and `regional`.

@@ -29,3 +29,13 @@ if grep -Fq 'Phase 5 gate pending' "$repo_root/docs/rfc/v5-contract.md" || grep 
   echo "Stale RFC status wording found" >&2
   exit 1
 fi
+
+grep -Fq 'nat_gateways = map(object({' "$repo_root/v5/.header.md"
+grep -Fq 'ids = list(string) # exclusive alternative to names/count' "$repo_root/v5/.header.md"
+grep -Fq 'associations = map(object({' "$repo_root/v5/.header.md"
+grep -Fq 'association_key = string' "$repo_root/v5/.header.md"
+grep -Fq 'one selected VPC IPv6 association' "$repo_root/v5/.header.md"
+if grep -RIn --exclude='check-content.sh' 'Complete dual-stack and IPv6-native topology' "$repo_root/v5"; then
+  echo "Overbroad IPv6 completeness claim found" >&2
+  exit 1
+fi

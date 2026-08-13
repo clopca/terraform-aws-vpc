@@ -709,6 +709,18 @@ resources.
 
 ## 6. Future work / deferred scope
 
+### Frozen structural reservations
+
+These shapes are naming/compatibility commitments, not accepted no-op inputs in
+5.0: `nat_gateways = map(object({ az_keys = set(string), ... }))` for caller-keyed
+NAT domains; `availability_zones.ids` as the exclusive ID-based alternative to
+`names/count`; `subnets[*].az_keys` for sparse placement; and
+`addressing.ipv6.associations = map(object(...))` selected by
+`subnets[*].ipv6.association_key`. The existing singular NAT and IPv6 handles become
+compatibility adapters rather than parallel primary APIs. v5.0's IPv6 guarantee is
+complete only within one selected VPC association; multi-association/BYOIPv6 and
+network-border-group ownership remain deferred.
+
 - **Phase 2**: Route table injection via `subnets[*].route_table_id` — ✅ DONE
 - **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
 - **Phase 2**: IGW injection via `vpc.igw_create=false` + `vpc.igw_id` — ✅ DONE

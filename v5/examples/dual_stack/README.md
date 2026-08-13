@@ -1,6 +1,6 @@
-# Complete dual-stack and IPv6-native topology
+# Single-association dual-stack and IPv6-native topology
 
-This example concentrates the v5 IPv6 features in one two-AZ VPC:
+This example concentrates the v5 IPv6 features for one selected VPC IPv6 association in a two-AZ VPC:
 
 - Amazon-provided VPC IPv6 `/56`;
 - public and private dual-stack subnets with deterministic `/64`s;
