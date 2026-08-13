@@ -264,6 +264,31 @@ locals {
     }
   }
 
+  subnet_connectivity_by_group_by_az = {
+    for name, routing in local.resolved_routing : name => {
+      for az in local.azs : az => {
+        igw  = routing.internet_gateway
+        nat  = routing.nat_gateway || routing.dns64
+        eigw = routing.egress_only_igw
+        tgw = (
+          length(coalesce(routing.transit_gateway, [])) > 0 ||
+          length(coalesce(routing.transit_gateway_ipv6, [])) > 0 ||
+          anytrue([for destinations in values(routing.transit_gateway_attachments) : length(destinations) > 0]) ||
+          anytrue([for destinations in values(routing.transit_gateway_attachments_ipv6) : length(destinations) > 0])
+        )
+        core_network = (
+          length(coalesce(routing.core_network, [])) > 0 ||
+          length(coalesce(routing.core_network_ipv6, [])) > 0
+        )
+        s3_gateway_endpoint       = routing.s3_gateway_endpoint
+        dynamodb_gateway_endpoint = routing.dynamodb_gateway_endpoint
+        internet = (
+          routing.internet_gateway || routing.nat_gateway || routing.dns64 || routing.egress_only_igw
+        )
+      }
+    }
+  }
+
   # ─── IGW: plan-known create-or-inject ───────────────────────────────────
   # Public role is only the default for resolved routing; an explicit false is
   # authoritative. A public NAT created by this module still requires an IGW.

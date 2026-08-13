@@ -92,6 +92,31 @@ output "subnet_ids_by_group_by_az" {
   }
 }
 
+output "subnet_connectivity_by_group_by_az" {
+  description = "Effective route capabilities by subnet group and AZ. Role and connectivity are independent axes. nat includes IPv4 NAT and DNS64/NAT64; internet is true for IGW, NAT/NAT64, or EIGW."
+  value       = local.subnet_connectivity_by_group_by_az
+}
+
+output "subnet_ids_with_nat_by_az" {
+  description = "Subnet IDs with an IPv4 NAT or DNS64/NAT64 route, grouped by AZ. Shape: map(az, list(subnet_id))."
+  value = {
+    for az in local.azs : az => [
+      for name in sort(keys(var.subnets)) : local.subnet_ids["${name}/${az}"]
+      if local.subnet_connectivity_by_group_by_az[name][az].nat
+    ]
+  }
+}
+
+output "subnet_ids_without_internet_by_az" {
+  description = "Subnet IDs with no direct IGW, NAT/NAT64, or EIGW route, grouped by AZ. Transit and gateway-endpoint routes do not count as Internet access. Shape: map(az, list(subnet_id))."
+  value = {
+    for az in local.azs : az => [
+      for name in sort(keys(var.subnets)) : local.subnet_ids["${name}/${az}"]
+      if !local.subnet_connectivity_by_group_by_az[name][az].internet
+    ]
+  }
+}
+
 output "subnet_cidrs_by_group" {
   description = "Subnet IPv4 CIDRs by group. Shape: map(group_name, list(cidr|null))."
   value = {
