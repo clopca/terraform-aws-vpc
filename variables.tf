@@ -428,6 +428,11 @@ variable "subnets" {
     to inject an existing route table. `route_table_key` is caller-owned, immutable
     Terraform state identity; renaming it changes every `injected/<key>/...` route
     and gateway-endpoint association address and requires root-module `moved` blocks.
+    Changing `manage_route_table` after deployment is an ownership handoff, not an
+    in-place toggle: `true` to `false` removes the managed tables and re-keys
+    top-level routes from `<route-key>/<az>` to `<route-key>/shared`. Preserve tables
+    with root-module `removed` blocks using `destroy = false`, and stage the route
+    cutover when an interruption is unacceptable.
     Groups sharing one physical table must use the same key and ID. The module
     associates every subnet while materializing each route and gateway-endpoint
     association only once per physical key. For role = "isolated", an injected

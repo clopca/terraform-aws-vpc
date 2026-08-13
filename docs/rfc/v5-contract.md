@@ -33,6 +33,41 @@ one physical table cannot select a different target by AZ. Resource keys are
 derived only from caller-owned route, AZ, and shared-table identities;
 route-table and target IDs remain values and may be unknown during planning.
 
+### Changing `manage_route_table` after deployment
+
+Changing `subnets.<group>.manage_route_table` is an ownership handoff, not an
+in-place toggle. A direct change from `true` to `false` removes the managed
+`aws_route_table.main["<group>/<az>"]` instances from configuration. Without an
+explicit handoff, Terraform plans to destroy those route tables. Preserve each
+physical table that must survive by adding a root-module `removed` block in
+the same configuration that performs the transition:
+
+```hcl
+removed {
+  from = module.vpc.aws_route_table.main["application/us-east-1a"]
+
+  lifecycle {
+    destroy = false
+  }
+}
+```
+
+Repeat the block for every managed AZ, choose the one physical table that will
+become the shared injected table, and pass its stable identity through
+`route_table_key` and `route_table_id`. Rehearse against copied state and verify
+that every subnet association moves to the intended shared table; any preserved
+non-selected tables remain caller-owned and require deliberate later cleanup.
+
+The same change re-keys every top-level route for that group from
+`<route-key>/<az>` to `<route-key>/shared`. In the normal direct plan, Terraform
+destroys the old zonal route instances and creates the shared instance. Use that
+plan only in a maintenance window where a temporary route interruption is
+acceptable. If continuity is required, stage the handoff: move the selected
+table's existing route state to the `/shared` address with a caller-owned
+`moved` block, apply and verify the association/ownership change, then remove
+obsolete routes and tables in a separate reviewed change. Never apply the
+boolean change as an assumed zero-destroy migration.
+
 `from_group` must name an entry in `subnets`. Its effective route tables receive
 the route. The destination union is identical to `subnets[*].routes`:
 `ipv4_cidr`, `ipv6_cidr`, or `prefix_list`. The target union is also identical:
