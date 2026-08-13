@@ -43,12 +43,32 @@ output "azs" {
   value       = local.azs
 }
 
+output "default_security_group_id" {
+  description = "ID of the AWS-created default security group for this VPC, whether or not default_resources manages it."
+  value       = local.default_security_group_id
+}
+
+output "default_network_acl_id" {
+  description = "ID of the AWS-created default network ACL for this VPC, whether or not default_resources manages it."
+  value       = local.default_network_acl_id
+}
+
+output "default_route_table_id" {
+  description = "ID of the AWS-created default route table for a created VPC, or the resolved main/default route table for an injected VPC; always available independently of default_resources management."
+  value       = local.default_route_table_id
+}
+
+output "main_route_table_id" {
+  description = "ID of the VPC's current main route table, which can differ from the originally AWS-created default route table."
+  value       = local.main_route_table_id
+}
+
 output "default_resource_ids" {
-  description = "Adopted default VPC resource IDs; values are null when management is disabled."
+  description = "IDs of the VPC's default security group, network ACL, and route table; always populated, while default_resources controls only lifecycle adoption."
   value = {
-    security_group = try(aws_default_security_group.this["default"].id, null)
-    network_acl    = try(aws_default_network_acl.this["default"].id, null)
-    route_table    = try(aws_default_route_table.this["default"].id, null)
+    security_group = local.default_security_group_id
+    network_acl    = local.default_network_acl_id
+    route_table    = local.default_route_table_id
   }
 }
 

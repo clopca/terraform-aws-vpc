@@ -29,7 +29,7 @@ output "v4_name_compatibility" {
 
 
 output "default_resource_management" {
-  description = "Default-resource hardening remains opt-in and absent from the v4 migration plan."
+  description = "Default IDs are always available while default-resource hardening remains opt-in and absent from the v4 migration plan."
   value = {
     ids                  = module.vpc.default_resource_ids
     security_group_count = length(module.vpc.resources.default_resources.security_groups)

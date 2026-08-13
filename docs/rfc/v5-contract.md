@@ -395,6 +395,14 @@ the subnet group, and an injected shared route table receives only one associati
 This avoids positional churn and lets endpoint IDs be computed. Gateway endpoint
 routes bypass NAT processing; S3/DynamoDB traffic therefore avoids NAT per-GB fees.
 
+### 3.3.9 Default VPC resource IDs are observation, not ownership
+
+Tier 1 always exposes scalar IDs for the default security group, default NACL,
+default route table, and current main route table. Created VPCs use computed
+`aws_vpc` attributes; injected VPCs use scoped lookups. These observations do not
+instantiate any `aws_default_*` resource. `default_resources` remains the sole,
+false-by-default lifecycle adoption selector.
+
 ### 3.3.3 ADR-R8-1 — default resources are adopted only by explicit opt-in
 
 **Decision:** expose independent `manage_security_group`, `manage_network_acl`, and

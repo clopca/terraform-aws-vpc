@@ -10,6 +10,15 @@ mock_provider "aws" {
   mock_data "aws_caller_identity" {
     defaults = { account_id = "123456789012" }
   }
+
+  mock_resource "aws_vpc" {
+    defaults = {
+      default_security_group_id = "sg-default"
+      default_network_acl_id    = "acl-default"
+      default_route_table_id    = "rtb-default"
+      main_route_table_id       = "rtb-default"
+    }
+  }
 }
 
 run "seed_representative_v4_state" {
@@ -78,16 +87,11 @@ run "plan_full_migration_example" {
 
   assert {
     condition = (
-      output.default_resource_management.ids == {
-        security_group = null
-        network_acl    = null
-        route_table    = null
-      } &&
       output.default_resource_management.security_group_count == 0 &&
       output.default_resource_management.network_acl_count == 0 &&
       output.default_resource_management.route_table_count == 0
     )
-    error_message = "default_resources must remain fully opt-in so the migration example plans no adopted default-resource changes."
+    error_message = "Default ID observation must not adopt lifecycle ownership during migration."
   }
 
   assert {

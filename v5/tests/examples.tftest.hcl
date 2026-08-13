@@ -21,10 +21,14 @@ mock_provider "aws" {
 
   mock_resource "aws_vpc" {
     defaults = {
-      id              = "vpc-mock"
-      arn             = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
-      cidr_block      = "10.0.0.0/16"
-      ipv6_cidr_block = "2600:1f18:4200::/56"
+      id                        = "vpc-mock"
+      arn                       = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
+      cidr_block                = "10.0.0.0/16"
+      ipv6_cidr_block           = "2600:1f18:4200::/56"
+      default_security_group_id = "sg-default"
+      default_network_acl_id    = "acl-default"
+      default_route_table_id    = "rtb-default"
+      main_route_table_id       = "rtb-default"
     }
   }
 
@@ -34,6 +38,10 @@ mock_provider "aws" {
       arn        = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
       cidr_block = "10.80.0.0/16"
     }
+  }
+
+  mock_data "aws_security_group" {
+    defaults = { id = "sg-default" }
   }
 
   mock_data "aws_network_acls" {

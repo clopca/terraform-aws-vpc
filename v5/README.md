@@ -183,6 +183,13 @@ S3 and DynamoDB gateway endpoints have no hourly endpoint charge. Their more-spe
 routes bypass NAT processing, so S3/DynamoDB bytes no longer incur NAT per-GB charges—
 often the largest VPC networking cost optimization for NAT-heavy workloads.
 
+## Default VPC resource handles
+
+Tier 1 always returns `default_security_group_id`, `default_network_acl_id`,
+`default_route_table_id`, and `main_route_table_id`, including for injected VPCs.
+Reading these IDs does not adopt the resources; lifecycle ownership remains
+controlled only by the false-by-default `default_resources` selectors.
+
 ## Secure-by-default controls
 
 `default_resources` is deliberately opt-in. AWS creates a default security group,
@@ -347,6 +354,7 @@ No modules.
 | [aws_partition.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/partition) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 | [aws_route_table.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/route_table) | data source |
+| [aws_security_group.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/security_group) | data source |
 | [aws_subnet.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
 | [aws_vpc.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/vpc) | data source |
 
@@ -376,7 +384,10 @@ No modules.
 | <a name="output_core_network_attachment_accepter_id"></a> [core\_network\_attachment\_accepter\_id](#output\_core\_network\_attachment\_accepter\_id) | Cloud WAN attachment accepter ID (created or injected), or null when acceptance is not managed. |
 | <a name="output_core_network_attachment_id"></a> [core\_network\_attachment\_id](#output\_core\_network\_attachment\_id) | Cloud WAN Core Network VPC attachment ID, or null when the role is absent. |
 | <a name="output_core_network_subnet_attributes_by_az"></a> [core\_network\_subnet\_attributes\_by\_az](#output\_core\_network\_subnet\_attributes\_by\_az) | DEPRECATED: v4-compatible map of full Cloud WAN subnet objects keyed by AZ. Use Tier 1 subnet outputs. Removed in v6. |
-| <a name="output_default_resource_ids"></a> [default\_resource\_ids](#output\_default\_resource\_ids) | Adopted default VPC resource IDs; values are null when management is disabled. |
+| <a name="output_default_network_acl_id"></a> [default\_network\_acl\_id](#output\_default\_network\_acl\_id) | ID of the AWS-created default network ACL for this VPC, whether or not default\_resources manages it. |
+| <a name="output_default_resource_ids"></a> [default\_resource\_ids](#output\_default\_resource\_ids) | IDs of the VPC's default security group, network ACL, and route table; always populated, while default\_resources controls only lifecycle adoption. |
+| <a name="output_default_route_table_id"></a> [default\_route\_table\_id](#output\_default\_route\_table\_id) | ID of the AWS-created default route table for a created VPC, or the resolved main/default route table for an injected VPC; always available independently of default\_resources management. |
+| <a name="output_default_security_group_id"></a> [default\_security\_group\_id](#output\_default\_security\_group\_id) | ID of the AWS-created default security group for this VPC, whether or not default\_resources manages it. |
 | <a name="output_dhcp_options_id"></a> [dhcp\_options\_id](#output\_dhcp\_options\_id) | DHCP option set ID associated with the VPC (created or injected), or null when disabled. |
 | <a name="output_egress_only_igw_id"></a> [egress\_only\_igw\_id](#output\_egress\_only\_igw\_id) | Egress-only Internet Gateway ID (created or injected), or null when unused. |
 | <a name="output_egress_only_internet_gateway"></a> [egress\_only\_internet\_gateway](#output\_egress\_only\_internet\_gateway) | DEPRECATED: v4-compatible full Egress-only Internet Gateway object. Use egress\_only\_igw\_id. Removed in v6. |
@@ -388,6 +399,7 @@ No modules.
 | <a name="output_gateway_endpoint_route_table_association_ids"></a> [gateway\_endpoint\_route\_table\_association\_ids](#output\_gateway\_endpoint\_route\_table\_association\_ids) | Gateway endpoint route-table association IDs keyed '<group>/<az-or-injected>/gateway-endpoint/<service>'. |
 | <a name="output_internet_gateway"></a> [internet\_gateway](#output\_internet\_gateway) | DEPRECATED: v4-compatible full created Internet Gateway object. Use internet\_gateway\_id. Removed in v6. |
 | <a name="output_internet_gateway_id"></a> [internet\_gateway\_id](#output\_internet\_gateway\_id) | Internet Gateway ID (created or injected), or null when no IGW is needed. |
+| <a name="output_main_route_table_id"></a> [main\_route\_table\_id](#output\_main\_route\_table\_id) | ID of the VPC's current main route table, which can differ from the originally AWS-created default route table. |
 | <a name="output_nat_eip_allocation_ids"></a> [nat\_eip\_allocation\_ids](#output\_nat\_eip\_allocation\_ids) | Effective public NAT EIP allocation IDs. Zonal keys are AZs; regional keys are '<az>/<allocation-id>'. Empty for injected/private NAT. |
 | <a name="output_nat_gateway_attributes_by_az"></a> [nat\_gateway\_attributes\_by\_az](#output\_nat\_gateway\_attributes\_by\_az) | DEPRECATED: v4-compatible map of full created NAT objects keyed by AZ; Regional NAT repeats one object per configured AZ. Use Tier 1 outputs. Removed in v6. |
 | <a name="output_nat_gateway_ids"></a> [nat\_gateway\_ids](#output\_nat\_gateway\_ids) | NAT Gateway IDs by configured AZ. Regional mode repeats its one VPC-level ID for every AZ; none returns an empty map. Shape: map(az, nat\_gateway\_id). |
