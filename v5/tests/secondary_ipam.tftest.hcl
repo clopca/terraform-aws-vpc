@@ -298,3 +298,36 @@ run "reject_duplicate_injected_ipv4_association" {
 
   expect_failures = [var.addressing]
 }
+
+run "subnet_ipv4_ipam_selector_preserves_separate_pool" {
+  command = plan
+
+  variables {
+    vpc = { name = "subnet-ipam-selector" }
+    addressing = {
+      primary = { cidr_block = "10.30.0.0/16" }
+      secondary = {
+        blue = { ipv4 = { ipam_pool_id = "ipam-pool-vpc-blue", netmask_length = 20 } }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      app = {
+        role = "private"
+        ipv4 = {
+          secondary_cidr_key = "blue"
+          ipam_pool_id       = "ipam-pool-subnet-child"
+          netmask_length     = 24
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"].input == aws_vpc_ipv4_cidr_block_association.secondary["blue"].id &&
+      aws_subnet.main["app/us-east-1a"].ipv4_ipam_pool_id == "ipam-pool-subnet-child"
+    )
+    error_message = "IPv4 subnet IPAM must retain the selected association dependency without pretending the subnet pool ID equals its VPC parent pool."
+  }
+}

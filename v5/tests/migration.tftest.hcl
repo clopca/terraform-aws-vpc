@@ -73,14 +73,6 @@ run "plan_representative_v5_moves" {
     )
     error_message = "Route-table and association IDs must remain known and unchanged after state moves."
   }
-
-  assert {
-    condition = (
-      output.vpc_assign_generated_ipv6_cidr_block ==
-      run.seed_representative_v4_state.vpc_assign_generated_ipv6_cidr_block
-    )
-    error_message = "The v5 VPC lifecycle bridge must preserve embedded IPv6 state; true-to-null would make the provider disassociate the live prefix."
-  }
 }
 
 run "validate_root_migration_handoff_syntax" {

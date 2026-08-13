@@ -67,6 +67,14 @@ jobs:
         working-directory: v5
         run: ./scripts/test-negative-plans.sh
 
+      - name: Verify production migration handoff
+        working-directory: v5
+        run: ./scripts/test-migration-handoff.sh
+
+      - name: Verify IPv6 association importer shapes
+        working-directory: v5
+        run: ./scripts/test-ipv6-import-shape.sh
+
       - name: Validate examples
         shell: bash
         run: |

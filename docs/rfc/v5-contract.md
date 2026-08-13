@@ -520,6 +520,16 @@ callers should use explicit `names` for stable AZ identity and plan-time diagnos
 8. **isolated has no Internet/transit routing**: IGW, NAT/NAT64, EIGW, TGW, and
    Cloud WAN are rejected; S3/DynamoDB gateway endpoint routes are allowed.
 
+Subnet IPAM cannot provide the same containment proof as explicit or calculated
+CIDRs. In that mode `secondary_cidr_key` selects the VPC association dependency,
+while `aws_subnet` sends the caller's independent `ipam_pool_id` to AWS. Provider
+6.59 exposes scope and immediate source-pool metadata, but no authoritative
+plan-time relation between a future subnet allocation and a specific VPC CIDR
+association across arbitrary-depth IPAM hierarchies. Requiring equal pool IDs
+would reject valid child pools; accepting equal scope IDs would accept siblings.
+The caller must provide a subnet pool descended from the selected association's
+pool/range, and AWS enforces allocation compatibility during apply.
+
 ### 3.8 Provider Floor
 
 Required AWS provider: `>= 6.29`.
