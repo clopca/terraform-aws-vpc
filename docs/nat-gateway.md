@@ -15,12 +15,11 @@ NAT topology is a VPC-wide decision, while each subnet group independently decid
 
 ```hcl
 nat_gateway = {
-  mode         = "all_azs"
-  subnet_group = "public"
+  mode = "regional"
 }
 ```
 
-If `subnet_group` is omitted for zonal NAT, the module selects the first compatible group alphabetically. Set it explicitly in persistent configurations so adding another public or private group cannot change placement.
+For zonal NAT, if `subnet_group` is omitted, the module selects the first compatible group alphabetically. Set it explicitly in persistent configurations so adding another public or private group cannot change placement.
 
 ## Public and private NAT
 
