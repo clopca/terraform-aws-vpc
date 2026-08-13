@@ -252,13 +252,15 @@ locals {
         try(cfg.routing.internet_gateway, null),
         cfg.role == "public" ? true : false
       )
-      dns64                     = try(cfg.routing.dns64, false)
-      transit_gateway           = try(cfg.routing.transit_gateway, null)
-      transit_gateway_ipv6      = try(cfg.routing.transit_gateway_ipv6, null)
-      core_network              = try(cfg.routing.core_network, null)
-      core_network_ipv6         = try(cfg.routing.core_network_ipv6, null)
-      s3_gateway_endpoint       = try(cfg.routing.s3_gateway_endpoint, false)
-      dynamodb_gateway_endpoint = try(cfg.routing.dynamodb_gateway_endpoint, false)
+      dns64                            = try(cfg.routing.dns64, false)
+      transit_gateway                  = try(cfg.routing.transit_gateway, null)
+      transit_gateway_ipv6             = try(cfg.routing.transit_gateway_ipv6, null)
+      transit_gateway_attachments      = try(cfg.routing.transit_gateway_attachments, {})
+      transit_gateway_attachments_ipv6 = try(cfg.routing.transit_gateway_attachments_ipv6, {})
+      core_network                     = try(cfg.routing.core_network, null)
+      core_network_ipv6                = try(cfg.routing.core_network_ipv6, null)
+      s3_gateway_endpoint              = try(cfg.routing.s3_gateway_endpoint, false)
+      dynamodb_gateway_endpoint        = try(cfg.routing.dynamodb_gateway_endpoint, false)
     }
   }
 
@@ -573,8 +575,16 @@ locals {
         dynamodb_gateway_endpoint = anytrue([for group in groups : local.resolved_routing[group].dynamodb_gateway_endpoint])
         transit_gateway           = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].transit_gateway, [])]))
         transit_gateway_ipv6      = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].transit_gateway_ipv6, [])]))
-        core_network              = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network, [])]))
-        core_network_ipv6         = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network_ipv6, [])]))
+        transit_gateway_attachments = {
+          for attachment_key in distinct(flatten([for group in groups : keys(local.resolved_routing[group].transit_gateway_attachments)])) :
+          attachment_key => distinct(flatten([for group in groups : lookup(local.resolved_routing[group].transit_gateway_attachments, attachment_key, [])]))
+        }
+        transit_gateway_attachments_ipv6 = {
+          for attachment_key in distinct(flatten([for group in groups : keys(local.resolved_routing[group].transit_gateway_attachments_ipv6)])) :
+          attachment_key => distinct(flatten([for group in groups : lookup(local.resolved_routing[group].transit_gateway_attachments_ipv6, attachment_key, [])]))
+        }
+        core_network      = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network, [])]))
+        core_network_ipv6 = distinct(flatten([for group in groups : coalesce(local.resolved_routing[group].core_network_ipv6, [])]))
       }
       routes   = merge([for group in groups : var.subnets[group].routes]...)
       has_ipv6 = anytrue([for group in groups : var.subnets[group].ipv6 != null])
@@ -597,12 +607,28 @@ locals {
       rt.routing.egress_only_igw ? [{ destination = "ipv6:::/0", target = "eigw" }] : [],
       [for dest in distinct(coalesce(rt.routing.transit_gateway, [])) : {
         destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv4:${dest}"
-        target      = "tgw"
+        target      = "tgw:${coalesce(local.singular_tgw_route_key, "missing")}"
       }],
       [for dest in distinct(coalesce(rt.routing.transit_gateway_ipv6, [])) : {
         destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv6:${dest}"
-        target      = "tgw"
+        target      = "tgw:${coalesce(local.singular_tgw_route_key, "missing")}"
       }],
+      flatten([
+        for attachment_key, destinations in rt.routing.transit_gateway_attachments : [
+          for dest in distinct(destinations) : {
+            destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv4:${dest}"
+            target      = "tgw:${attachment_key}"
+          }
+        ]
+      ]),
+      flatten([
+        for attachment_key, destinations in rt.routing.transit_gateway_attachments_ipv6 : [
+          for dest in distinct(destinations) : {
+            destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv6:${dest}"
+            target      = "tgw:${attachment_key}"
+          }
+        ]
+      ]),
       [for dest in distinct(coalesce(rt.routing.core_network, [])) : {
         destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv4:${dest}"
         target      = "cwan"
@@ -649,16 +675,12 @@ locals {
       local.resolved_routing[group].dns64 ||
       length(coalesce(local.resolved_routing[group].transit_gateway, [])) > 0 ||
       length(coalesce(local.resolved_routing[group].transit_gateway_ipv6, [])) > 0 ||
+      anytrue([for destinations in values(local.resolved_routing[group].transit_gateway_attachments) : length(destinations) > 0]) ||
+      anytrue([for destinations in values(local.resolved_routing[group].transit_gateway_attachments_ipv6) : length(destinations) > 0]) ||
       length(coalesce(local.resolved_routing[group].core_network, [])) > 0 ||
       length(coalesce(local.resolved_routing[group].core_network_ipv6, [])) > 0
     ])
   }
-
-  # ─── TGW ID resolution (from subnet group with role = transit_gateway) ──
-  tgw_id = try([
-    for name, cfg in var.subnets : cfg.transit_gateway_options.id
-    if cfg.role == "transit_gateway"
-  ][0], null)
 
   # ─── Core Network ARN resolution ────────────────────────────────────────
   core_network_arn = try([
@@ -730,27 +752,53 @@ locals {
 
   # Destination CIDRs, not list positions, form route keys. Reordering a list
   # therefore produces no resource churn; adding/removing affects one route.
-  routes_tgw = local.tgw_id != null ? merge([
+  routes_tgw = local.singular_tgw_route_key != null ? merge([
     for key, rt in local.route_table_targets : {
       for dest in coalesce(rt.routing.transit_gateway, []) :
       "${key}/tgw/${replace(dest, "/", "-")}" => {
         route_table_id = rt.route_table_id
         destination    = dest
-        tgw_id         = local.tgw_id
+        tgw_id         = try(local.transit_gateway_ids_by_attachment[local.singular_tgw_route_key], null)
       }
     } if rt.routing.transit_gateway != null
   ]...) : {}
 
-  routes_tgw_ipv6 = local.tgw_id != null ? merge([
+  routes_tgw_ipv6 = local.singular_tgw_route_key != null ? merge([
     for key, rt in local.route_table_targets : {
       for dest in coalesce(rt.routing.transit_gateway_ipv6, []) :
       "${key}/tgw6/${replace(dest, "/", "-")}" => {
         route_table_id = rt.route_table_id
         destination    = dest
-        tgw_id         = local.tgw_id
+        tgw_id         = try(local.transit_gateway_ids_by_attachment[local.singular_tgw_route_key], null)
       }
     } if rt.routing.transit_gateway_ipv6 != null
   ]...) : {}
+
+  routes_tgw_attachments = merge(flatten([
+    for key, rt in local.route_table_targets : [
+      for attachment_key, destinations in rt.routing.transit_gateway_attachments : {
+        for dest in destinations :
+        "${key}/tgw/${attachment_key}/${replace(dest, "/", "-")}" => {
+          route_table_id = rt.route_table_id
+          destination    = dest
+          tgw_id         = try(local.transit_gateway_ids_by_attachment[attachment_key], null)
+        }
+      }
+    ]
+  ])...)
+
+  routes_tgw_attachments_ipv6 = merge(flatten([
+    for key, rt in local.route_table_targets : [
+      for attachment_key, destinations in rt.routing.transit_gateway_attachments_ipv6 : {
+        for dest in destinations :
+        "${key}/tgw6/${attachment_key}/${replace(dest, "/", "-")}" => {
+          route_table_id = rt.route_table_id
+          destination    = dest
+          tgw_id         = try(local.transit_gateway_ids_by_attachment[attachment_key], null)
+        }
+      }
+    ]
+  ])...)
 
   routes_cwan = local.core_network_arn != null ? merge([
     for key, rt in local.route_table_targets : {

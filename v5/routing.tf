@@ -106,7 +106,7 @@ resource "aws_route" "tgw" {
   destination_prefix_list_id = startswith(each.value.destination, "pl-") ? each.value.destination : null
   transit_gateway_id         = each.value.tgw_id
 
-  depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
+  depends_on = [terraform_data.attachment_contract_validation, aws_ec2_transit_gateway_vpc_attachment.this]
 }
 
 resource "aws_route" "tgw_ipv6" {
@@ -117,7 +117,29 @@ resource "aws_route" "tgw_ipv6" {
   destination_prefix_list_id  = startswith(each.value.destination, "pl-") ? each.value.destination : null
   transit_gateway_id          = each.value.tgw_id
 
-  depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
+  depends_on = [terraform_data.attachment_contract_validation, aws_ec2_transit_gateway_vpc_attachment.this]
+}
+
+resource "aws_route" "tgw_attachment" {
+  for_each = local.routes_tgw_attachments
+
+  route_table_id             = each.value.route_table_id
+  destination_cidr_block     = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id = startswith(each.value.destination, "pl-") ? each.value.destination : null
+  transit_gateway_id         = each.value.tgw_id
+
+  depends_on = [terraform_data.attachment_contract_validation, aws_ec2_transit_gateway_vpc_attachment.this]
+}
+
+resource "aws_route" "tgw_attachment_ipv6" {
+  for_each = local.routes_tgw_attachments_ipv6
+
+  route_table_id              = each.value.route_table_id
+  destination_ipv6_cidr_block = startswith(each.value.destination, "pl-") ? null : each.value.destination
+  destination_prefix_list_id  = startswith(each.value.destination, "pl-") ? each.value.destination : null
+  transit_gateway_id          = each.value.tgw_id
+
+  depends_on = [terraform_data.attachment_contract_validation, aws_ec2_transit_gateway_vpc_attachment.this]
 }
 
 # ─── Core Network Routes ──────────────────────────────────────────────────

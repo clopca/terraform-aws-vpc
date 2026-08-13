@@ -274,6 +274,61 @@ variable "availability_zones" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TRANSIT GATEWAY ATTACHMENTS — plural, caller-keyed create-or-inject
+# ─────────────────────────────────────────────────────────────────────────────
+
+variable "transit_gateway_attachments" {
+  nullable    = false
+  description = <<-EOT
+    Transit Gateway VPC attachments keyed by caller-owned state identity. AWS
+    permits up to five distinct Transit Gateways per VPC, while still allowing
+    only one attachment from a given VPC to the same Transit Gateway. Each entry
+    selects a transit_gateway subnet group and independently supports create or
+    inject. Route maps under subnets[*].routing reference these attachment keys.
+
+    The legacy singular subnets[*].transit_gateway_options shape remains as a
+    deprecated adapter and must not be combined with this plural map.
+  EOT
+  type = map(object({
+    subnet_group                    = string
+    id                              = string
+    create                          = optional(bool, true)
+    attachment_id                   = optional(string)
+    default_route_table_association = optional(bool, true)
+    default_route_table_propagation = optional(bool, true)
+    appliance_mode_support          = optional(bool, false)
+    dns_support                     = optional(bool, true)
+    security_group_referencing      = optional(bool, true)
+    tags                            = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition = (
+      length(var.transit_gateway_attachments) <= 5 &&
+      length(distinct([for attachment in values(var.transit_gateway_attachments) : attachment.id])) == length(var.transit_gateway_attachments) &&
+      alltrue([
+        for key in keys(var.transit_gateway_attachments) :
+        can(regex("^[a-z0-9][a-z0-9_-]*$", key)) && !strcontains(key, "/")
+      ])
+    )
+    error_message = "transit_gateway_attachments supports at most five stable lowercase keys without '/', and each entry must select a distinct Transit Gateway ID."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, attachment in var.transit_gateway_attachments :
+      length(trimspace(attachment.subnet_group)) > 0 &&
+      length(trimspace(attachment.id)) > 0 &&
+      (attachment.create ? attachment.attachment_id == null : (
+        attachment.attachment_id != null && length(trimspace(attachment.attachment_id)) > 0
+      ))
+    ])
+    error_message = "Each plural TGW attachment requires non-empty subnet_group/id and either create=true with attachment_id=null or create=false with a non-empty attachment_id."
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SUBNETS — typed with explicit roles and co-located routing
 #
 # STATE KEY CONTRACT [R1-H1]:
@@ -311,10 +366,9 @@ variable "subnets" {
 
     Multiple subnet groups per role are allowed:
       - public: N groups allowed (e.g. DMZ, edge, GWLB) [R1-C1]
-      - transit_gateway: limited to 1 group (AWS API: 1 VPC attachment per TGW per VPC)
-        NOTE: if AWS adds multi-attachment support, this constraint will be relaxed
-        as a non-breaking change.
-      - core_network: limited to 1 group (same AWS API constraint)
+      - transit_gateway: N groups allowed; each plural attachment selects one group,
+        and several attachments may intentionally reuse the same attachment subnets
+      - core_network: limited to 1 group (Cloud WAN attachment adapter is singular)
 
     Set `manage_route_table = false` plus `route_table_key` and `route_table_id`
     to inject an existing route table. `route_table_key` is caller-owned physical
@@ -410,16 +464,18 @@ variable "subnets" {
     # [R2-H3]: internet_gateway defaults to null; auto-resolved as true for
     # role="public", false otherwise. Set explicitly to override.
     routing = optional(object({
-      nat_gateway               = optional(bool, false)
-      egress_only_igw           = optional(bool, false)
-      internet_gateway          = optional(bool)         # null = auto (true for public, false otherwise)
-      dns64                     = optional(bool, false)  # Also creates 64:ff9b::/96 -> NAT GW; requires NAT
-      transit_gateway           = optional(list(string)) # list of CIDRs/prefix-list IDs to route via TGW [R1-C3]
-      transit_gateway_ipv6      = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
-      core_network              = optional(list(string)) # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
-      core_network_ipv6         = optional(list(string)) # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
-      s3_gateway_endpoint       = optional(bool, false)
-      dynamodb_gateway_endpoint = optional(bool, false)
+      nat_gateway                      = optional(bool, false)
+      egress_only_igw                  = optional(bool, false)
+      internet_gateway                 = optional(bool)                  # null = auto (true for public, false otherwise)
+      dns64                            = optional(bool, false)           # Also creates 64:ff9b::/96 -> NAT GW; requires NAT
+      transit_gateway                  = optional(list(string))          # DEPRECATED singular adapter
+      transit_gateway_ipv6             = optional(list(string))          # DEPRECATED singular adapter
+      transit_gateway_attachments      = optional(map(list(string)), {}) # attachment key => IPv4 CIDR/prefix-list destinations
+      transit_gateway_attachments_ipv6 = optional(map(list(string)), {}) # attachment key => IPv6 CIDR/prefix-list destinations
+      core_network                     = optional(list(string))          # list of CIDRs/prefix-list IDs to route via CWAN [R1-C3]
+      core_network_ipv6                = optional(list(string))          # list of IPv6 CIDRs/prefix-list IDs [R1-C3]
+      s3_gateway_endpoint              = optional(bool, false)
+      dynamodb_gateway_endpoint        = optional(bool, false)
     }), {})
 
     # Caller-owned route keys are Terraform state identity; destination and
@@ -517,17 +573,8 @@ variable "subnets" {
     error_message = "Subnet and route-table name formats must be null or non-empty and may use only {vpc}, {group}, and {az}."
   }
 
-  # R1-C1: REMOVED singleton constraint for public role.
-  # Multiple public subnet groups are allowed (DMZ, edge, GWLB, etc.)
-
-  # NOTE [R1-C1]: transit_gateway and core_network remain singleton per AWS API limits
-  # (1 VPC attachment per TGW per VPC). If AWS relaxes this, removing the constraint
-  # is a non-breaking minor change.
-  validation {
-    condition     = length([for k, v in var.subnets : k if v.role == "transit_gateway"]) <= 1
-    error_message = "At most one subnet group may have role 'transit_gateway' (AWS API: 1 VPC attachment per TGW per VPC)."
-  }
-
+  # Multiple public groups and Transit Gateway attachments are allowed. Cloud
+  # WAN remains singleton because its VPC attachment boundary is still singular.
   validation {
     condition     = length([for k, v in var.subnets : k if v.role == "core_network"]) <= 1
     error_message = "At most one subnet group may have role 'core_network' (AWS API: 1 Core Network attachment per VPC)."
@@ -556,9 +603,9 @@ variable "subnets" {
   validation {
     condition = alltrue([
       for k, v in var.subnets :
-      v.role != "transit_gateway" || v.transit_gateway_options != null
+      v.transit_gateway_options == null || v.role == "transit_gateway"
     ])
-    error_message = "Subnets with role 'transit_gateway' must provide transit_gateway_options."
+    error_message = "transit_gateway_options may be set only on a subnet group with role 'transit_gateway'. Plural attachments use the top-level transit_gateway_attachments map."
   }
 
   validation {
@@ -580,8 +627,10 @@ variable "subnets" {
         !try(v.routing.dns64, false) &&
         try(v.routing.internet_gateway, null) != true &&
         length(coalesce(try(v.routing.transit_gateway, null), [])) == 0 &&
-        length(coalesce(try(v.routing.core_network, null), [])) == 0 &&
         length(coalesce(try(v.routing.transit_gateway_ipv6, null), [])) == 0 &&
+        alltrue([for destinations in values(try(v.routing.transit_gateway_attachments, {})) : length(destinations) == 0]) &&
+        alltrue([for destinations in values(try(v.routing.transit_gateway_attachments_ipv6, {})) : length(destinations) == 0]) &&
+        length(coalesce(try(v.routing.core_network, null), [])) == 0 &&
         length(coalesce(try(v.routing.core_network_ipv6, null), [])) == 0
       ) : true
     ])
@@ -591,12 +640,12 @@ variable "subnets" {
   validation {
     condition = alltrue(flatten([
       for key, subnet in var.subnets : [
-        for destinations in [
+        for destinations in concat([
           coalesce(try(subnet.routing.transit_gateway, null), []),
           coalesce(try(subnet.routing.transit_gateway_ipv6, null), []),
           coalesce(try(subnet.routing.core_network, null), []),
           coalesce(try(subnet.routing.core_network_ipv6, null), []),
-        ] : length(destinations) == length(distinct(destinations))
+        ], values(try(subnet.routing.transit_gateway_attachments, {})), values(try(subnet.routing.transit_gateway_attachments_ipv6, {}))) : length(destinations) == length(distinct(destinations))
       ]
     ]))
     error_message = "TGW and Cloud WAN destination lists must not contain duplicates within a subnet group."

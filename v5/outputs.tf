@@ -355,8 +355,13 @@ output "dhcp_options_id" {
 
 # ─── Attachments, Flow Logs, and VPC Lattice ─────────────────────────────
 
+output "transit_gateway_attachment_ids" {
+  description = "Transit Gateway VPC attachment IDs by caller-owned attachment key. The deprecated singular adapter uses key 'vpc'. Shape: map(attachment_key, attachment_id)."
+  value       = local.transit_gateway_attachment_ids
+}
+
 output "transit_gateway_attachment_id" {
-  description = "Transit Gateway VPC attachment ID, or null when the role is absent."
+  description = "DEPRECATED: scalar adapter for one Transit Gateway VPC attachment, or null when absent. Use transit_gateway_attachment_ids."
   value       = local.transit_gateway_attachment_id
 }
 
@@ -589,16 +594,18 @@ output "resources" {
     dhcp_options                       = aws_vpc_dhcp_options.this
     dhcp_options_associations          = aws_vpc_dhcp_options_association.this
     routes = {
-      igw_ipv4  = aws_route.igw_ipv4
-      igw_ipv6  = aws_route.igw_ipv6
-      nat       = aws_route.nat
-      nat64     = aws_route.nat64
-      eigw      = aws_route.eigw
-      custom    = aws_route.custom
-      tgw       = aws_route.tgw
-      tgw_ipv6  = aws_route.tgw_ipv6
-      cwan      = aws_route.cwan
-      cwan_ipv6 = aws_route.cwan_ipv6
+      igw_ipv4            = aws_route.igw_ipv4
+      igw_ipv6            = aws_route.igw_ipv6
+      nat                 = aws_route.nat
+      nat64               = aws_route.nat64
+      eigw                = aws_route.eigw
+      custom              = aws_route.custom
+      tgw                 = aws_route.tgw
+      tgw_ipv6            = aws_route.tgw_ipv6
+      tgw_attachment      = aws_route.tgw_attachment
+      tgw_attachment_ipv6 = aws_route.tgw_attachment_ipv6
+      cwan                = aws_route.cwan
+      cwan_ipv6           = aws_route.cwan_ipv6
     }
   }
 }

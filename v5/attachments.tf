@@ -7,35 +7,72 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 locals {
+  # A subnet group may be reused by several distinct TGW attachments. The
+  # legacy embedded options produce the historical singleton key "vpc".
   transit_gateway_group = try([
-    for name, cfg in var.subnets : name if cfg.role == "transit_gateway"
+    for name, cfg in var.subnets : name
+    if cfg.role == "transit_gateway" && cfg.transit_gateway_options != null
   ][0], null)
 
   core_network_group = try([
     for name, cfg in var.subnets : name if cfg.role == "core_network"
   ][0], null)
 
-  transit_gateway_attachment = local.transit_gateway_group == null || !var.subnets[local.transit_gateway_group].transit_gateway_options.create ? {} : {
+  plural_transit_gateway_attachments = {
+    for key, cfg in var.transit_gateway_attachments : key => {
+      group   = cfg.subnet_group
+      options = cfg
+      tags    = merge(try(var.subnets[cfg.subnet_group].tags, {}), cfg.tags)
+      ipv6    = try(var.subnets[cfg.subnet_group].ipv6 != null, false)
+    }
+  }
+  legacy_transit_gateway_attachments = local.transit_gateway_group == null ? {} : {
     vpc = {
       group   = local.transit_gateway_group
       options = var.subnets[local.transit_gateway_group].transit_gateway_options
       tags    = var.subnets[local.transit_gateway_group].tags
-      ipv6 = try(
-        var.subnets[local.transit_gateway_group].ipv6 != null,
-        false
-      )
+      ipv6    = try(var.subnets[local.transit_gateway_group].ipv6 != null, false)
     }
   }
+  effective_transit_gateway_attachments = length(var.transit_gateway_attachments) > 0 ? local.plural_transit_gateway_attachments : local.legacy_transit_gateway_attachments
+  transit_gateway_attachments_to_create = {
+    for key, attachment in local.effective_transit_gateway_attachments : key => attachment
+    if attachment.options.create
+  }
+  transit_gateway_attachment_ids = {
+    for key, attachment in local.effective_transit_gateway_attachments : key => (
+      attachment.options.create
+      ? try(aws_ec2_transit_gateway_vpc_attachment.this[key].id, null)
+      : attachment.options.attachment_id
+    )
+  }
+  transit_gateway_ids_by_attachment = {
+    for key, attachment in local.effective_transit_gateway_attachments : key => attachment.options.id
+  }
+  singular_tgw_route_key = length(local.effective_transit_gateway_attachments) == 1 ? one(keys(local.effective_transit_gateway_attachments)) : null
+  transit_gateway_attachment_id = local.transit_gateway_group != null ? try(local.transit_gateway_attachment_ids.vpc, null) : (
+    length(local.transit_gateway_attachment_ids) == 1 ? one(values(local.transit_gateway_attachment_ids)) : null
+  )
+
+  referenced_tgw_attachment_keys = distinct(flatten([
+    for name, cfg in var.subnets : concat(
+      keys(try(cfg.routing.transit_gateway_attachments, {})),
+      keys(try(cfg.routing.transit_gateway_attachments_ipv6, {})),
+    )
+  ]))
+  any_singular_transit_gateway_routes = anytrue([
+    for name, cfg in var.subnets :
+    length(coalesce(try(cfg.routing.transit_gateway, null), [])) > 0 ||
+    length(coalesce(try(cfg.routing.transit_gateway_ipv6, null), [])) > 0
+  ])
+  any_transit_gateway_routes = local.any_singular_transit_gateway_routes || length(local.referenced_tgw_attachment_keys) > 0
 
   core_network_attachment = local.core_network_group == null || !var.subnets[local.core_network_group].core_network_options.create ? {} : {
     vpc = {
       group   = local.core_network_group
       options = var.subnets[local.core_network_group].core_network_options
       tags    = var.subnets[local.core_network_group].tags
-      ipv6 = try(
-        var.subnets[local.core_network_group].ipv6 != null,
-        false
-      )
+      ipv6    = try(var.subnets[local.core_network_group].ipv6 != null, false)
     }
   }
 
@@ -49,17 +86,6 @@ locals {
     local.vpc_id
   )
 
-  any_transit_gateway_routes = anytrue([
-    for name, cfg in var.subnets :
-    length(coalesce(try(cfg.routing.transit_gateway, null), [])) > 0 ||
-    length(coalesce(try(cfg.routing.transit_gateway_ipv6, null), [])) > 0
-  ])
-
-  transit_gateway_attachment_id = local.transit_gateway_group == null ? null : (
-    var.subnets[local.transit_gateway_group].transit_gateway_options.create
-    ? try(aws_ec2_transit_gateway_vpc_attachment.this["vpc"].id, null)
-    : var.subnets[local.transit_gateway_group].transit_gateway_options.attachment_id
-  )
   core_network_attachment_id = local.core_network_group == null ? null : (
     var.subnets[local.core_network_group].core_network_options.create
     ? try(aws_networkmanager_vpc_attachment.this["vpc"].id, null)
@@ -70,9 +96,7 @@ locals {
     var.subnets[local.core_network_group].core_network_options.accept_attachment &&
     var.subnets[local.core_network_group].core_network_options.create_accepter
     ) ? {
-    vpc = {
-      attachment_id = local.core_network_attachment_id
-    }
+    vpc = { attachment_id = local.core_network_attachment_id }
   } : {}
   core_network_accepter_id = local.core_network_group == null || !var.subnets[local.core_network_group].core_network_options.accept_attachment ? null : (
     var.subnets[local.core_network_group].core_network_options.create_accepter
@@ -97,14 +121,37 @@ data "aws_region" "current" {
 
 resource "terraform_data" "attachment_contract_validation" {
   input = {
-    transit_gateway_group = local.transit_gateway_group
-    core_network_group    = local.core_network_group
+    transit_gateway_attachments = keys(local.effective_transit_gateway_attachments)
+    core_network_group          = local.core_network_group
   }
 
   lifecycle {
     precondition {
-      condition     = !local.any_transit_gateway_routes || local.transit_gateway_group != null
-      error_message = "A subnet group declares Transit Gateway routes, but no subnet group has role = 'transit_gateway'. Add the attachment group or remove those routes."
+      condition     = !(length(var.transit_gateway_attachments) > 0 && local.transit_gateway_group != null)
+      error_message = "Do not combine top-level transit_gateway_attachments with the deprecated singular subnets[*].transit_gateway_options adapter."
+    }
+
+    precondition {
+      condition = alltrue([
+        for key, attachment in var.transit_gateway_attachments :
+        contains(keys(var.subnets), attachment.subnet_group) && try(var.subnets[attachment.subnet_group].role, null) == "transit_gateway"
+      ])
+      error_message = "Every transit_gateway_attachments[*].subnet_group must reference an existing subnet group with role='transit_gateway'."
+    }
+
+    precondition {
+      condition     = !local.any_transit_gateway_routes || length(local.effective_transit_gateway_attachments) > 0
+      error_message = "A subnet group declares Transit Gateway routes, but no effective TGW attachment is configured."
+    }
+
+    precondition {
+      condition     = !local.any_singular_transit_gateway_routes || local.singular_tgw_route_key != null
+      error_message = "Deprecated singular TGW route lists require exactly one effective attachment; use routing.transit_gateway_attachments keyed by attachment when more than one exists."
+    }
+
+    precondition {
+      condition     = length(setsubtract(toset(local.referenced_tgw_attachment_keys), toset(keys(local.effective_transit_gateway_attachments)))) == 0
+      error_message = "TGW routes reference unknown attachment keys: ${join(", ", sort(tolist(setsubtract(toset(local.referenced_tgw_attachment_keys), toset(keys(local.effective_transit_gateway_attachments))))))}."
     }
 
     precondition {
@@ -144,7 +191,7 @@ resource "terraform_data" "attachment_contract_validation" {
 }
 
 resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
-  for_each = local.transit_gateway_attachment
+  for_each = local.transit_gateway_attachments_to_create
 
   transit_gateway_id = each.value.options.id
   vpc_id             = local.vpc_id
@@ -160,13 +207,15 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   security_group_referencing_support              = each.value.options.security_group_referencing ? "enable" : "disable"
 
   tags = merge(var.tags, each.value.tags, {
-    Name = "${var.vpc.name}-tgw-attachment"
+    Name = each.key == "vpc" ? "${var.vpc.name}-tgw-attachment" : "${var.vpc.name}-tgw-attachment-${each.key}"
   })
+
+  depends_on = [terraform_data.attachment_contract_validation]
 
   lifecycle {
     precondition {
       condition     = length(trimspace(each.value.options.id)) > 0
-      error_message = "transit_gateway_options.id must not be empty."
+      error_message = "Transit Gateway id must not be empty."
     }
   }
 }
