@@ -548,7 +548,8 @@ variable "subnets" {
     error_message = "Subnets with role 'core_network' must provide core_network_options."
   }
 
-  # Extended isolated validation [R1-M1]: prohibit ALL routing including TGW/CWAN
+  # Extended isolated validation [R1-M1]: prohibit ALL routing including TGW/CWAN.
+  # Explicit empty route lists are equivalent to omission.
   validation {
     condition = alltrue([
       for k, v in var.subnets :
@@ -557,13 +558,27 @@ variable "subnets" {
         !try(v.routing.egress_only_igw, false) &&
         !try(v.routing.dns64, false) &&
         try(v.routing.internet_gateway, null) != true &&
-        try(v.routing.transit_gateway, null) == null &&
-        try(v.routing.core_network, null) == null &&
-        try(v.routing.transit_gateway_ipv6, null) == null &&
-        try(v.routing.core_network_ipv6, null) == null
+        length(coalesce(try(v.routing.transit_gateway, null), [])) == 0 &&
+        length(coalesce(try(v.routing.core_network, null), [])) == 0 &&
+        length(coalesce(try(v.routing.transit_gateway_ipv6, null), [])) == 0 &&
+        length(coalesce(try(v.routing.core_network_ipv6, null), [])) == 0
       ) : true
     ])
     error_message = "Isolated subnets must not route to Internet, NAT, EIGW, TGW, or Cloud WAN. S3/DynamoDB gateway endpoint routes remain allowed."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for key, subnet in var.subnets : [
+        for destinations in [
+          coalesce(try(subnet.routing.transit_gateway, null), []),
+          coalesce(try(subnet.routing.transit_gateway_ipv6, null), []),
+          coalesce(try(subnet.routing.core_network, null), []),
+          coalesce(try(subnet.routing.core_network_ipv6, null), []),
+        ] : length(destinations) == length(distinct(destinations))
+      ]
+    ]))
+    error_message = "TGW and Cloud WAN destination lists must not contain duplicates within a subnet group."
   }
 
   validation {

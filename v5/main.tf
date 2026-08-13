@@ -327,6 +327,25 @@ resource "terraform_data" "injected_route_table_identity_validation" {
 }
 
 # ─── Shared injected route table cannot select a per-AZ NAT target ────────
+resource "terraform_data" "route_table_routing_compatibility_validation" {
+  input = {
+    destination_conflicts = local.route_destination_conflicts
+    isolated_conflicts    = local.isolated_shared_route_table_conflicts
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.isolated_shared_route_table_conflicts) == 0
+      error_message = "An isolated subnet group may share an injected route table only with groups whose effective routing is also isolated. Conflicting route_table_key values: ${join(", ", sort(keys(local.isolated_shared_route_table_conflicts)))}. Gateway endpoint associations remain allowed."
+    }
+
+    precondition {
+      condition     = length(local.route_destination_conflicts) == 0
+      error_message = "Each physical route table may have at most one target per destination. Conflicts: ${join(", ", flatten([for key, destinations in local.route_destination_conflicts : [for destination in destinations : "${key}=${destination}"]]))}."
+    }
+  }
+}
+
 resource "terraform_data" "injected_route_table_all_az_nat_validation" {
   for_each = var.nat_gateway.mode == "all_azs" ? {
     for name, cfg in var.subnets : name => cfg

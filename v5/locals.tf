@@ -552,6 +552,58 @@ locals {
     local.injected_route_table_targets,
   )
 
+  # Normalize every opinionated route to its physical destination and target.
+  # Resource addresses remain unchanged; this collection exists only to reject
+  # ambiguous tables before AWS sees duplicate or isolation-breaking routes.
+  route_intents_by_table = {
+    for key, rt in local.route_table_targets : key => concat(
+      rt.routing.internet_gateway ? [{ destination = "ipv4:0.0.0.0/0", target = "igw" }] : [],
+      rt.routing.internet_gateway && rt.has_ipv6 ? [{ destination = "ipv6:::/0", target = "igw" }] : [],
+      rt.routing.nat_gateway ? [{ destination = "ipv4:0.0.0.0/0", target = "nat" }] : [],
+      rt.routing.dns64 ? [{ destination = "ipv6:64:ff9b::/96", target = "nat" }] : [],
+      rt.routing.egress_only_igw ? [{ destination = "ipv6:::/0", target = "eigw" }] : [],
+      [for dest in distinct(coalesce(rt.routing.transit_gateway, [])) : {
+        destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv4:${dest}"
+        target      = "tgw"
+      }],
+      [for dest in distinct(coalesce(rt.routing.transit_gateway_ipv6, [])) : {
+        destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv6:${dest}"
+        target      = "tgw"
+      }],
+      [for dest in distinct(coalesce(rt.routing.core_network, [])) : {
+        destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv4:${dest}"
+        target      = "cwan"
+      }],
+      [for dest in distinct(coalesce(rt.routing.core_network_ipv6, [])) : {
+        destination = startswith(dest, "pl-") ? "prefix:${dest}" : "ipv6:${dest}"
+        target      = "cwan"
+      }],
+    )
+  }
+  route_destination_conflicts = {
+    for key, intents in local.route_intents_by_table : key => [
+      for destination in distinct([for intent in intents : intent.destination]) : destination
+      if length(distinct([for intent in intents : intent.target if intent.destination == destination])) > 1
+      ] if length([
+        for destination in distinct([for intent in intents : intent.destination]) : destination
+        if length(distinct([for intent in intents : intent.target if intent.destination == destination])) > 1
+    ]) > 0
+  }
+  isolated_shared_route_table_conflicts = {
+    for key, groups in local.injected_route_table_groups_by_key : key => groups
+    if anytrue([for group in groups : var.subnets[group].role == "isolated"]) && anytrue([
+      for group in groups :
+      local.resolved_routing[group].internet_gateway ||
+      local.resolved_routing[group].nat_gateway ||
+      local.resolved_routing[group].egress_only_igw ||
+      local.resolved_routing[group].dns64 ||
+      length(coalesce(local.resolved_routing[group].transit_gateway, [])) > 0 ||
+      length(coalesce(local.resolved_routing[group].transit_gateway_ipv6, [])) > 0 ||
+      length(coalesce(local.resolved_routing[group].core_network, [])) > 0 ||
+      length(coalesce(local.resolved_routing[group].core_network_ipv6, [])) > 0
+    ])
+  }
+
   # ─── TGW ID resolution (from subnet group with role = transit_gateway) ──
   tgw_id = try([
     for name, cfg in var.subnets : cfg.transit_gateway_options.id
