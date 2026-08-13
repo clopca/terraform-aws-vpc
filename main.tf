@@ -160,6 +160,9 @@ resource "aws_subnet" "main" {
   # DNS64 support for NAT64 (IPv6 → IPv4 translation via NAT GW)
   enable_dns64 = each.value.routing.dns64
 
+  # EC2 rejects false for IPv6-native subnets because they have no IPv4 CIDR.
+  enable_resource_name_dns_aaaa_record_on_launch = each.value.ipv6_native ? true : null
+
   tags = merge(var.tags, each.value.tags, {
     Name = each.value.resource_name
   })

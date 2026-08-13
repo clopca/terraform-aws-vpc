@@ -166,6 +166,30 @@ run "explicit_vpc_ipv6_ipam_cidr" {
 }
 
 
+run "ipv6_native_enables_aaaa_resource_names" {
+  command = plan
+
+  variables {
+    vpc                = { name = "ipv6-native-dns" }
+    addressing         = { primary = { cidr_block = "10.9.0.0/16" }, secondary = { ipv6 = { ipv6 = { amazon_assigned = true } } } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      native = {
+        role = "private"
+        ipv6 = { secondary_cidr_key = "ipv6", native_only = true, auto_assign = true }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      aws_subnet.main["native/us-east-1a"].ipv6_native &&
+      aws_subnet.main["native/us-east-1a"].enable_resource_name_dns_aaaa_record_on_launch
+    )
+    error_message = "IPv6-native subnets must enable AAAA resource-name DNS records because EC2 rejects false without an IPv4 CIDR."
+  }
+}
+
 run "multiple_ipv6_secondaries_are_caller_keyed" {
   command = plan
 
