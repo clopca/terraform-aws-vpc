@@ -329,7 +329,8 @@ variable "transit_gateway_attachments" {
     inject. Route maps under subnets[*].routing reference these attachment keys.
 
     The legacy singular subnets[*].transit_gateway_options shape remains as a
-    deprecated adapter and must not be combined with this plural map.
+    deprecated adapter, may appear on at most one subnet group, and must not be
+    combined with this plural map. Use this top-level map for multiple attachments.
   EOT
   type = map(object({
     subnet_group                    = string
@@ -651,6 +652,14 @@ variable "subnets" {
       v.transit_gateway_options == null || v.role == "transit_gateway"
     ])
     error_message = "transit_gateway_options may be set only on a subnet group with role 'transit_gateway'. Plural attachments use the top-level transit_gateway_attachments map."
+  }
+
+  validation {
+    condition = length([
+      for key, subnet in var.subnets : key
+      if subnet.transit_gateway_options != null
+    ]) <= 1
+    error_message = "The deprecated subnets[*].transit_gateway_options adapter may be configured on at most one subnet group. Use the top-level transit_gateway_attachments map for multiple attachments."
   }
 
   validation {

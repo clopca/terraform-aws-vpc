@@ -257,3 +257,31 @@ run "reject_duplicate_transit_gateway_id" {
 
   expect_failures = [var.transit_gateway_attachments]
 }
+
+run "reject_multiple_legacy_adapters" {
+  command = plan
+
+  variables {
+    subnets = {
+      tgw_east = {
+        role = "transit_gateway"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.100.1.0/28" } }
+        transit_gateway_options = {
+          id     = "tgw-00000000000000001"
+          create = true
+        }
+      }
+      tgw_west = {
+        role = "transit_gateway"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.100.2.0/28" } }
+        transit_gateway_options = {
+          id     = "tgw-00000000000000002"
+          create = true
+        }
+      }
+    }
+    transit_gateway_attachments = {}
+  }
+
+  expect_failures = [var.subnets]
+}
