@@ -9,18 +9,34 @@ v5 replaces heterogeneous subnet maps with typed subnet groups, stable
 `"<group>/<az>"` resource keys, explicit semantic roles, create-or-inject
 boundaries, native Flow Logs, and tiered outputs.
 
+## Why v5 instead of extending v4?
+
+v4's public contract is structurally implicit: `type = any`, heterogeneous subnet
+maps, and magic keys couple behavior to spelling. Its positional CIDR allocation and
+inconsistent resource keys make topology growth churn state, while downstream
+consumers must parse output keys instead of composing stable handles. Correcting the
+types, state identities, and output shapes is breaking by definition, so v5 makes
+that major-version boundary explicit rather than hiding it behind optional fields.
+Tier 2 preserves v4-compatible outputs during v5; the upgrade guide uses normal
+plans plus explicit `moved`, `removed`, and `import` blocks, with the AWS provider
+upgrade kept as a separate controlled change.
+
 ## Usage
 
 Use explicit AZ names and CIDRs for production. This pre-release source is directly
 consumable from an external project; after v5 is published, replace it with the
 Terraform Registry source `aws-ia/vpc/aws` and pin the released major version.
 
+> **Cost warning:** applying this quick start creates a public NAT Gateway and
+> incurs NAT Gateway hourly and data-processing charges; cross-AZ traffic can add
+> transfer charges. `terraform init` alone creates no AWS resources.
+
 ```hcl
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 6.29"
+      version = ">= 6.29, < 7.0"
     }
   }
 }

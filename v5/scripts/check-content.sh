@@ -20,3 +20,12 @@ grep -Fq 'arn:aws:dynamodb:us-east-1:123456789012:table/application-data' "$repo
 
 grep -Fq '`subnets[*].route_table_key` is also immutable Terraform' "$repo_root/v5/.header.md"
 grep -Fq 'module.vpc.aws_vpc_endpoint_route_table_association.gateway["injected/edge-old/gateway-endpoint/s3"]' "$repo_root/v5/.header.md"
+
+grep -Fq '## Why v5 instead of extending v4?' "$repo_root/v5/.header.md"
+grep -Fq 'version = ">= 6.29, < 7.0"' "$repo_root/v5/.header.md"
+grep -Fq '**Cost warning:** applying this quick start creates a public NAT Gateway' "$repo_root/v5/.header.md"
+grep -Fq '## 6. Future work / deferred scope' "$repo_root/docs/rfc/v5-contract.md"
+if grep -Fq 'Phase 5 gate pending' "$repo_root/docs/rfc/v5-contract.md" || grep -Fq 'Future Work (TODO)' "$repo_root/docs/rfc/v5-contract.md"; then
+  echo "Stale RFC status wording found" >&2
+  exit 1
+fi

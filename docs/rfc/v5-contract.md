@@ -1,84 +1,12 @@
 # RFC: terraform-aws-vpc v5 — Typed Subnet Contract
 
-> **Status:** Draft / Phase 6 audited; remediation batches 1, 2, and 4 implemented (live AWS migration revalidation remains pending)
+> **Status:** Candidate contract under remediation; not yet release-gated
+> **Date:** 2026-08-13
+> **Technical snapshot:** `c2a255a` on `explore/v5-typed-contract` before this editorial update
+> **Local evidence:** focused Terraform regressions and validate gates are green; the complete post-remediation test/TFLint/archive gate remains pending and must supersede this line
+> **AWS revalidation:** pending by design; this remediation made no AWS API calls and makes no fresh apply/zero-diff/destroy claim
 >
-> **Remediation batch 6 (2026-08-13):**
-> - Flow Logs migration now uses three non-destructive declarative forgets plus one log-group import in the zero-destroy normal-plan gate.
-> - `nat_gateway.mode = "regional"` creates one public VPC-level NAT, supports AWS automatic IP management or manual existing/BYOIP addresses, and preserves AZ-keyed routing/output shapes.
-> - Regional NAT requires no public host subnet; private NAT remains zonal.
->
-> **Remediation batch 4 (2026-08-12, `f0db68e`, `dcaab57`):**
-> - Complete Name formats preserve v4 subnet, route-table, NAT/EIP, IGW, and EIGW tags without coupling display names to state keys.
-> - All 15 taggable resource types were schema-audited; IGW/EIGW gained boundary tag maps and NAT/EIP inherit host-group tags. Provider `default_tags` precedence and migration behavior are explicit.
-> - The migration gate now permits internal `terraform_data` state records, materializes moved addresses before the Flow Log import, and treats 63 moves as a feature union (26 applicable/37 absent in the real fixture).
-> - Native suite: 50 passed, 0 failed; the destroyed AWS fixture has not been recreated, so no post-apply claim is made.
->
-> **Remediation batch 1 (2026-08-12, `db758f7`, `0a1f424`):**
-> - IPv6 is functional end-to-end: Amazon `/56`, IPv6 IPAM/exact CIDR, injected
->   VPC discovery, deterministic/pinned subnet `/64`s, subnet IPAM, IPv6-native,
->   EIGW `::/0`, and DNS64/NAT64 `64:ff9b::/96`.
-> - `availability_zones.count` now sorts discovery and slices exactly N AZs.
-> - Plan-known ownership flags keep computed IDs in resource values, never in
->   count/for_each decisions; a dedicated upstream-composition fixture plans.
-> - Isolated DNS64 is rejected, explicit `internet_gateway=false` is honored,
->   and the hub example's calculated CIDRs no longer overlap explicit ranges.
-> - `terraform test`: 35 passed, 0 failed; tests assert planned IPv6 attributes
->   and routing, not only collection shapes.
->
-> **Phase 5 implementation (2026-08-12, `a5fb279`, `2db15d7`):**
-> - Native tests run without AWS credentials through Terraform mock providers:
->   28 runs and 51 checks cover exact CIDR allocation, Tier 1/Tier 2 shapes,
->   negative validations/preconditions, all three deployable examples, and the
->   migration example.
-> - Calculated CIDRs reserve six AZ slots per group. Absolute `cidr_index` pins
->   survive group/AZ changes, mixed netmasks pack largest-first without overlap,
->   and overlapping pins across netmasks fail during plan.
-> - A mocked stateful fixture preserves representative subnet, route-table, and
->   association IDs across v4-to-v5 moves; the full 63-block migration example
->   also plans syntactically. CloudWatch ownership transfers in one normal plan
->   through declarative `removed { destroy = false }` plus `import` blocks.
-> - `terraform-docs` generates `v5/README.md` from an authored header covering
->   usage, examples, tier guarantees, address stability, tests, and migration.
->
-> **Phase 4 implementation (2026-08-12, `9a4bb9c`):**
-> - Tier 1 now exposes direct IDs/CIDRs by group, semantic role, and AZ; route
->   table IDs at the same granularities; NAT IDs/public/private IPs/allocation
->   IDs; attachment IDs; Flow Log IDs/destinations/roles; VPC identity; and AZs.
-> - Tier 2 reproduces every v4 output name and its outer key/scalar/full-object
->   shape. Reserved-group AZ keys and private `<group>/<az>` keys are preserved.
-> - Tier 3 exposes internal provider resource collections without a semver guarantee; `flow_log_roles` is projected to non-deprecated identity attributes.
-> - `v5-migration.md` and the `migration-from-v4` example provide exact variable/
->   output mappings plus 64 representative `moved` blocks.
-> - Contract-closing validations enforce pinned-index uniqueness, key grammar,
->   CIDR validity/cardinality, role-specific options, route destinations, VPC
->   IPv4 creation, and exact NAT/EIP AZ coverage.
->
-> **Phase 3 implementation and gate closure (2026-08-12):**
-> - Transit Gateway and Cloud WAN attachments use the constant key `"vpc"`.
->   TGW routes depend only on the TGW attachment; Cloud WAN routes depend only
->   on the VPC attachment and its optional accepter, preventing first-apply races
->   without serializing unrelated resources.
-> - Cloud WAN constructs `vpc_arn` from scalar identity components. This removes
->   the spurious unknown that caused unrelated replacements. No `ignore_changes`
->   is used: changing the actual VPC identity still performs the correct replace.
-> - `flow_logs` keeps CloudWatch create-or-inject convenience. Its generated role
->   scopes write actions to the destination, grants `DescribeLogGroups` on `*`,
->   and protects trust with `aws:SourceAccount` plus `aws:SourceArn`. S3 buckets
->   and Firehose streams are external resources injected through `destination_arn`.
-> - `vpc_lattice` uses set semantics for up to five security groups. Private DNS
->   defaults to false and remains an explicit ForceNew choice.
-> - The real AWS provider floor is `>= 6.29`, established by the
->   `aws_subnet.ipv4_ipam_pool_id` and `ipv4_netmask_length` arguments
->   (first released in provider 6.29 — see fase-3 verification). Lattice
->   `private_dns_enabled` separately requires 6.27; TGW security-group referencing
->   alone would require only 5.69.
-> - Tier 1 exposes attachment IDs, flow-log IDs, destination ARNs, role ARNs, and
->   the Lattice association ID. Tier 3 exposes created CloudWatch destinations,
->   roles, and policies for advanced composition.
-> **Date:** 2026-08-12
-> **Authors:** aws-ia team
-> **Decisions referenced:** D1–D7 from `00-propuesta-v5.md`
-> **Reviews:** `reviews/fase-1.md` through `reviews/fase-4.md` (R1 + R2 full audit results); Phase 5 gate pending
+> Historical remediation detail remains in `docs/rfc/reviews/` as an appendix, not as current release status.
 
 ---
 
@@ -779,7 +707,7 @@ resources.
 3. ~~Generator script for moved blocks?~~ → Generator approach kept (dynamic `moved` experimental).
 4. ~~NAT top-level vs nested?~~ → **Top-level confirmed** (VPC-wide concern).
 
-## 6. Future Work (TODO)
+## 6. Future work / deferred scope
 
 - **Phase 2**: Route table injection via `subnets[*].route_table_id` — ✅ DONE
 - **Phase 2**: NAT Gateway injection via `existing_ids` — ✅ DONE
