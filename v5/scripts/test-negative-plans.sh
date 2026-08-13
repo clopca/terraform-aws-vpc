@@ -9,11 +9,12 @@ cd "$module_root"
 terraform init -backend=false -input=false -test-directory=tests-negative >/dev/null
 
 if terraform test -no-color -test-directory=tests-negative >"$log_file" 2>&1; then
-  echo "Computed isolated route-table ID unexpectedly planned without explicit opt-in" >&2
+  echo "Injected isolated route table unexpectedly planned without explicit opt-in" >&2
   exit 1
 fi
 
-grep -Fq 'data "aws_route_table" "isolated_injected"' "$log_file"
-grep -Fq 'Invalid for_each argument' "$log_file"
+grep -Fq 'resource "terraform_data" "isolated_injected_route_table_validation"' "$log_file"
+grep -Fq "role='isolated' with manage_route_table=false requires" "$log_file"
+grep -Fq 'isolated_accepts_uninspected_route_table=true' "$log_file"
 
-echo "Computed isolated route-table IDs fail closed without explicit opt-in"
+echo "Injected isolated route tables fail closed without explicit caller responsibility"

@@ -39,12 +39,6 @@ data "aws_subnet" "existing" {
   id = each.value.existing_id
 }
 
-data "aws_route_table" "isolated_injected" {
-  for_each = local.isolated_injected_route_tables_to_inspect
-
-  route_table_id = each.value
-}
-
 # Scalar account identity for constructed Cloud WAN/VPC ARNs. The attachment
 # never consumes the full existing-VPC data object, avoiding unknown propagation.
 data "aws_caller_identity" "current" {
@@ -442,12 +436,12 @@ resource "terraform_data" "injected_route_table_identity_validation" {
 }
 
 resource "terraform_data" "isolated_injected_route_table_validation" {
-  input = local.unsafe_isolated_injected_route_table_routes
+  input = local.isolated_injected_route_tables_without_opt_in
 
   lifecycle {
     precondition {
-      condition     = length(local.unsafe_isolated_injected_route_table_routes) == 0
-      error_message = "Injected route tables used by isolated subnet groups may contain only local and gateway-endpoint routes. Unsafe physical identities: ${join(", ", sort(keys(local.unsafe_isolated_injected_route_table_routes)))}. Remove the routes or set isolated_accepts_uninspected_route_table=true to accept responsibility explicitly."
+      condition     = length(local.isolated_injected_route_tables_without_opt_in) == 0
+      error_message = "role='isolated' with manage_route_table=false requires isolated_accepts_uninspected_route_table=true. The AWS provider omits route classes from its route-table data source, so the module cannot guarantee isolation for an unmanaged table. Caller opt-in accepts responsibility for every existing and future route. Affected subnet groups: ${join(", ", sort(keys(local.isolated_injected_route_tables_without_opt_in)))}."
     }
   }
 }

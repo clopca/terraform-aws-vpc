@@ -431,11 +431,12 @@ variable "subnets" {
     Groups sharing one physical table must use the same key and ID. The module
     associates every subnet while materializing each route and gateway-endpoint
     association only once per physical key. For role = "isolated", an injected
-    route table is inspected before association and may contain only local or
-    gateway-endpoint routes. Its route_table_id must therefore be known during
-    planning. The dangerous isolated_accepts_uninspected_route_table opt-in skips
-    inspection for computed IDs and transfers responsibility for every existing
-    route to the caller. A shared injected table cannot provide per-AZ NAT targets,
+    route table is rejected by default because the AWS provider omits propagated
+    and service-managed route classes from its route-table data source; the module
+    cannot prove that an unmanaged table is isolated. The dangerous
+    isolated_accepts_uninspected_route_table opt-in is the only supported path and
+    transfers responsibility for every existing and future route to the caller.
+    A shared injected table cannot provide per-AZ NAT targets,
     so `nat_gateway.mode = "all_azs"` is rejected when any referencing group
     requests NAT/NAT64.
 
@@ -615,7 +616,7 @@ variable "subnets" {
       for key, subnet in var.subnets :
       !subnet.isolated_accepts_uninspected_route_table || (subnet.role == "isolated" && !subnet.manage_route_table)
     ])
-    error_message = "isolated_accepts_uninspected_route_table may be true only for role='isolated' with manage_route_table=false. It is a dangerous opt-in that skips inspection of pre-existing routes."
+    error_message = "isolated_accepts_uninspected_route_table may be true only for role='isolated' with manage_route_table=false. It is a dangerous opt-in that accepts caller responsibility for every existing and future route because the module cannot guarantee isolation for an unmanaged table."
   }
 
   validation {

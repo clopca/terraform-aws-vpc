@@ -735,23 +735,14 @@ locals {
     key => var.subnets[groups[0]].route_table_id
   }
 
-  # The physical ID participates in the data-source instance key deliberately:
-  # a computed ID makes for_each unknown and fails the plan closed. Callers may
-  # bypass inspection only through the explicit dangerous opt-in.
-  isolated_injected_route_tables_to_inspect = {
-    for identity, ids in {
-      for name, cfg in var.subnets : "${cfg.route_table_key}/${cfg.route_table_id}" => cfg.route_table_id...
-      if cfg.role == "isolated" && !cfg.manage_route_table && !cfg.isolated_accepts_uninspected_route_table
-    } : identity => one(distinct(ids))
-  }
-  unsafe_isolated_injected_route_table_routes = {
-    for identity, route_table in data.aws_route_table.isolated_injected : identity => route_table.routes
-    if anytrue([
-      for route in route_table.routes : !(
-        try(route.gateway_id == "local", false) ||
-        try(route.vpc_endpoint_id != null && route.vpc_endpoint_id != "", false)
-      )
-    ])
+  # The AWS provider route-table data source intentionally filters several route
+  # classes, including propagated and service-managed routes. It therefore cannot
+  # prove isolation. Every isolated group using an injected route table requires
+  # the explicit caller-responsibility opt-in, regardless of whether its ID is
+  # known during planning.
+  isolated_injected_route_tables_without_opt_in = {
+    for name, cfg in var.subnets : name => cfg.route_table_key
+    if cfg.role == "isolated" && !cfg.manage_route_table && !cfg.isolated_accepts_uninspected_route_table
   }
   managed_route_table_targets = merge([
     for name, cfg in var.subnets : {

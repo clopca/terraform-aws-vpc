@@ -14,7 +14,7 @@ mock_provider "aws" {
   }
 }
 
-run "reject_computed_uninspected_isolated_route_table" {
+run "reject_injected_isolated_route_table_without_opt_in" {
   command = plan
 
   module {
