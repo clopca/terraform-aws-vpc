@@ -493,5 +493,8 @@ run "reject_calculated_cidr_pin_beyond_parent_capacity" {
     }
   }
 
-  expect_failures = [terraform_data.cidr_pinning_validation[0]]
+  expect_failures = [
+    aws_subnet.main,
+    terraform_data.cidr_pinning_validation[0],
+  ]
 }
