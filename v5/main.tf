@@ -172,13 +172,33 @@ resource "aws_subnet" "main" {
   ]
 
   lifecycle {
-    # Basic: must have some addressing
+    # A configured calculated source counts as addressing while its provider-
+    # derived parent is unknown; the family-specific checks reject calculation
+    # failure once that parent resolves.
     precondition {
       condition = (
         each.value.cidr_block != null || each.value.ipam_pool_id != null ||
-        each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null
+        each.value.ipv6_cidr != null || each.value.ipv6_ipam_pool_id != null ||
+        try(var.subnets[each.value.name].ipv4.netmask, null) != null ||
+        contains(keys(local.subnets_with_calculated_ipv6), each.value.name)
       )
       error_message = "Subnet '${each.key}': must have an IPv4 or IPv6 CIDR source."
+    }
+
+    precondition {
+      condition = (
+        try(var.subnets[each.value.name].ipv4.netmask, null) == null ||
+        each.value.cidr_block != null
+      )
+      error_message = "Subnet '${each.key}': calculated IPv4 CIDR does not fit its selected parent; refusing to use the parent CIDR as a subnet."
+    }
+
+    precondition {
+      condition = (
+        !contains(keys(local.subnets_with_calculated_ipv6), each.value.name) ||
+        each.value.ipv6_cidr != null
+      )
+      error_message = "Subnet '${each.key}': calculated IPv6 /64 does not fit its selected parent; refusing to use the parent CIDR as a subnet."
     }
   }
 }

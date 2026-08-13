@@ -396,7 +396,9 @@ allocation domains. `ipv4.secondary_cidr_key` therefore selects the actual paren
 for calculated CIDRs, not only a dependency. Equal pins may be reused under
 different parents. Explicit IPv4 and IPv6 CIDRs must be contained in their selected
 parent; unknown provider-derived parents defer this precondition to apply before
-subnet creation.
+subnet creation. A failed or overflowing `cidrsubnet` calculation yields no CIDR
+and fails a subnet resource precondition; it must never fall back to the parent
+CIDR.
 
 **Stability guarantees:**
 - Pinned groups: existing CIDRs never shift; conflicting absolute pins fail early.

@@ -185,7 +185,7 @@ locals {
         local.ipv4_parent_cidr_by_group[name],
         cfg.ipv4.netmask - local.ipv4_parent_prefix_length_by_group[name],
         (local.calculated_group_start_unit[name] / pow(2, 28 - cfg.ipv4.netmask)) + ai,
-      ), local.ipv4_parent_cidr_by_group[name])
+      ), null)
     }
   ])...)
   invalid_calculated_ipv4_keys = [
@@ -267,7 +267,7 @@ locals {
         local.ipv6_parent_cidr_by_group[name],
         64 - local.ipv6_parent_prefix_length_by_group[name],
         local.ipv6_calculated_group_start[name] + ai,
-      ), local.ipv6_parent_cidr_by_group[name])
+      ), null)
     }
   ])...)
   invalid_calculated_ipv6_keys = [
