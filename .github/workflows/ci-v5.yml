@@ -66,6 +66,20 @@ jobs:
             terraform -chdir="v5/examples/${example}" validate -no-color
           done
 
+      - name: Verify archived module and examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_dir="$(mktemp -d)"
+          trap 'rm -rf "$archive_dir"' EXIT
+          git archive --format=tar HEAD | tar -xf - -C "$archive_dir"
+          terraform -chdir="$archive_dir/v5" init -backend=false -lockfile=readonly
+          terraform -chdir="$archive_dir/v5" validate -no-color
+          for example in basic enterprise hub migration-from-v4 nat_byoip ipam dual_stack existing_vpc secure_isolated private_nat inspection_egress; do
+            terraform -chdir="$archive_dir/v5/examples/${example}" init -backend=false -lockfile=readonly
+            terraform -chdir="$archive_dir/v5/examples/${example}" validate -no-color
+          done
+
       - name: Run complete plan-only test suite
         working-directory: v5
         run: terraform test -no-color

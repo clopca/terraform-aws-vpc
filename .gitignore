@@ -38,6 +38,10 @@ override.tf.json
 terraform.rc
 .terraform.lock.hcl
 
+# v5 reproducibility contract: module and example locks are intentionally tracked.
+!v5/.terraform.lock.hcl
+!v5/examples/*/.terraform.lock.hcl
+
 go.mod
 go.sum
 
