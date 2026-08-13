@@ -132,6 +132,13 @@ for heading in [
 ]:
     assert heading in upgrade, f"upgrade guide missing {heading}"
 assert "migration-v4-reference.md" in upgrade
+for address in [
+    "module.vpc.module.flow_logs[0].aws_cloudwatch_log_group.main[0]",
+    "module.vpc.module.flow_logs[0].aws_flow_log.main",
+    "module.vpc.module.flow_logs[0].aws_iam_role.flow_logs[0]",
+    "module.vpc.module.flow_logs[0].aws_iam_role_policy.flow_logs[0]",
+]:
+    assert address in upgrade, f"upgrade guide missing v4.8.0 Flow Logs address: {address}"
 assert "## Variables" not in upgrade and "## Outputs" not in upgrade
 
 reference = (root / "docs/migration-v4-reference.md").read_text()

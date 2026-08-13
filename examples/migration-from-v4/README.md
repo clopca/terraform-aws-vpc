@@ -26,11 +26,29 @@ moved {
 }
 
 removed {
-  from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main
+  from = module.vpc.module.flow_logs.aws_cloudwatch_log_group.main
 
   lifecycle {
     destroy = false
   }
+}
+
+removed {
+  from = module.vpc.module.flow_logs.aws_iam_role_policy.flow_logs
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+moved {
+  from = module.vpc.module.flow_logs[0].aws_flow_log.main
+  to   = module.vpc.aws_flow_log.this["default"]
+}
+
+moved {
+  from = module.vpc.module.flow_logs[0].aws_iam_role.flow_logs[0]
+  to   = module.vpc.aws_iam_role.flow_logs["default"]
 }
 
 import {

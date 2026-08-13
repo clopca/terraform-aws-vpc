@@ -348,6 +348,6 @@ moved {
 }
 
 moved {
-  from = module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_role.main
+  from = module.vpc.module.flow_logs[0].aws_iam_role.flow_logs[0]
   to   = module.vpc.aws_iam_role.flow_logs["default"]
 }

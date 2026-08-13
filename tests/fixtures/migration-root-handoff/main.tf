@@ -2,10 +2,10 @@ terraform {
   required_version = ">= 1.7"
 }
 
-# Terraform Core rejects module instance keys in removed.from. These exact
-# unindexed nested-module addresses are the root migration contract.
+# Terraform Core rejects instance keys in removed.from. These exact unindexed
+# v4.8.0 resource addresses are the root migration contract.
 removed {
-  from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main
+  from = module.vpc.module.flow_logs.aws_cloudwatch_log_group.main
 
   lifecycle {
     destroy = false
@@ -13,15 +13,7 @@ removed {
 }
 
 removed {
-  from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_policy.main
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_role_policy_attachment.main
+  from = module.vpc.module.flow_logs.aws_iam_role_policy.flow_logs
 
   lifecycle {
     destroy = false

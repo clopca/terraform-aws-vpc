@@ -19,7 +19,7 @@
 
 - Work against a copy of production state first; never combine an unreviewed provider upgrade with the v4 -> v5 module cutover.
 - The migration gate is one saved, complete normal `terraform plan`; no partial or state-only plan is an acceptance substitute.
-- Preserve every durable physical ID. The default gate permits zero replacements and zero destroys. Expected creates are built-in `terraform_data` precondition records plus the Flow Logs inline policy described below; `terraform_data` has no AWS API side effects. The legacy managed policy and attachment are forgotten without destroy and cleaned explicitly only after delivery verification.
+- Preserve every durable physical ID. The default gate permits zero replacements and zero destroys. Expected creates are built-in `terraform_data` precondition records plus the Flow Logs inline policy described below; `terraform_data` has no AWS API side effects. The v4.8.0 inline policy is forgotten without destroy and cleaned explicitly only after delivery verification.
 - Preserve v4 Name tags with the format mapping in the [migration reference](migration-v4-reference.md). Besides eliminating 14 subnet/route-table/EIP/NAT updates in the documented two-AZ topology, set the Flow Log format to `{vpc}` and the log-group format to empty so neither logging resource changes `Name`.
 - Keep provider `default_tags` unchanged through the cutover. Duplicate keys resolve provider defaults < module globals < resource/group tags < generated Name.
 - Express the CloudWatch log-group ownership handoff declaratively so the old-address forget and the v5-address import are visible in the same normal plan.
@@ -56,20 +56,20 @@
    terraform state list
    ```
 
-4. For a v4-created CloudWatch Flow Logs destination, capture the generated log-group name, IAM role name/prefix, managed-policy ARN/name prefix, and attachment **before** changing module versions:
+4. For a v4.8.0-created CloudWatch Flow Logs destination, capture the generated log-group name, IAM role name/prefix, and inline-policy name **before** changing module versions:
 
    ```shell
    terraform state show \
-     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main'
+     'module.vpc.module.flow_logs[0].aws_cloudwatch_log_group.main[0]'
    terraform state show \
-     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_role.main'
+     'module.vpc.module.flow_logs[0].aws_flow_log.main'
    terraform state show \
-     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main'
+     'module.vpc.module.flow_logs[0].aws_iam_role.flow_logs[0]'
    terraform state show \
-     'module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_role_policy_attachment.main'
+     'module.vpc.module.flow_logs[0].aws_iam_role_policy.flow_logs[0]'
    ```
 
-   Copy the log group's `name` to `flow_logs.default.cloudwatch_options.name` and to the declarative import ID. Copy the role's `name_prefix` (not its generated `name`) to `flow_logs.default.role_name_prefix`. Also retain the generated role `name` and managed-policy `arn` for the post-verification cleanup. The v4 defaults use `${var.name}-cw-access-role-` and `${var.name}-cw-access-policy-` prefixes; cleanup requires the complete generated values captured from state. Both log-group and role naming attributes are ForceNew when configured, so exact identity is required for a zero-replacement cutover.
+   Copy the log group's `name` to `flow_logs.default.cloudwatch_options.name` and to the declarative import ID. Copy the role's `name_prefix` (not its generated `name`) to `flow_logs.default.role_name_prefix`. Retain the generated role `name` and inline-policy `name` for the post-verification cleanup. v4.8.0 uses an inline IAM policy; it does not create the managed policy and role-policy attachment found in older v4 layouts. Always select handoff blocks from the exact addresses returned by `terraform state list`. Both log-group and role naming attributes are ForceNew when configured, so exact identity is required for a zero-replacement cutover.
 
    If v4 assigned IPv6, also capture `ipv6_association_id`, `ipv6_cidr_block`,
    `ipv6_ipam_pool_id`, and `ipv6_netmask_length` from
@@ -97,7 +97,7 @@
    terraform init
    ```
 
-8. Add three non-destructive `removed` blocks for the old log group, managed policy, and attachment, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. If v4 assigned IPv6, add the second declarative import shown below for the standalone v5 association. These are root-module blocks; do not place them inside the VPC module. Replace the Flow Logs value in every migration; for IPv6 replace the association ID and observed CIDR, plus the pool ID for IPAM and the netmask only when it was present in v4 state:
+8. Add two non-destructive `removed` blocks for the v4.8.0 log group and inline policy, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. If v4 assigned IPv6, add the second declarative import shown below for the standalone v5 association. These are root-module blocks; do not place them inside the VPC module. Replace the Flow Logs value in every migration; for IPv6 replace the association ID and observed CIDR, plus the pool ID for IPAM and the netmask only when it was present in v4 state:
 
    ```hcl
    variable "v4_flow_log_group_name" {
@@ -137,7 +137,7 @@
    }
 
    removed {
-     from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main
+     from = module.vpc.module.flow_logs.aws_cloudwatch_log_group.main
 
      lifecycle {
        destroy = false
@@ -145,15 +145,7 @@
    }
 
    removed {
-     from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_policy.main
-
-     lifecycle {
-       destroy = false
-     }
-   }
-
-   removed {
-     from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_iam_role_policy_attachment.main
+     from = module.vpc.module.flow_logs.aws_iam_role_policy.flow_logs
 
      lifecycle {
        destroy = false
@@ -201,13 +193,13 @@
 
    A one-component ID is valid only for Amazon-provided IPv6. Using it for IPAM drops ForceNew pool/netmask state and produces a replacement plan.
 
-   `removed.from` addresses modules, not module instances: Terraform Core rejects `[0]` keys on `module.flow_logs` and `module.cloudwatch_log_group`. Omitting those two module instance keys matches all instances selected by the configuration; the indexed addresses remain valid for `terraform state show` and the IAM-role `moved` block.
+   `removed.from` addresses resources, not resource instances: Terraform Core rejects the `[0]` module and resource instance keys from the v4.8.0 state addresses. Omitting those keys matches every instance selected by the configuration; the indexed addresses remain valid for `terraform state show` and the IAM-role `moved` block.
 
    Declarative import requires Terraform >= 1.5; non-destructive `removed` requires Terraform >= 1.7. Therefore this ownership-preserving migration procedure has a Terraform >= 1.7 runner floor even though the v5 module itself remains compatible with Terraform >= 1.5. Keep the IAM role moved block active and preserve its exact `role_name_prefix`.
 
    The v5 `aws_vpc.main` resource deliberately ignores its four legacy embedded IPv6 fields: `assign_generated_ipv6_cidr_block`, `ipv6_cidr_block`, `ipv6_ipam_pool_id`, and `ipv6_netmask_length`. This lifecycle bridge is mandatory. Without it, AWS provider 6.59 treats removal of the v4 arguments as an update and disassociates the live prefix even if the standalone resource is imported in the same plan. The bridge suppresses that physical mutation while the standalone keyed resource acquires ownership.
 
-   The complete normal plan in section D evaluates the v5 configuration, all selected moves, three non-destructive forgets, the log-group import, and the optional IPv6 association import together; there is no preliminary state-materialization plan or CLI state surgery. The plan must show no change at `module.vpc.aws_vpc.main[0]`, including no `assign_generated_ipv6_cidr_block = true -> null` update.
+   The complete normal plan in section D evaluates the v5 configuration, all selected moves, two non-destructive forgets, the log-group import, and the optional IPv6 association import together; there is no preliminary state-materialization plan or CLI state surgery. The plan must show no change at `module.vpc.aws_vpc.main[0]`, including no `assign_generated_ipv6_cidr_block = true -> null` update.
 
 ### D. Complete-plan gate
 
@@ -221,7 +213,7 @@
    The gate criteria are:
 
    - **Required:** zero `destroy` and zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive. `module.vpc.aws_vpc.main[0]` must have no planned update: any removal of embedded IPv6 arguments, especially `assign_generated_ipv6_cidr_block = true -> null`, fails the gate.
-   - **Expected state-only transitions:** the selected `moved` pairs, three `removed { destroy = false }` forgets for the old log group/managed policy/attachment, one log-group import, and—when v4 IPv6 exists—one import of its existing association into `secondary["v4-ipv6"]`. Re-keyed routes whose destination is unchanged have no residual create/delete.
+   - **Expected state-only transitions:** the selected `moved` pairs, two `removed { destroy = false }` forgets for the v4.8.0 log group/inline policy, one log-group import, and—when v4 IPv6 exists—one import of its existing association into `secondary["v4-ipv6"]`. Re-keyed routes whose destination is unchanged have no residual create/delete.
    - **Allowed creates:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role, plus the expected built-in `terraform_data` precondition records. These records exist only in Terraform state and perform no AWS API operations. For the documented two-AZ topology the exact seven are:
      - `module.vpc.terraform_data.attachment_contract_validation`;
      - `module.vpc.terraform_data.cidrs_az_count_validation["private"]`;
@@ -239,31 +231,30 @@
 
 ### E. Ordered IAM permissions cutover and cleanup
 
-10. Apply the saved complete plan. The v5 inline policy is created while the old managed policy and its attachment remain active in AWS because both were forgotten with `destroy = false`:
+10. Apply the saved complete plan. The v5 inline policy is created while the forgotten v4.8.0 inline policy remains attached to the preserved role because its `removed` block uses `destroy = false`:
 
     ```shell
     terraform apply v5-migration.tfplan
     ```
 
-11. Verify that `publish-vpc-flow-logs` exists inline on the preserved role and that the existing Flow Log continues delivering events newer than the apply to the preserved log group. Only after both checks pass, clean the two intentionally orphaned IAM artifacts using the complete role name and policy ARN captured in step 4:
+11. Verify that `publish-vpc-flow-logs` exists inline on the preserved role and that the existing Flow Log continues delivering events newer than the apply to the preserved log group. Only after both checks pass, delete the forgotten v4.8.0 inline policy using the complete role and policy names captured in step 4:
 
     ```shell
     export V4_FLOW_LOG_ROLE_NAME='replace-with-generated-role-name'
-    export V4_FLOW_LOG_POLICY_ARN='arn:aws:iam::123456789012:policy/replace-with-generated-policy-name'
+    export V4_FLOW_LOG_POLICY_NAME='replace-with-v4-inline-policy-name'
 
     aws iam get-role-policy \
       --role-name "$V4_FLOW_LOG_ROLE_NAME" \
       --policy-name publish-vpc-flow-logs
-    aws iam list-entities-for-policy \
-      --policy-arn "$V4_FLOW_LOG_POLICY_ARN"
-    aws iam detach-role-policy \
+    aws iam get-role-policy \
       --role-name "$V4_FLOW_LOG_ROLE_NAME" \
-      --policy-arn "$V4_FLOW_LOG_POLICY_ARN"
-    aws iam delete-policy \
-      --policy-arn "$V4_FLOW_LOG_POLICY_ARN"
+      --policy-name "$V4_FLOW_LOG_POLICY_NAME"
+    aws iam delete-role-policy \
+      --role-name "$V4_FLOW_LOG_ROLE_NAME" \
+      --policy-name "$V4_FLOW_LOG_POLICY_NAME"
     ```
 
-    The deliberate trade-off is two temporary AWS objects outside Terraform state: one managed policy (normally named from `<vpc>-cw-access-policy-`) and one attachment to the preserved role (normally named from `<vpc>-cw-access-role-`). This is preferable to a first plan containing premature destroys: Terraform cannot express a graph edge conditioned on successful post-apply log delivery. A temporary caller-managed copy of those resources was rejected because it duplicates provider configuration and state ownership without encoding that operational verification barrier. Record the cleanup output, then require a clean complete plan.
+    The deliberate trade-off is one temporary inline policy outside Terraform state. This is preferable to a first plan containing a premature policy deletion: Terraform cannot express a graph edge conditioned on successful post-apply log delivery. Record the cleanup output, then require a clean complete plan.
 
 ### F. Post-apply verification
 
@@ -291,7 +282,7 @@ Stop before apply if the complete plan contains any replacement, destroy, unlist
 
 If apply fails, do not perform the legacy IAM cleanup. Preserve the state snapshot, saved plan, apply output, and current AWS resource inventory. Reconcile Terraform state with the physical resources before any retry; restore a state backup only when it accurately represents the unchanged physical resources and the backend owner has approved the recovery.
 
-After a successful apply but failed Flow Logs verification, keep the legacy managed policy and attachment in place while investigating. Do not detach or delete them until the inline policy exists and events newer than the cutover reach the preserved destination.
+After a successful apply but failed Flow Logs verification, keep the forgotten v4.8.0 inline policy in place while investigating. Do not delete it until the v5 inline policy exists and events newer than the cutover reach the preserved destination.
 
 Rollback to v4 is a separately reviewed state transition: restore the v4 configuration, reverse only the applied address ownership changes with exact declarative moves/imports, and require a complete zero-destroy plan before applying. Do not point old configuration at newly keyed state without an explicit reverse mapping.
 
