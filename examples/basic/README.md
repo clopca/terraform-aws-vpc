@@ -1,45 +1,56 @@
-<!-- BEGIN_TF_DOCS -->
-# VPC module - Example: Basic VPC
+# Basic three-AZ VPC
 
-This example builds an Amazon VPC with basic functionality:
+This example is the smallest deployable v5 web-application topology. It demonstrates:
 
-* Dual-stack VPC (IPv4 & IPv6)
-    * Egress-only Internet gateway configured.
-* 4 VPC subnets - 1 public (dual-stack), 3 private (IPv4-only, dual-stack, and IPv6-only)
-    * NAT gateways placed in all the public subnets.
-* Flow logs enabled (destination Amazon CloudWatch)
-* Routing:
-    * IPv4 egress enabled in public subnets (through Internet gateway) and private subnets (through NAT gateways)
-    * IPv6 egress enabled in private subnets (through Egress-only Internet gateway)
+- one public, one private application, and one isolated database subnet per AZ;
+- Amazon-provided IPv6 on the VPC and dual-stack public/application subnets;
+- one public NAT Gateway shared by all application subnets;
+- DNS64/NAT64 and egress-only Internet Gateway routing for application subnets;
+- IPv4-only isolated database subnets, whose Tier 1 IPv6 output is `null`;
+- S3 and DynamoDB gateway endpoints associated with all application route tables;
+- a module-owned CloudWatch Logs destination, IAM delivery role, and VPC Flow Log;
+- Tier 1 outputs by group, semantic role, and Availability Zone.
 
-## Requirements
+## Architecture
 
-| Name | Version |
-|------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0.0 |
+```mermaid
+flowchart LR
+  Internet((Internet)) --> IGW[Internet Gateway]
+  IGW --> Public[Public subnets\n3 AZs / dual-stack]
+  Public --> NAT[NAT Gateway\nus-east-1a]
+  NAT --> App[Application subnets\n3 AZs / dual-stack]
+  App --> Endpoints[S3 + DynamoDB\ngateway endpoints]
+  EIGW[Egress-only IGW] --> App
+  App -. no direct route .-> DB[Database subnets\n3 AZs / IPv4 only]
+  VPC[VPC Flow Log] --> CW[CloudWatch Logs]
+```
 
-## Providers
+`availability_zones.count` keeps the example concise, but it is development-only. Production configurations should use explicit AZ names and explicit CIDRs (or pinned `cidr_index` values) to keep state identity stable.
 
-No providers.
+## NAT cost optimization
 
-## Modules
+S3 and DynamoDB gateway endpoints have no hourly endpoint charge. Matching traffic
+uses the endpoint route instead of the NAT Gateway, avoiding NAT per-GB processing
+charges. For data-heavy S3/DynamoDB workloads this is often the largest immediate
+VPC networking cost optimization. Endpoint policies and bucket/table policies still
+determine authorization.
 
-| Name | Source | Version |
-|------|--------|---------|
-| <a name="module_vpc"></a> [vpc](#module\_vpc) | ../.. | n/a |
+## Run
 
-## Resources
+The example creates billable NAT Gateway and CloudWatch Logs resources.
 
-No resources.
+```shell
+terraform init
+terraform plan
+terraform apply
+terraform output
+terraform destroy
+```
 
-## Inputs
+Override the default Region if needed:
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
-| <a name="input_aws_region"></a> [aws\_region](#input\_aws\_region) | AWS Region. | `string` | `"eu-west-1"` | no |
+```shell
+terraform plan -var='aws_region=us-west-2'
+```
 
-## Outputs
-
-No outputs.
-<!-- END_TF_DOCS -->
+When changing the Region, also replace the hard-coded single-NAT AZ in `main.tf` with an AZ from that Region.
