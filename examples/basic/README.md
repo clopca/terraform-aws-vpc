@@ -1,56 +1,68 @@
-# Basic three-AZ VPC
+# Web application VPC
 
-This example is the smallest deployable v5 web-application topology. It demonstrates:
+This example creates a three-AZ VPC with public, private application, and isolated database subnet groups. Use it for a conventional dual-stack web application that needs controlled internet egress, gateway endpoints, and CloudWatch flow logs.
 
-- one public, one private application, and one isolated database subnet per AZ;
-- Amazon-provided IPv6 on the VPC and dual-stack public/application subnets;
-- one public NAT Gateway shared by all application subnets;
-- DNS64/NAT64 and egress-only Internet Gateway routing for application subnets;
-- IPv4-only isolated database subnets, whose Tier 1 IPv6 output is `null`;
-- S3 and DynamoDB gateway endpoints associated with all application route tables;
-- a module-owned CloudWatch Logs destination, IAM delivery role, and VPC Flow Log;
-- Tier 1 outputs by group, semantic role, and Availability Zone.
+## What this demonstrates
 
-## Architecture
+- An Amazon-provided IPv6 CIDR selected by the caller-owned `amazon-ipv6` key.
+- Public, private, and isolated subnet roles with deterministic IPv4 allocation.
+- Single-AZ NAT for development, plus egress-only IPv6 routing and DNS64 for application subnets.
+- S3 and DynamoDB gateway endpoints associated through subnet routing declarations.
+- A module-owned CloudWatch log group and IAM role for VPC Flow Logs.
 
-```mermaid
-flowchart LR
-  Internet((Internet)) --> IGW[Internet Gateway]
-  IGW --> Public[Public subnets\n3 AZs / dual-stack]
-  Public --> NAT[NAT Gateway\nus-east-1a]
-  NAT --> App[Application subnets\n3 AZs / dual-stack]
-  App --> Endpoints[S3 + DynamoDB\ngateway endpoints]
-  EIGW[Egress-only IGW] --> App
-  App -. no direct route .-> DB[Database subnets\n3 AZs / IPv4 only]
-  VPC[VPC Flow Log] --> CW[CloudWatch Logs]
+## Relevant configuration
+
+The complete configuration is in [`main.tf`](./main.tf). The application subnet and endpoint declarations are the scenario-specific portion:
+
+```hcl
+subnets = {
+  app = {
+    role = "private"
+    ipv4 = { netmask = 22 }
+    ipv6 = {
+      secondary_cidr_key = "amazon-ipv6"
+      auto_assign        = true
+    }
+    routing = {
+      nat_gateway               = true
+      egress_only_igw           = true
+      dns64                     = true
+      s3_gateway_endpoint       = true
+      dynamodb_gateway_endpoint = true
+    }
+  }
+
+  database = {
+    role = "isolated"
+    ipv4 = { netmask = 24 }
+  }
+}
+
+nat_gateway = {
+  mode         = "single_az"
+  az           = "us-east-1a"
+  subnet_group = "public"
+}
 ```
 
-`availability_zones.count` keeps the example concise, but it is development-only. Production configurations should use explicit AZ names and explicit CIDRs (or pinned `cidr_index` values) to keep state identity stable.
+## Prerequisites and cost
 
-## NAT cost optimization
-
-S3 and DynamoDB gateway endpoints have no hourly endpoint charge. Matching traffic
-uses the endpoint route instead of the NAT Gateway, avoiding NAT per-GB processing
-charges. For data-heavy S3/DynamoDB workloads this is often the largest immediate
-VPC networking cost optimization. Endpoint policies and bucket/table policies still
-determine authorization.
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create VPC networking, gateway endpoints, IAM resources, and CloudWatch Logs resources.
+- Replace the account ID and DynamoDB table ARNs in the endpoint policy before using this configuration outside a demonstration account.
+- The fixed NAT AZ must be available in the selected Region.
+- **Cost:** one public NAT Gateway, one public IPv4 address, CloudWatch Logs ingestion and retention, data processing, and regional data transfer can incur charges.
 
 ## Run
 
-The example creates billable NAT Gateway and CloudWatch Logs resources.
-
 ```shell
 terraform init
-terraform plan
-terraform apply
-terraform output
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
+terraform output subnet_ids
+terraform output gateway_endpoints
 terraform destroy
 ```
 
-Override the default Region if needed:
-
-```shell
-terraform plan -var='aws_region=us-west-2'
-```
-
-When changing the Region, also replace the hard-coded single-NAT AZ in `main.tf` with an AZ from that Region.
+The application group has resilient subnet placement but a single-AZ IPv4 egress dependency; choose `all_azs` or `regional` NAT for workloads that require a different availability model.

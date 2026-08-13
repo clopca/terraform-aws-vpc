@@ -1,61 +1,77 @@
-# Secure isolated enclave
+# Isolated VPC security boundary
 
-This example combines the v5 D6 controls into a topology without Internet or transit routing:
+This example creates two isolated subnet tiers with explicit network ACL rules, hardened default VPC resources, custom DHCP options, and Regional VPC Block Public Access. Use it for workloads that require a fail-closed network boundary with no Internet Gateway, NAT Gateway, egress-only gateway, or transit route.
 
-- VPC Block Public Access in `block-bidirectional` mode;
-- a custom DHCP option set with a private domain, Amazon-provided DNS, and Amazon Time Sync;
-- opt-in adoption of the AWS-created default security group, network ACL, and route table;
-- explicit per-group NACLs allowing only control-to-enclave TLS plus its stateless return path;
-- two subnet groups whose semantic role is exclusively `isolated`;
-- no Internet Gateway, egress-only Internet Gateway, NAT Gateway, or Internet/transit route.
+## What this demonstrates
 
-Use this pattern for restricted processing zones, offline control planes, regulated data enclaves, or workloads whose ingress and egress must traverse separately governed private endpoints or inspection infrastructure. Isolated groups may opt into S3/DynamoDB gateway endpoints without becoming Internet-routed; use `private` for TGW, Cloud WAN, NAT, or broader routing.
+- Isolated subnet roles create route tables without managed egress routes.
+- Caller-owned NACL rule-number keys provide stable state identity for stateless ingress and egress rules.
+- AWS-created default security group, network ACL, and route table resources are explicitly adopted and hardened.
+- Custom DHCP options are created and associated with the VPC.
+- Regional VPC Block Public Access is enabled in bidirectional mode from one designated module instance.
 
-```mermaid
-flowchart TB
-  BPA[VPC Block Public Access\nblock bidirectional] --> VPC[Secure VPC]
-  DHCP[Custom DHCP options] --> VPC
-  VPC --> Enclave[Enclave subnets\n2 AZs\ncustom NACL]
-  VPC --> Control[Control subnets\n2 AZs\ncustom NACL]
-  Control -->|TCP 443 + explicit return path| Enclave
-  Internet((Internet)) -. blocked / no route .-> VPC
+## Relevant configuration
+
+The complete configuration is in [`main.tf`](./main.tf). The enclave ACL and Regional public-access control are the security-specific declarations:
+
+```hcl
+subnets = {
+  enclave = {
+    role = "isolated"
+    ipv4 = {
+      cidrs_by_az = {
+        for index, az in var.availability_zones :
+        az => cidrsubnet(var.vpc_cidr, 8, index)
+      }
+    }
+    network_acl = {
+      ingress = {
+        "100" = {
+          protocol   = "tcp"
+          action     = "allow"
+          cidr_block = cidrsubnet(var.vpc_cidr, 4, 1)
+          from_port  = 443
+          to_port    = 443
+        }
+      }
+      egress = {
+        "100" = {
+          protocol   = "tcp"
+          action     = "allow"
+          cidr_block = cidrsubnet(var.vpc_cidr, 4, 1)
+          from_port  = 1024
+          to_port    = 65535
+        }
+      }
+      tags = { DataClassification = "restricted" }
+    }
+  }
+}
+
+vpc_block_public_access = {
+  enabled                     = true
+  internet_gateway_block_mode = "block-bidirectional"
+}
 ```
 
-## Default-resource adoption warning
+## Prerequisites and cost
 
-`default_resources` does not create replacements. It adopts AWS-created defaults.
-On first apply, security-group rules, default NACL allow rules, non-local default
-routes, and propagated gateways are removed. Enabling it in a live VPC can break
-workloads still using those defaults; inventory dependencies and move workloads to
-explicit SGs, NACLs, and route tables first. All selectors default to `false`, so
-existing deployments and v4 migration plans remain unchanged unless explicitly
-enabled.
-
-## Stateless NACL warning
-
-NACLs are stateless: every allowed request path needs a separate reverse-direction
-rule. The example permits control-to-enclave TCP/443 and explicitly permits the
-1024–65535 response path; all unmatched traffic remains denied. Rule map keys are
-the AWS rule numbers, so reordering source declarations does not change state.
-
-Do not add NACLs merely to duplicate security-group policy. Prefer stateful security
-groups when workload identity is sufficient, return-port management would be
-fragile, or teams cannot test both traffic directions. Use NACLs for deliberate
-subnet-boundary defense in depth, coarse deny controls, or compliance boundaries.
-Omitting `network_acl` preserves AWS default-NACL behavior.
-
-## Regional singleton warning
-
-`aws_vpc_block_public_access_options` is an account/Region singleton. Manage it from exactly one module instance. Applying this example changes the regional setting and can affect other VPCs in the account, so use an isolated test account or coordinate the change with the account networking owner.
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions for VPC networking, default-resource adoption, DHCP options, NACLs, and account-level VPC Block Public Access options.
+- Exactly two distinct Availability Zones in the selected Region.
+- Regional VPC Block Public Access is an account-and-Region singleton with broader impact than this VPC. Manage it from exactly one state after reviewing every VPC in the Region.
+- **Cost:** this configuration creates no NAT Gateway, public IPv4 address, or managed logging destination. Standard data-transfer and any services later attached to the VPC can still incur charges.
 
 ## Run
 
 ```shell
 terraform init
-terraform plan
-terraform apply
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
 terraform output egress_resources
+terraform output network_acl_controls
 terraform destroy
 ```
 
-A clean plan should show no IGW, NAT Gateway, EIGW, or egress routes. Destroy removes the regional BPA configuration created by this example, so do not use it as an uncoordinated demonstration in a shared account.
+Before destroy, confirm another state or operational control will retain the intended Regional public-access posture; removing this module's singleton setting can affect VPCs beyond the example.

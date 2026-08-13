@@ -1,54 +1,98 @@
-# NAT Gateway EIP sourcing and Regional NAT
+# NAT Gateway Elastic IP ownership modes
 
-This example compares the three zonal public NAT EIP contracts and adds one Regional NAT manual-address variant:
+This example compares four independent VPC deployments that exercise module-created Elastic IPs, BYOIP allocation, existing Elastic IP injection, and Regional NAT Gateway mode. Use it to choose an explicit public IPv4 ownership model before adopting a NAT topology.
 
-1. `create`: allocate ordinary Amazon public EIPs for zonal NAT;
-2. `byoip_pool`: allocate new zonal EIPs from a customer-owned public IPv4 pool;
-3. `existing`: attach caller-supplied EIPs to zonal NAT without owning their lifecycle;
-4. `regional_existing`: create one VPC-level Regional NAT and pass the same caller-owned EIPs through provider `availability_zone_address` blocks, with no public subnet.
+## What this demonstrates
 
-```mermaid
-flowchart TB
-  Create[create] --> Amazon[New Amazon EIPs]
-  BYO[byoip_pool] --> Pool[New EIPs from BYOIP pool]
-  Existing[existing] --> IDs[Pre-existing allocation IDs]
-  Amazon --> NAT[NAT Gateway per AZ]
-  Pool --> NAT
-  IDs --> NAT
-  IDs --> RNAT[One Regional NAT\nmanual AZ addresses]
-  NAT --> Private[Private application subnets]
-  RNAT --> Private
+- `eip.mode = "create"` lets the module allocate one public Elastic IP per zonal NAT Gateway.
+- `eip.mode = "byoip_pool"` allocates module-owned Elastic IPs from a caller-supplied BYOIP pool.
+- `eip.mode = "existing"` injects caller-owned allocation IDs keyed by Availability Zone.
+- `mode = "regional"` creates a Regional NAT Gateway and does not require a public subnet group.
+- Regional mode rejects `eip.mode = "create"`; the example uses existing allocation IDs for that topology.
+
+## Relevant configuration
+
+The complete four-VPC comparison is in [`main.tf`](./main.tf). The differential NAT blocks are:
+
+```hcl
+module "create" {
+  source = "../.."
+
+  nat_gateway = {
+    mode         = "all_azs"
+    subnet_group = "public"
+    eip          = { mode = "create" }
+  }
+}
+
+module "byoip_pool" {
+  source = "../.."
+
+  nat_gateway = {
+    mode         = "all_azs"
+    subnet_group = "public"
+    eip = {
+      mode             = "byoip_pool"
+      public_ipv4_pool = var.public_ipv4_pool
+    }
+  }
+}
+
+module "existing" {
+  source = "../.."
+
+  nat_gateway = {
+    mode         = "all_azs"
+    subnet_group = "public"
+    eip = {
+      mode           = "existing"
+      allocation_ids = var.existing_eip_allocation_ids
+    }
+  }
+}
+
+module "regional_existing" {
+  source = "../.."
+
+  nat_gateway = {
+    mode = "regional"
+    eip = {
+      mode           = "existing"
+      allocation_ids = var.existing_eip_allocation_ids
+    }
+  }
+}
 ```
 
-The three zonal modules create two Gateways each. The Regional module creates one Gateway, repeats its ID under both configured AZ keys for routing/output compatibility, and uses its AWS-managed route table to reach the IGW.
+## Prerequisites and cost
+
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create four VPCs, subnets, route tables, NAT Gateways, and Elastic IPs.
+- A provisioned BYOIP public IPv4 pool for `public_ipv4_pool`.
+- One existing, unassociated Elastic IP allocation ID per selected AZ for `existing_eip_allocation_ids`; the same map is also supplied to the Regional NAT deployment.
+- Regional NAT Gateway must be available in the selected Region and account.
+- **Cost:** with the default two AZs, this example creates six zonal NAT Gateways plus one Regional NAT Gateway and may allocate four additional public IPv4 addresses. NAT hourly, processing, data-transfer, and public IPv4 charges apply. Existing and BYOIP addresses remain caller-owned and are not released by the module.
 
 ## Run
 
-The defaults for the BYOIP pool and existing allocation IDs are syntax-safe placeholders. Replace them with resources from the selected account and Region before applying. This example creates six zonal NAT Gateways plus one Regional NAT billed per active AZ.
-
-Save the external values in `nat-byoip.tfvars`:
+Create `nat-byoip.tfvars` with real external resources:
 
 ```hcl
-public_ipv4_pool = "ipv4pool-ec2-REAL"
+public_ipv4_pool = "ipv4pool-ec2-0123456789abcdef0"
 existing_eip_allocation_ids = {
-  us-east-1a = "eipalloc-REAL1"
-  us-east-1b = "eipalloc-REAL2"
+  "us-east-1a" = "eipalloc-0123456789abcdef0"
+  "us-east-1b" = "eipalloc-0123456789abcdef1"
 }
 ```
 
 ```shell
 terraform init
+terraform validate
 terraform plan -out=tfplan -var-file=nat-byoip.tfvars
 terraform apply tfplan
-terraform output nat_eip_allocation_ids
+terraform output nat_gateway_ids_by_case
+terraform output eip_ownership_by_case
 terraform destroy -var-file=nat-byoip.tfvars
 ```
 
-`existing_eip_allocation_ids` keys must exactly equal the NAT AZ set. The existing EIPs remain caller-owned after destroy; EIPs allocated in `create` and `byoip_pool` modes are module-owned.
-
-
-## Regional mode trade-offs
-
-For new public internet egress, `mode = "regional"` is the operational default to consider: AWS follows ENI presence across AZs, maintains zonal affinity, and does not require public host subnets. It is not a lower hourly-cost shortcut—AWS charges one NAT Gateway-hour per active AZ. ENIs that remain present can keep an AZ active and billed. Expansion averages 15–20 minutes and can take up to 60 minutes; traffic may cross AZs (and incur transfer charges) until expansion completes. Regional NAT supports up to 32 public IPs per AZ and public connectivity only. Keep zonal mode for private NAT.
-
-`eip.mode = "create"` selects AWS automatic Regional NAT IP/AZ management. This example intentionally uses `existing` to demonstrate deterministic allowlisting; `byoip_pool` is also supported in regional manual mode and creates one pool-backed EIP per configured AZ. Switching between automatic mode (no address blocks) and manual mode recreates the Regional NAT Gateway per provider semantics.
+Compare `eip_ownership_by_case` after apply: `create` and `byoip_pool` should report module-owned Elastic IPs, while `existing` and `regional_existing` should report injected allocation IDs. Destruction removes module-created NAT Gateways and addresses but leaves injected Elastic IPs and the BYOIP pool intact.

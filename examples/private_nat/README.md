@@ -1,39 +1,88 @@
-# Private NAT toward an overlapping TGW address domain
+# Private NAT for overlapping networks
 
-This example demonstrates private NAT Gateways with an explicit host subnet group and no public EIPs. It models a VPC whose workload addresses (`10.42.0.0/16`) overlap the broader `10.0.0.0/8` address plan used behind a Transit Gateway.
+This example creates a two-AZ VPC where workload traffic is translated from `10.42.0.0/16` into a `100.64.0.0/20` secondary range before reaching a Transit Gateway. Use it to connect overlapping private address domains without an Internet Gateway or public Elastic IP.
 
-The route chain is intentionally split by subnet group:
+## What this demonstrates
 
-1. workload route tables send default IPv4 traffic to the AZ-local private NAT Gateway;
-2. private NAT Gateways live in `nat-host`, whose addresses come from the non-overlapping `100.64.0.0/20` secondary CIDR;
-3. `nat-host` route tables send only the required remote segments (`10.100.0.0/16` and `10.200.0.0/16` by default) to the Transit Gateway;
-4. TGW attachment subnets also use the translation CIDR and never require an IGW or EIP.
+- Workload route tables use AZ-local private NAT Gateways as their default next hop.
+- Dedicated NAT-host subnets consume explicit CIDRs from the named `translation` secondary association.
+- NAT-host route tables forward only selected remote CIDRs to the TGW attachment.
+- The `vpc` key is shared by route selection and the top-level attachment map as stable state identity.
+- `connectivity_type = "private"` creates private NAT Gateways without public addresses.
 
-The private NAT translates the overlapping workload source addresses into the `100.64.0.0/20` domain before TGW routing. The narrower destination routes avoid attempting to override the VPC's immutable local route for its own `10.42.0.0/16` CIDR.
+## Relevant configuration
 
-```mermaid
-flowchart LR
-  Workload[Workload subnets\n10.42.0.0/16] --> PNAT[Private NAT per AZ\n100.64.0.0/20]
-  PNAT --> NATRT[nat-host route tables]
-  NATRT --> TGW[Existing Transit Gateway]
-  TGW --> Remote[Remote 10/8 segments]
-  Internet((Internet)) -. no IGW / no EIP .-> PNAT
+The complete configuration is in [`main.tf`](./main.tf). The translation and attachment subnets plus private NAT declaration are the distinguishing portion:
+
+```hcl
+subnets = {
+  nat-host = {
+    role = "private"
+    ipv4 = {
+      cidrs_by_az = {
+        "us-west-2a" = "100.64.0.0/28"
+        "us-west-2b" = "100.64.0.16/28"
+      }
+      secondary_cidr_key = "translation"
+    }
+    routing = {
+      transit_gateway_attachments = {
+        vpc = var.tgw_destination_cidrs
+      }
+    }
+  }
+
+  tgw = {
+    role = "transit_gateway"
+    ipv4 = {
+      cidrs_by_az = {
+        "us-west-2a" = "100.64.0.32/28"
+        "us-west-2b" = "100.64.0.48/28"
+      }
+      secondary_cidr_key = "translation"
+    }
+  }
+}
+
+transit_gateway_attachments = {
+  vpc = {
+    subnet_group = "tgw"
+    id           = var.transit_gateway_id
+  }
+}
+
+nat_gateway = {
+  mode              = "all_azs"
+  connectivity_type = "private"
+  subnet_group      = "nat-host"
+}
 ```
 
-## Required external resource
+## Prerequisites and cost
 
-Supply an existing Transit Gateway ID. The example creates its VPC attachment but does not own the Transit Gateway or its route-table propagation/associations.
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create VPC networking, private NAT Gateways, and a TGW VPC attachment.
+- An existing Transit Gateway with route-table policy for the translated VPC and return routes toward `100.64.0.0/20`.
+- Two distinct `us-west-2` AZs; update every explicit subnet CIDR key together if the AZ set changes.
+- **Cost:** two private NAT Gateways, one TGW VPC attachment, traffic processing, and regional or inter-Region data transfer can incur charges.
 
 ## Run
 
-Private NAT Gateways are billable resources.
+Create `private-nat.tfvars` with the existing gateway ID and remote destinations:
+
+```hcl
+transit_gateway_id   = "tgw-0123456789abcdef0"
+tgw_destination_cidrs = ["10.100.0.0/16", "10.200.0.0/16"]
+```
 
 ```shell
 terraform init
-terraform plan -var='transit_gateway_id=tgw-0123456789abcdef0'
-terraform apply -var='transit_gateway_id=tgw-0123456789abcdef0'
+terraform validate
+terraform plan -out=tfplan -var-file=private-nat.tfvars
+terraform apply tfplan
+terraform output private_nat_ips
 terraform output route_counts
-terraform destroy -var='transit_gateway_id=tgw-0123456789abcdef0'
+terraform destroy -var-file=private-nat.tfvars
 ```
 
-When changing AZs, update the explicit subnet CIDR lists in the same order. Replace the destination list with the exact remote segments that require translated access; do not route the VPC's own local CIDR through NAT or TGW.
+`nat_public_ips` should remain empty and `route_counts.internet` should be zero; validate both forward and return routes in the TGW domain before sending production traffic through the translation path.

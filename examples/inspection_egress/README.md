@@ -1,77 +1,98 @@
 # Centralized inspection with internet egress
 
-This example is the production hub-and-spoke inspection pattern: spoke traffic enters an inspection VPC through a Transit Gateway attachment, crosses the AZ-local AWS Network Firewall endpoint, and exits through an AZ-local public NAT Gateway. Return traffic from each public route table is sent back through the firewall endpoint before reaching the Transit Gateway.
+This example creates a three-AZ inspection VPC where spoke traffic arrives through a Transit Gateway attachment, traverses an AZ-local AWS Network Firewall endpoint, and exits through an AZ-local public NAT Gateway. Use it to compose the VPC module with `aws-ia/networkfirewall/aws` while keeping attachment identity, appliance mode, and return routing explicit.
 
-The VPC uses `100.64.0.0/16` and three subnet groups in every AZ:
+## What this demonstrates
 
-- `public` (`role = "public"`): hosts public NAT Gateways and routes post-inspection traffic to the Internet Gateway;
-- `firewall` (`role = "private"`): hosts Network Firewall endpoints; its route table sends `0.0.0.0/0` to NAT and spoke destinations to the TGW;
-- `tgw_attach` (`role = "transit_gateway"`): hosts the Transit Gateway ENIs and enables appliance mode.
+- `subnets.firewall.routing.nat_gateway` sends inspected outbound traffic to the AZ-local NAT Gateway.
+- `subnets.firewall.routing.transit_gateway_attachments.inspection` accepts a customer-managed prefix list as a return destination.
+- `transit_gateway_attachments.inspection` uses a stable caller key and enables appliance mode while disabling default TGW route-table association and propagation.
+- `nat_gateway.mode = "all_azs"` places one public NAT Gateway in each selected AZ.
+- Tier 1 subnet and route-table outputs form the input contract for `aws-ia/networkfirewall/aws`.
 
-```mermaid
-flowchart LR
-  Spoke[Spoke VPCs] --> TGW[Transit Gateway]
-  TGW -->|appliance mode| Attach[tgw_attach subnet]
-  Attach --> FW[AWS Network Firewall endpoint]
-  FW --> NAT[Public NAT Gateway]
-  NAT --> IGW[Internet Gateway]
-  IGW --> Internet((Internet))
-  Internet --> IGW
-  IGW --> PublicRT[Public route table]
-  PublicRT --> FW
-  FW --> TGW
-  TGW --> Spoke
-```
+## Relevant configuration
 
-## Why appliance mode is mandatory
+The complete deployable configuration is in [`main.tf`](./main.tf). The Network Firewall module block is intentionally commented there; this excerpt shows the VPC routing and composition boundary:
 
-AWS Network Firewall is stateful. `appliance_mode_support = true` on the TGW VPC attachment preserves AZ affinity for the lifetime of a flow, so forward and return packets traverse the same firewall endpoint. Without appliance mode, TGW can select a different attachment AZ on the reverse path; the firewall then lacks matching state and drops the traffic.
+```hcl
+subnets = {
+  firewall = {
+    role = "private"
+    ipv4 = { netmask = 28, cidr_index = 1 }
+    routing = {
+      nat_gateway = true
+      transit_gateway_attachments = {
+        inspection = [var.spoke_prefix_list_id]
+      }
+    }
+  }
 
-The example disables default TGW route-table association and propagation so the hub routing policy remains explicit and centrally governed.
+  tgw_attach = {
+    role = "transit_gateway"
+    ipv4 = { netmask = 28, cidr_index = 2 }
+  }
+}
 
-## Prefix-list return routing
-
-`firewall.routing.transit_gateway_attachments.inspection = [var.spoke_prefix_list_id]` demonstrates that the typed route list accepts customer-managed prefix list IDs (`pl-...`) as well as IPv4 CIDRs. Both forms can coexist in the same list. The following is a fragment of `subnets.<group>.routing`, not a root argument:
-
-```text
 transit_gateway_attachments = {
-  inspection = [
-    var.spoke_prefix_list_id,
-    "192.168.0.0/16",
-  ]
+  inspection = {
+    subnet_group                    = "tgw_attach"
+    id                              = var.transit_gateway_id
+    default_route_table_association = false
+    default_route_table_propagation = false
+    appliance_mode_support          = true
+    dns_support                     = true
+    security_group_referencing      = true
+  }
+}
+
+nat_gateway = {
+  mode         = "all_azs"
+  subnet_group = "public"
+}
+
+locals {
+  network_firewall_composition = {
+    vpc_id      = module.vpc.vpc_id
+    number_azs  = length(var.availability_zones)
+    vpc_subnets = module.vpc.subnet_ids_by_group_by_az["firewall"]
+    routing_configuration = {
+      centralized_inspection_with_egress = {
+        connectivity_subnet_route_tables = module.vpc.route_table_ids_by_group_by_az["tgw_attach"]
+        public_subnet_route_tables       = module.vpc.route_table_ids_by_group_by_az["public"]
+        network_cidr_blocks              = var.spoke_network_cidr_blocks
+      }
+    }
+  }
 }
 ```
 
-The prefix list must contain the spoke destinations that return through the TGW. Keep it consistent with `spoke_network_cidr_blocks`, which the Network Firewall composition uses to install return routes in public route tables.
+## Prerequisites and cost
 
-## AWS Network Firewall composition
-
-`main.tf` materializes a `local.network_firewall_composition` entirely from Tier 1 VPC outputs:
-
-- `subnet_ids_by_group_by_az["firewall"]` supplies endpoint subnets;
-- `route_table_ids_by_group_by_az["tgw_attach"]` supplies connectivity route tables where the Network Firewall module installs AZ-local default routes to firewall endpoints;
-- `route_table_ids_by_group_by_az["public"]` supplies public route tables where it installs spoke return routes through firewall endpoints.
-
-A ready-to-enable `aws-ia/networkfirewall/aws` block is included as comments in `main.tf`. It uses `routing_configuration.centralized_inspection_with_egress`. Before enabling it, select and pin a reviewed module release and supply `network_firewall_policy_arn`. Keeping the registry module commented makes this VPC example deterministic and self-contained for CI validation while preserving the exact integration contract.
-
-## Cloud WAN variant
-
-For a Cloud WAN hub, replace `tgw_attach` with a group using `role = "core_network"` and `core_network_options = { id, arn, appliance_mode = true }`. Change the firewall return list to `routing.core_network = [var.spoke_prefix_list_id]`, and feed that group's `route_table_ids_by_group_by_az` map into `connectivity_subnet_route_tables`. Public, firewall, NAT, and Network Firewall routing remain otherwise equivalent.
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create a VPC, subnets, routes, three NAT Gateways, and a TGW VPC attachment.
+- An existing Transit Gateway and a customer-managed prefix list in the selected Region. The prefix list must contain the spoke destinations whose return traffic uses the TGW.
+- Keep `spoke_network_cidr_blocks` aligned with the destinations used by the Network Firewall public-route-table return routes.
+- The example pins `us-east-1a`, `us-east-1b`, and `us-east-1c`; update the Region and all three AZ names together.
+- **Cost:** applying the example creates three public NAT Gateways and one TGW VPC attachment, with hourly, processing, and data-transfer charges. The commented Network Firewall module creates nothing; enabling it adds Network Firewall endpoint-hour and traffic-processing charges and requires a reviewed module version plus an existing firewall policy ARN.
 
 ## Run
 
-The VPC example creates three public NAT Gateways and a TGW attachment. The commented Network Firewall module creates additional billable resources only after explicitly enabled.
+Create `inspection.tfvars` with real external IDs:
+
+```hcl
+transit_gateway_id        = "tgw-0123456789abcdef0"
+spoke_prefix_list_id      = "pl-0123456789abcdef0"
+spoke_network_cidr_blocks = ["10.0.0.0/8", "172.16.0.0/12"]
+```
 
 ```shell
 terraform init
-terraform plan \
-  -var='transit_gateway_id=tgw-0123456789abcdef0' \
-  -var='spoke_prefix_list_id=pl-0123456789abcdef0'
-terraform apply \
-  -var='transit_gateway_id=tgw-0123456789abcdef0' \
-  -var='spoke_prefix_list_id=pl-0123456789abcdef0'
+terraform validate
+terraform plan -out=tfplan -var-file=inspection.tfvars
+terraform apply tfplan
+terraform output route_evidence
 terraform output network_firewall_inputs
-terraform destroy \
-  -var='transit_gateway_id=tgw-0123456789abcdef0' \
-  -var='spoke_prefix_list_id=pl-0123456789abcdef0'
+terraform destroy -var-file=inspection.tfvars
 ```
+
+A successful apply should show three NAT routes and prefix-list-based TGW return routes in `route_evidence`. Enabling the commented Network Firewall module is a separate, reviewed step; do not treat this VPC-only apply as proof that packet inspection is active.

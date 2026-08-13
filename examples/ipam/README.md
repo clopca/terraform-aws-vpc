@@ -1,47 +1,90 @@
-# Mixed-family IPv4 and IPv6 IPAM
+# VPC and subnet allocation from IPAM
 
-This example demonstrates every IPAM boundary in the v5 addressing contract:
+This example allocates primary and secondary VPC CIDRs plus IPv4, IPv6, and IPv6-native subnets from caller-supplied IPAM pools. Use it when centralized address management must coexist with a static legacy range and stable caller-owned association keys.
 
-- the mandatory VPC primary IPv4 `/16` allocated from IPAM;
-- N caller-keyed secondary IPv4 associations, illustrated by one IPAM `/20` and one static `/20`;
-- N caller-keyed secondary IPv6 associations, illustrated by one IPAM `/56`;
-- application subnets allocated from a primary-CIDR subnet pool;
-- analytics subnets allocated from a secondary-CIDR subnet pool and linked by `ipv4.secondary_cidr_key`;
-- dual-stack application and analytics groups explicitly linked to `ipv6-ipam` by `ipv6.secondary_cidr_key`;
-- an IPv6-only `ipv6-native` group allocated as `/64`s from the same selected IPv6 parent;
-- stable family-specific secondary-association IDs exposed through Tier 1.
+## What this demonstrates
 
-```mermaid
-flowchart TB
-  V4Pool[IPv4 VPC pool] --> VPC[VPC primary /16]
-  SecondaryPool[IPv4 secondary pool] --> AnalyticsAssoc[analytics /20 association]
-  Static[100.64.0.0/20] --> LegacyAssoc[legacy association]
-  SubnetPool[IPv4 subnet pools] --> App[application + analytics subnets]
-  V6Pool[IPv6 VPC pool] --> V6[VPC /56]
-  V6SubnetPool[IPv6 subnet pool] --> AppV6[dual-stack subnet /64s]
+- A primary IPv4 `/16` and named secondary IPv4 `/20` allocated from different VPC IPAM pools.
+- A static `legacy` secondary CIDR alongside IPAM-managed associations.
+- IPv4 and IPv6 subnet allocation from dedicated subnet pools.
+- The `analytics`, `legacy`, and `ipv6-ipam` keys as persistent Terraform state identity.
+- An IPv6-native subnet group with no IPv4 allocation.
+
+## Relevant configuration
+
+The complete configuration is in [`main.tf`](./main.tf). The parent and subnet pool selections are the distinguishing declarations:
+
+```hcl
+addressing = {
+  primary = {
+    ipam_pool_id   = var.vpc_ipv4_ipam_pool_id
+    netmask_length = 16
+  }
+  secondary = {
+    analytics = {
+      ipv4 = {
+        ipam_pool_id   = var.secondary_ipv4_ipam_pool_id
+        netmask_length = 20
+      }
+    }
+    legacy = {
+      ipv4 = { cidr_block = "100.64.0.0/20" }
+    }
+    ipv6-ipam = {
+      ipv6 = {
+        ipam_pool_id   = var.vpc_ipv6_ipam_pool_id
+        netmask_length = 56
+      }
+    }
+  }
+}
+
+subnets = {
+  application = {
+    role = "private"
+    ipv4 = {
+      ipam_pool_id   = var.subnet_ipv4_ipam_pool_id
+      netmask_length = 24
+    }
+    ipv6 = {
+      secondary_cidr_key = "ipv6-ipam"
+      ipam_pool_id       = var.subnet_ipv6_ipam_pool_id
+      netmask_length     = 64
+      auto_assign        = true
+    }
+  }
+}
 ```
 
-The pool hierarchy and allocations must already exist in VPC IPAM and be shareable with the applying account. This module consumes pool IDs; it does not create IPAM, scopes, pools, or pool allocations.
+## Prerequisites and cost
+
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permission to allocate from every referenced IPAM pool and to create VPCs and subnets.
+- Existing IPv4 and IPv6 IPAM pools shared with the executing account where necessary; provide real pool IDs in `ipam.tfvars`.
+- Subnet pools must be correctly scoped under the selected VPC pools. The module validates known relationships but cannot prove every IPAM ancestry relationship exhaustively during planning.
+- **Cost:** VPC IPAM Advanced Tier charges can apply to managed active IP addresses; standard data-transfer charges also apply to workloads later placed in these subnets.
 
 ## Run
 
-Replace every placeholder pool ID with IDs from the selected Region and save them in `ipam.tfvars`:
+Create `ipam.tfvars` with pool IDs from the selected Region:
 
 ```hcl
-vpc_ipv4_ipam_pool_id              = "ipam-pool-REAL"
-secondary_ipv4_ipam_pool_id        = "ipam-pool-REAL"
-subnet_ipv4_ipam_pool_id           = "ipam-pool-REAL"
-secondary_subnet_ipv4_ipam_pool_id = "ipam-pool-REAL"
-vpc_ipv6_ipam_pool_id              = "ipam-pool-REAL"
-subnet_ipv6_ipam_pool_id           = "ipam-pool-REAL"
+vpc_ipv4_ipam_pool_id             = "ipam-pool-0123456789abcdef0"
+secondary_ipv4_ipam_pool_id       = "ipam-pool-1123456789abcdef0"
+subnet_ipv4_ipam_pool_id          = "ipam-pool-2123456789abcdef0"
+secondary_subnet_ipv4_ipam_pool_id = "ipam-pool-3123456789abcdef0"
+vpc_ipv6_ipam_pool_id             = "ipam-pool-4123456789abcdef0"
+subnet_ipv6_ipam_pool_id          = "ipam-pool-5123456789abcdef0"
 ```
 
 ```shell
 terraform init
+terraform validate
 terraform plan -out=tfplan -var-file=ipam.tfvars
 terraform apply tfplan
-terraform output
+terraform output vpc_cidr_block
+terraform output subnet_ipv6_cidrs
 terraform destroy -var-file=ipam.tfvars
 ```
 
-Keep the `analytics` and `legacy` map keys stable: they are Terraform resource identity for the secondary associations. IPAM-allocated CIDRs are apply-time values, while their pool IDs, netmasks, and association keys remain plan-known.
+Allocated subnet CIDRs may remain unknown until apply; treat an AWS pool-scope or allocation failure as an address-plan error and correct the pool hierarchy rather than forcing the state.

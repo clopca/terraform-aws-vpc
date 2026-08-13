@@ -1,40 +1,76 @@
-# Existing VPC and injected network boundaries
+# Manage subnets in an existing VPC
 
-This example demonstrates v5's create-or-inject contract. The root configuration creates a plain `aws_vpc`, Internet Gateway, shared public route table, and one EIP per AZ, then passes their computed IDs into the module. The module creates only the subnets, route-table associations and routes, and NAT Gateways that remain inside its ownership boundary.
+This example creates a VPC, Internet Gateway, public route table, and Elastic IPs outside the module, then injects those resources while the module creates subnets and NAT Gateways. Use it to establish a create-or-inject ownership boundary without creating duplicate VPC-level infrastructure.
 
-The key settings are:
+## What this demonstrates
 
-- `vpc.create = false` plus `vpc.id` for the externally created VPC;
-- `vpc.igw_create = false` plus `vpc.igw_id` for the attached external IGW;
-- `manage_route_table = false` plus stable `route_table_key` and `route_table_id` for a shared external public route table;
-- `nat_gateway.eip.mode = "existing"` with external EIP allocation IDs;
-- explicit booleans deciding ownership while IDs may remain computed until apply.
+- `vpc.create = false` returns the injected VPC through the same stable outputs as a module-created VPC.
+- `igw_create = false` injects an existing Internet Gateway for managed public routes.
+- Public subnets share an injected route table through `manage_route_table = false` and `route_table_id`.
+- Existing Elastic IPs are associated with module-created NAT Gateways but remain outside the module's resource collection.
+- Private application subnets retain module-managed route tables and AZ-local NAT routes.
 
-v4 inferred and created most boundary resources as part of one monolithic lifecycle. v5 separates ownership from identity: callers can inject selected resources without making Terraform collection cardinality depend on unknown IDs. The root module owns the demonstration resources here only so the example is deployable; a production caller would normally receive them from a separate network foundation stack.
+## Relevant configuration
 
-```mermaid
-flowchart LR
-  Root[Caller / foundation stack] --> VPC[External aws_vpc]
-  Root --> IGW[External IGW]
-  Root --> RT[External public route table]
-  Root --> EIP[External EIPs]
-  VPC --> Module[v5 module]
-  IGW --> Module
-  RT --> Module
-  EIP --> NAT[Module-owned NAT Gateways]
-  Module --> Subnets[Module-owned subnets]
+The complete ownership boundary is in [`main.tf`](./main.tf). The injection and mixed route-table declarations are the distinguishing portion:
+
+```hcl
+vpc = {
+  name       = "existing-vpc-boundary"
+  create     = false
+  id         = aws_vpc.external.id
+  igw_create = false
+  igw_id     = aws_internet_gateway.external.id
+}
+
+subnets = {
+  public = {
+    role = "public"
+    ipv4 = {
+      cidrs_by_az = {
+        for index, az in var.availability_zones :
+        az => cidrsubnet(var.vpc_cidr, 8, index)
+      }
+    }
+    manage_route_table = false
+    route_table_key    = "external-public"
+    route_table_id     = aws_route_table.public.id
+    routing = {
+      internet_gateway = true
+    }
+  }
+}
+
+nat_gateway = {
+  mode         = "all_azs"
+  subnet_group = "public"
+  eip = {
+    mode = "existing"
+    allocation_ids = {
+      for az, eip in aws_eip.nat : az => eip.id
+    }
+  }
+}
 ```
+
+## Prerequisites and cost
+
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create the root-owned VPC resources plus module-owned subnets, route tables, routes, and NAT Gateways.
+- Exactly two distinct Availability Zones in the selected Region.
+- In an existing environment, replace the root `aws_*` resources with references to infrastructure owned by the appropriate state and coordinate route-table changes with that owner.
+- **Cost:** two public NAT Gateways, two public IPv4 addresses, data processing, and regional data transfer can incur charges.
 
 ## Run
 
-This example creates billable NAT Gateways and EIPs. Destroying the module in a separately composed production stack would not destroy injected resources; in this self-contained example the root configuration still owns and destroys them.
-
 ```shell
 terraform init
-terraform plan
-terraform apply
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
 terraform output module_ownership
+terraform output route_table_ids
 terraform destroy
 ```
 
-Keep AZ names and `aws_region` aligned when overriding defaults.
+`module_ownership` should report zero module-created VPCs, Internet Gateways, and Elastic IPs; this standalone example still destroys the injected resources because its root configuration creates and owns them.

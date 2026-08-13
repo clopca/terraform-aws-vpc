@@ -1,40 +1,80 @@
-# Key-selected dual-stack and IPv6-native topology
+# Dual-stack and IPv6-native subnets
 
-This example concentrates the v5 IPv6 features on one caller-keyed parent selected from the N supported secondary IPv6 associations in a two-AZ VPC:
+This example creates public and private dual-stack subnet groups plus a private IPv6-native subnet group across two Availability Zones. Use it to compare deterministic IPv4/IPv6 allocation, native IPv6 subnets, egress-only internet routing, and DNS64 behavior in one VPC.
 
-- an Amazon-provided VPC IPv6 `/56`, selected as `amazon-ipv6`;
-- public and private dual-stack subnets with deterministic `/64`s;
-- IPv6-native private subnets with no IPv4 CIDR;
-- an explicit `ipv6.secondary_cidr_key` on every IPv6 subnet group;
-- public `::/0` routes through the Internet Gateway;
-- private `::/0` routes through an egress-only Internet Gateway;
-- DNS64 on IPv6-native subnets plus managed `64:ff9b::/96` NAT64 routes;
-- one public NAT Gateway used for IPv4 egress and NAT64 translation.
+## What this demonstrates
 
-```mermaid
-flowchart LR
-  V6Internet((IPv6 Internet)) --> IGW[Internet Gateway]
-  IGW --> Public[Public dual-stack]
-  EIGW[Egress-only IGW] --> App[Private dual-stack]
-  EIGW --> Native[IPv6-native]
-  Native -->|DNS64 + 64:ff9b::/96| NAT[NAT64 via NAT Gateway]
-  App -->|IPv4 default| NAT
-  NAT --> Public
+- A caller-owned `amazon-ipv6` key associates an Amazon-provided `/56` with the VPC.
+- Matching `cidr_index` values assign stable IPv4 `/24` and IPv6 `/64` prefixes to the public and application groups.
+- The `ipv6-native` group sets `native_only = true`, `auto_assign = true`, and has no IPv4 configuration.
+- Public IPv6 traffic uses the Internet Gateway; private IPv6 traffic uses the egress-only Internet Gateway.
+- DNS64 is enabled only for the IPv6-native group, while IPv4 egress for the application group uses one NAT Gateway.
+
+## Relevant configuration
+
+The complete configuration is in [`main.tf`](./main.tf). The differential subnet definitions are:
+
+```hcl
+subnets = {
+  public = {
+    role = "public"
+    ipv4 = { netmask = 24, cidr_index = 0 }
+    ipv6 = {
+      secondary_cidr_key = "amazon-ipv6"
+      auto_assign        = true
+      cidr_index         = 0
+    }
+    routing = { internet_gateway = true }
+  }
+
+  application = {
+    role = "private"
+    ipv4 = { netmask = 24, cidr_index = 1 }
+    ipv6 = {
+      secondary_cidr_key = "amazon-ipv6"
+      auto_assign        = true
+      cidr_index         = 1
+    }
+    routing = {
+      nat_gateway     = true
+      egress_only_igw = true
+    }
+  }
+
+  ipv6-native = {
+    role = "private"
+    ipv6 = {
+      secondary_cidr_key = "amazon-ipv6"
+      native_only        = true
+      auto_assign        = true
+      cidr_index         = 2
+    }
+    routing = {
+      dns64           = true
+      egress_only_igw = true
+    }
+  }
+}
 ```
 
-`ipv6.cidr_index` pins each group to a six-AZ reservation, so adding an AZ appends a `/64` without moving existing prefixes. `ipv6-native` deliberately omits the IPv4 block and still receives DNS64/NAT64 and direct IPv6 egress.
+## Prerequisites and cost
+
+- Terraform `>= 1.5` and AWS provider `>= 6.29`.
+- AWS credentials with permissions to create a VPC, an Amazon-provided IPv6 CIDR association, subnets, route tables, an Internet Gateway, an egress-only Internet Gateway, and one public NAT Gateway.
+- The account and selected Region must support IPv6-native subnets and DNS64.
+- The default AZs are `us-east-1a` and `us-east-1b`; override `availability_zones` together if the account exposes different AZ names.
+- **Cost:** the single public NAT Gateway incurs hourly and data-processing charges. Standard regional data-transfer and public IPv4 charges may also apply; Internet Gateways and egress-only Internet Gateways do not have hourly charges.
 
 ## Run
 
-The example creates a billable NAT Gateway.
-
 ```shell
 terraform init
-terraform plan
-terraform apply
-terraform output subnet_ipv6_cidrs
-terraform output ipv6_route_counts
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
+terraform output subnet_ipv4_cidrs_by_group_by_az
+terraform output subnet_ipv6_cidrs_by_group_by_az
 terraform destroy
 ```
 
-Expected route counts with two AZs are two IGW routes, four EIGW routes (two dual-stack application plus two IPv6-native route tables), and two NAT64 routes. If the Region changes, replace `availability_zones` with two valid AZ names from that Region.
+After apply, `subnet_ipv4_cidrs_by_group_by_az["ipv6-native"]` should contain `null` for both AZs, while `subnet_ipv6_cidrs_by_group_by_az["ipv6-native"]` contains a `/64` per AZ. DNS64 synthesizes IPv6 answers, but reaching IPv4-only destinations still depends on an external NAT64 path; this example does not create NAT64 for the IPv6-native group.
