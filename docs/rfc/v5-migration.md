@@ -58,6 +58,13 @@
 
    Copy the log group's `name` to `flow_logs.default.cloudwatch_options.name` and to the declarative import ID. Copy the role's `name_prefix` (not its generated `name`) to `flow_logs.default.role_name_prefix`. Also retain the generated role `name` and managed-policy `arn` for the post-verification cleanup. The v4 defaults use `${var.name}-cw-access-role-` and `${var.name}-cw-access-policy-` prefixes; cleanup requires the complete generated values captured from state. Both log-group and role naming attributes are ForceNew when configured, so exact identity is required for a zero-replacement cutover.
 
+   If v4 assigned IPv6, also capture `ipv6_association_id` from `module.vpc.aws_vpc.main[0]`. v4 stores this association inside the VPC resource state, while v5 owns it as a standalone keyed resource; Terraform cannot express that ownership transfer with a `moved` block.
+
+   ```shell
+   terraform state show 'module.vpc.aws_vpc.main[0]'
+   # Record ipv6_association_id, for example vpc-cidr-assoc-0123456789abcdef0.
+   ```
+
 ### C. Translate configuration and state
 
 5. Translate inputs using the tables below. Keep the v4 group keys initially: `public`, `transit_gateway`, `core_network`, and each private group name. Use explicit current subnet CIDRs and the observed AZ order. Configure the exact v4 Name formats before planning: subnet groups use `"{group}-{az}"`, NAT/EIP use `"nat-{group}-{az}"`, IGW uses `"{vpc}-igw"`, EIGW uses `"{vpc}"`, the Flow Log uses `flow_logs.default.name_format = "{vpc}"`, and its generated log group uses `cloudwatch_options.name_format = ""`.
@@ -68,12 +75,17 @@
    terraform init
    ```
 
-8. Add three non-destructive `removed` blocks for the old log group, managed policy, and attachment, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. These are root-module blocks; do not place them inside the VPC module. Replace the variable value with the physical name captured in step 4:
+8. Add three non-destructive `removed` blocks for the old log group, managed policy, and attachment, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. If v4 assigned IPv6, add the second declarative import shown below for the standalone v5 association. These are root-module blocks; do not place them inside the VPC module. Replace both variable values with the physical identities captured in step 4:
 
    ```hcl
    variable "v4_flow_log_group_name" {
      type    = string
      default = "replace-with-the-generated-v4-log-group-name"
+   }
+
+   variable "v4_ipv6_association_id" {
+     type    = string
+     default = "vpc-cidr-assoc-replace-with-v4-association-id"
    }
 
    removed {
@@ -104,11 +116,17 @@
      to = module.vpc.aws_cloudwatch_log_group.flow_logs["default"]
      id = var.v4_flow_log_group_name
    }
+
+   # Include only when the v4 VPC has IPv6.
+   import {
+     to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
+     id = var.v4_ipv6_association_id
+   }
    ```
 
    `removed.from` addresses modules, not module instances: Terraform Core rejects `[0]` keys on `module.flow_logs` and `module.cloudwatch_log_group`. Omitting those two module instance keys matches all instances selected by the configuration; the indexed addresses remain valid for `terraform state show` and the IAM-role `moved` block.
 
-   Declarative import requires Terraform >= 1.5; non-destructive `removed` requires Terraform >= 1.7. Therefore this ownership-preserving migration procedure has a Terraform >= 1.7 runner floor even though the v5 module itself remains compatible with Terraform >= 1.5. Keep the IAM role moved block active and preserve its exact `role_name_prefix`. The complete normal plan in section D evaluates the v5 configuration, all selected moves, three non-destructive forgets, and the import together; there is no preliminary state-materialization plan or CLI state surgery.
+   Declarative import requires Terraform >= 1.5; non-destructive `removed` requires Terraform >= 1.7. Therefore this ownership-preserving migration procedure has a Terraform >= 1.7 runner floor even though the v5 module itself remains compatible with Terraform >= 1.5. Keep the IAM role moved block active and preserve its exact `role_name_prefix`. The complete normal plan in section D evaluates the v5 configuration, all selected moves, three non-destructive forgets, the log-group import, and the optional IPv6 association import together; there is no preliminary state-materialization plan or CLI state surgery. The IPv6 import changes only Terraform ownership and must preserve zero destroy and zero replace.
 
 ### D. Complete-plan gate
 
@@ -122,7 +140,7 @@
    The gate criteria are:
 
    - **Required:** zero `destroy` and zero `replace` actions; no create/delete for VPC, subnets, route tables, NAT gateways/EIPs, gateways, attachments, CloudWatch log group, or IAM role; no destruction of S3 buckets or any log archive.
-   - **Expected state-only transitions:** the selected `moved` pairs, three `removed { destroy = false }` forgets for the old log group/managed policy/attachment, and one log-group import. Re-keyed routes whose destination is unchanged have no residual create/delete.
+   - **Expected state-only transitions:** the selected `moved` pairs, three `removed { destroy = false }` forgets for the old log group/managed policy/attachment, one log-group import, and—when v4 IPv6 exists—one import of its existing association into `secondary["v4-ipv6"]`. Re-keyed routes whose destination is unchanged have no residual create/delete.
    - **Allowed creates:** `module.vpc.aws_iam_role_policy.flow_logs["default"]` for a module-created CloudWatch role, plus the expected built-in `terraform_data` precondition records. These records exist only in Terraform state and perform no AWS API operations. For the remediation-3 fixture the exact seven were:
      - `module.vpc.terraform_data.attachment_contract_validation`;
      - `module.vpc.terraform_data.cidrs_az_count_validation["private"]`;
@@ -190,7 +208,7 @@
 
 **Status:** accepted for the v4 -> v5 migration gate.
 
-**Decision:** preserve the existing CloudWatch log group with one normal plan containing the v5 configuration, selected `moved` blocks, three `removed { destroy = false }` blocks for the old log group/managed policy/attachment, and one import targeting the v5 fixed-name address. Preserve the IAM role with a moved block plus the exact v4 `name_prefix`. Apply the complete zero-destroy plan, verify the new inline policy and log delivery, then detach and delete the two temporarily orphaned IAM artifacts explicitly.
+**Decision:** preserve the existing CloudWatch log group with one normal plan containing the v5 configuration, selected `moved` blocks, three `removed { destroy = false }` blocks for the old log group/managed policy/attachment, one log-group import, and the optional IPv6 association import. Preserve the IAM role with a moved block plus the exact v4 `name_prefix`. Apply the complete zero-destroy plan, verify the new inline policy and log delivery, then detach and delete the two temporarily orphaned IAM artifacts explicitly.
 
 **Provider evidence:** in AWS provider 6.59.0, both `name` and `name_prefix` are `Optional + Computed + ForceNew` and conflict only when both are configured. Import uses the physical log-group name as the ID, and `resourceGroupRead`/`resourceGroupFlatten` writes the observed `name` **and** a derived `name_prefix`; import does not make `name_prefix` null. Because v5 configures the exact observed `name` and omits `name_prefix`, the latter remains provider-computed and does not itself force replacement. After a clean provider-6.x baseline refresh, a direct moved block can therefore also converge when the exact generated name is configured. The declarative remove/import form is preferred because the plan explicitly proves the ownership handoff at the final address and does not rely on the provenance of a legacy nested state snapshot. The previous statement that import worked by clearing `name_prefix` was incorrect.
 
@@ -200,7 +218,7 @@
 
 **Rejected default:** creating a new group (with create-before-destroy behavior or an accepted replacement) splits continuity at cutover. Historical logs remain in the old group only if that group is deliberately removed from Terraform ownership rather than destroyed; callers must then retain and eventually clean it up. This remains an opt-in maintenance-window fallback, not the migration default.
 
-**Consequences:** one saved normal plan is both the state-transition proof and the migration gate. It includes selected moves, three non-destructive forgets, and one import; no refresh-only apply, `state rm`, or CLI import remains. The plan has zero destroys and zero replacements. Two IAM objects remain temporarily orphaned in AWS until delivery is verified and the documented `aws iam detach-role-policy` / `delete-policy` cleanup is executed.
+**Consequences:** one saved normal plan is both the state-transition proof and the migration gate. It includes selected moves, three non-destructive forgets, one log-group import, and the optional IPv6 association import; no refresh-only apply, `state rm`, or CLI import remains. The plan has zero destroys and zero replacements. Two IAM objects remain temporarily orphaned in AWS until delivery is verified and the documented `aws iam detach-role-policy` / `delete-policy` cleanup is executed.
 
 ## v4 Name formula mapping
 
@@ -228,25 +246,25 @@ that fallback must not broaden the allowlist to replacements or other tag change
 |---|---|---|
 | `name` | `vpc.name` | Copy unchanged. |
 | `create_vpc` + `vpc_id` | `vpc.create` + `vpc.id` | Create: keep `create=true` and `id=null`. Existing VPC: set `create=false` and `id`; the ID may be computed upstream. |
-| `cidr_block` | `addressing.ipv4.cidr_block` | Primary CIDR when creating. For v4 secondary-CIDR mode, put it in a stable caller-owned entry such as `addressing.ipv4.secondary.legacy.cidr_block`. |
+| `cidr_block` | `addressing.primary.cidr_block` | Primary CIDR when creating. For v4 secondary-CIDR mode, put it in a stable caller-owned entry such as `addressing.secondary.legacy.ipv4.cidr_block`. |
 | `vpc_enable_dns_hostnames` | `vpc.dns.enable_hostnames` | Copy boolean. |
 | `vpc_enable_dns_support` | `vpc.dns.enable_support` | Copy boolean. |
 | `vpc_instance_tenancy` | `vpc.instance_tenancy` | Copy unchanged. |
-| `vpc_ipv4_ipam_pool_id` | `addressing.ipv4.ipam_pool_id` | Copy with netmask length. |
-| `vpc_ipv4_netmask_length` | `addressing.ipv4.netmask_length` | Convert the v4 string value to a number. |
-| `vpc_assign_generated_ipv6_cidr_block` | `addressing.ipv6.amazon_assigned` | Copy as boolean. |
-| `vpc_ipv6_cidr_block` | `addressing.ipv6.cidr_block` | Copy unchanged. |
-| `vpc_ipv6_ipam_pool_id` | `addressing.ipv6.ipam_pool_id` | Copy with netmask length. |
-| `vpc_ipv6_netmask_length` | `addressing.ipv6.netmask_length` | Convert the v4 string value to a number. |
-| `vpc_secondary_cidr` | `addressing.ipv4.secondary` | Replace the boolean with a stable-keyed map entry such as `legacy = { cidr_block = ... }`. v5 supports multiple named associations without positional state churn. |
+| `vpc_ipv4_ipam_pool_id` | `addressing.primary.ipam_pool_id` | Copy with netmask length. |
+| `vpc_ipv4_netmask_length` | `addressing.primary.netmask_length` | Convert the v4 string value to a number. |
+| `vpc_assign_generated_ipv6_cidr_block` | `addressing.secondary.v4-ipv6.ipv6.amazon_assigned` | Copy as boolean and import the existing association ID as shown above. |
+| `vpc_ipv6_cidr_block` | `addressing.secondary.v4-ipv6.ipv6.cidr_block` | Copy unchanged and import the existing association ID. |
+| `vpc_ipv6_ipam_pool_id` | `addressing.secondary.v4-ipv6.ipv6.ipam_pool_id` | Copy with netmask length and import the existing association ID. |
+| `vpc_ipv6_netmask_length` | `addressing.secondary.v4-ipv6.ipv6.netmask_length` | Convert the v4 string value to a number. |
+| `vpc_secondary_cidr` | `addressing.secondary.<key>.ipv4` | Replace the boolean with a stable-keyed entry such as `legacy = { ipv4 = { cidr_block = ... } }`. v5 supports multiple named associations without positional state churn. |
 | `vpc_secondary_cidr_natgw` | `nat_gateway.create=false` + `existing_ids` | Convert `{ az = { id = "nat-*" } }` to `{ az = "nat-*" }`; set inject mode plus matching NAT mode/AZ. |
 | `az_count` | `availability_zones.count` | Development only. Explicit names are recommended for stable state. |
 | `azs` | `availability_zones.names` | Copy unchanged; this is the production migration path. |
 | `subnets.<key>.netmask` | `subnets.<key>.ipv4.netmask` | Add `role`; preserve `<key>`. Pin with `cidr_index` or, preferably, migrate with explicit current CIDRs. |
 | `subnets.<key>.cidrs` | `subnets.<key>.ipv4.cidrs_by_az` | Build a map from each exact AZ name to its current state CIDR; order is irrelevant. |
-| `subnets.<key>.assign_ipv6_cidr` | `subnets.<key>.ipv6.cidrs_by_az` + `auto_assign` | Read each existing `/64` from state, map it to its exact AZ name, and set `auto_assign = true`. |
-| `subnets.<key>.ipv6_cidrs` | `subnets.<key>.ipv6.cidrs_by_az` | Map exact prefixes by AZ name; set `auto_assign` to preserve address assignment behavior. |
-| `subnets.<key>.ipv6_native` | `subnets.<key>.ipv6.native_only` | Set true and provide the existing IPv6 CIDRs keyed by AZ. |
+| `subnets.<key>.assign_ipv6_cidr` | `subnets.<key>.ipv6.cidrs_by_az` + `auto_assign` + `secondary_cidr_key` | Read each existing `/64` from state, map it to its exact AZ name, set `auto_assign = true`, and select `"v4-ipv6"`. |
+| `subnets.<key>.ipv6_cidrs` | `subnets.<key>.ipv6.cidrs_by_az` + `secondary_cidr_key` | Map exact prefixes by AZ name, select `"v4-ipv6"`, and set `auto_assign` to preserve address assignment behavior. |
+| `subnets.<key>.ipv6_native` | `subnets.<key>.ipv6.native_only` + `secondary_cidr_key` | Set true, select `"v4-ipv6"`, and provide the existing IPv6 CIDRs keyed by AZ. |
 | `subnets.<key>.assign_ipv6_address_on_creation` | `subnets.<key>.ipv6.auto_assign` | Copy boolean; v5 uses the typed IPv6 block. |
 | `subnets.<key>.enable_resource_name_dns_aaaa_record_on_launch` | no direct v5 equivalent | Remove. This undocumented v4 private-group passthrough is not part of the v5 contract. |
 | `subnets.<key>.name_prefix` | `subnets.<key>.name_prefix` | Copy unchanged; never rename the map key during the first migration. |
@@ -296,6 +314,7 @@ that fallback must not broaden the allowlist to replacements or other tag change
 | `vpc_flow_logs.destination_options.per_hour_partition` | `flow_logs.default.s3_options.per_hour_partition` | Copy for S3. |
 | `vpc_lattice.service_network_identifier` | `vpc_lattice.enabled=true` + `service_network_identifier` | Enable explicitly, then copy the identifier; it may be computed upstream. |
 | `vpc_lattice.security_group_ids` | `vpc_lattice.security_group_ids` | Convert list to set semantics (ordering is ignored). |
+| `vpc_lattice.private_dns_enabled` | `vpc_lattice.private_dns_enabled` | Copy explicitly. When true, `dns_options.private_dns_preference` defaults to AWS's `VERIFIED_DOMAINS_ONLY`; choose a specified-domain mode and provide 1-10 domains only when required. DNS option changes replace the association. |
 | `vpc_lattice.tags` | `vpc_lattice.tags` | Copy unchanged. |
 | `optimize_subnet_cidr_ranges` | no direct equivalent | Removed. v5 uses explicit AZ-keyed CIDRs (recommended) or deterministic netmask allocation with optional `cidr_index`. |
 | `tags` | `tags` | Copy unchanged. Keep provider `default_tags` unchanged; effective precedence is provider defaults < global tags < group/resource tags < generated Name. |
@@ -345,10 +364,10 @@ Configure the matching contract key before the move:
 
 ```hcl
 addressing = {
-  ipv4 = {
-    secondary = {
-      legacy = { cidr_block = "100.64.0.0/16" }
-    }
+  primary = { cidr_block = "10.42.0.0/16" }
+  secondary = {
+    legacy  = { ipv4 = { cidr_block = "100.64.0.0/16" } }
+    v4-ipv6 = { ipv6 = { amazon_assigned = true } }
   }
 }
 ```
@@ -360,6 +379,7 @@ that selector establishes the association dependency for a normal apply.
 
 | v4 state | v5 disposition | Why / workaround |
 |---|---|---|
+| v4 IPv6 association embedded in `module.vpc.aws_vpc.main[0]` | `module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]` | Capture `ipv6_association_id` and declaratively import it at the standalone v5 address. An embedded VPC attribute cannot be the source of a `moved` block; this is state ownership transfer only and must plan zero destroy/zero replace. |
 | `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_cloudwatch_log_group.main` | `module.vpc.aws_cloudwatch_log_group.flow_logs["default"]` | Capture the generated `name`, configure it as `cloudwatch_options.name`, forget the old address with `removed { destroy=false }`, and import that name at the v5 address in the same plan. A direct move can converge after provider-6.x refresh, but the declarative handoff makes ownership explicit and independently refreshes the final address. |
 | `...aws_iam_role.main` | `module.vpc.aws_iam_role.flow_logs["default"]` | Keep the moved block, but first configure `role_name_prefix` with the exact v4 state `name_prefix`. Trust policy, description, and tags may update in place; the role ID and generated name must not change. |
 | `module.vpc.module.flow_logs[0].module.cloudwatch_log_group[0].aws_iam_policy.main` | `module.vpc.aws_iam_role_policy.flow_logs["default"]` | Resource type changes, so forget the v4 managed policy with the unindexed-module `removed { destroy=false }` address. After the zero-destroy apply and delivery verification, delete the captured policy ARN with the documented AWS CLI cleanup. |

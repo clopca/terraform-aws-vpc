@@ -111,9 +111,12 @@ module "vpc" {
 # Migration-only root blocks (Terraform >= 1.7).
 #
 # Copy this example into the caller root and uncomment all three `removed`
-# blocks plus the `import` block. They remain comments here because Terraform
-# forbids import blocks when this example is loaded as a child module by native
-# plan tests. `removed.from` module segments must not contain instance keys.
+# blocks plus the log-group `import` block. When the v4 VPC has IPv6, also
+# uncomment the association import and set `v4_ipv6_association_id` from
+# `terraform state show module.vpc.aws_vpc.main[0]`. They remain comments here
+# because Terraform forbids import blocks when this example is loaded as a child
+# module by native plan tests. `removed.from` module segments must not contain
+# instance keys.
 #
 # removed {
 #   from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main
@@ -142,4 +145,10 @@ module "vpc" {
 # import {
 #   to = module.vpc.aws_cloudwatch_log_group.flow_logs["default"]
 #   id = var.v4_flow_log_group_name
+# }
+#
+# # v4 stores this association inside aws_vpc.main; no moved block can target it.
+# import {
+#   to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
+#   id = var.v4_ipv6_association_id
 # }

@@ -191,7 +191,7 @@ run "ipam_example" {
   assert {
     condition = (
       toset(keys(output.secondary_cidr_association_ids)) == toset(["analytics", "ipv6-ipam", "legacy"]) &&
-      toset(keys(output.subnet_ids)) == toset(["analytics", "application", "legacy"]) &&
+      toset(keys(output.subnet_ids)) == toset(["analytics", "application", "ipv6-native", "legacy"]) &&
       alltrue([for subnets in values(output.subnet_ids) : length(subnets) == 2])
     )
     error_message = "The IPAM example must plan primary/IPAM and named secondary addressing across all documented subnet groups."

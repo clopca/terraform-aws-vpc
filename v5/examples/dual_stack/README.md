@@ -1,10 +1,11 @@
-# Single-association dual-stack and IPv6-native topology
+# Key-selected dual-stack and IPv6-native topology
 
-This example concentrates the v5 IPv6 features for one selected VPC IPv6 association in a two-AZ VPC:
+This example concentrates the v5 IPv6 features on one caller-keyed parent selected from the N supported secondary IPv6 associations in a two-AZ VPC:
 
-- Amazon-provided VPC IPv6 `/56`;
+- an Amazon-provided VPC IPv6 `/56`, selected as `amazon-ipv6`;
 - public and private dual-stack subnets with deterministic `/64`s;
 - IPv6-native private subnets with no IPv4 CIDR;
+- an explicit `ipv6.secondary_cidr_key` on every IPv6 subnet group;
 - public `::/0` routes through the Internet Gateway;
 - private `::/0` routes through an egress-only Internet Gateway;
 - DNS64 on IPv6-native subnets plus managed `64:ff9b::/96` NAT64 routes;

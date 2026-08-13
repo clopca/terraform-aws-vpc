@@ -1,14 +1,15 @@
-# IPv4 and IPv6 IPAM
+# Mixed-family IPv4 and IPv6 IPAM
 
 This example demonstrates every IPAM boundary in the v5 addressing contract:
 
-- the VPC primary IPv4 `/16` allocated from IPAM;
-- one named secondary IPv4 `/20` allocated from IPAM;
-- one named static secondary IPv4 CIDR alongside it;
+- the mandatory VPC primary IPv4 `/16` allocated from IPAM;
+- N caller-keyed secondary IPv4 associations, illustrated by one IPAM `/20` and one static `/20`;
+- N caller-keyed secondary IPv6 associations, illustrated by one IPAM `/56`;
 - application subnets allocated from a primary-CIDR subnet pool;
-- analytics subnets allocated from a secondary-CIDR subnet pool and linked by `secondary_cidr_key`;
-- a VPC IPv6 `/56` and subnet IPv6 `/64`s allocated from IPAM;
-- stable secondary-association IDs exposed through Tier 1.
+- analytics subnets allocated from a secondary-CIDR subnet pool and linked by `ipv4.secondary_cidr_key`;
+- dual-stack application and analytics groups explicitly linked to `ipv6-ipam` by `ipv6.secondary_cidr_key`;
+- an IPv6-only `ipv6-native` group allocated as `/64`s from the same selected IPv6 parent;
+- stable family-specific secondary-association IDs exposed through Tier 1.
 
 ```mermaid
 flowchart TB

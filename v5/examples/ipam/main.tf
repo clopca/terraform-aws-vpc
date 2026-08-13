@@ -63,6 +63,17 @@ module "vpc" {
       }
     }
 
+
+    ipv6-native = {
+      role = "private"
+      ipv6 = {
+        secondary_cidr_key = "ipv6-ipam"
+        ipam_pool_id       = var.subnet_ipv6_ipam_pool_id
+        netmask_length     = 64
+        native_only        = true
+        auto_assign        = true
+      }
+    }
     legacy = {
       role = "isolated"
       ipv4 = {

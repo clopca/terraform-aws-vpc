@@ -32,9 +32,10 @@ fi
 
 grep -Fq 'nat_gateways = map(object({' "$repo_root/v5/.header.md"
 grep -Fq 'ids = list(string) # exclusive alternative to names/count' "$repo_root/v5/.header.md"
-grep -Fq 'associations = map(object({' "$repo_root/v5/.header.md"
-grep -Fq 'association_key = string' "$repo_root/v5/.header.md"
-grep -Fq 'one selected VPC IPv6 association' "$repo_root/v5/.header.md"
+grep -Fq 'Both families support N entries' "$repo_root/v5/.header.md"
+grep -Fq 'VPC IPv6 is `/44` through `/60` in `/4` increments' "$repo_root/v5/.header.md"
+grep -Fq '`ipv6.secondary_cidr_key` is required' "$repo_root/v5/.header.md"
+grep -Fq '`vpc_ipv6_cidr_blocks` and' "$repo_root/v5/.header.md"
 if grep -RIn --exclude='check-content.sh' 'Complete dual-stack and IPv6-native topology' "$repo_root/v5"; then
   echo "Overbroad IPv6 completeness claim found" >&2
   exit 1

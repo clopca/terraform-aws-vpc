@@ -62,24 +62,28 @@ variable "vpc" {
 
 variable "addressing" {
   type = object({
-    ipv4 = optional(object({
+    primary = object({
       cidr_block     = optional(string)
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      secondary = optional(map(object({
+    })
+    secondary = optional(map(object({
+      ipv4 = optional(object({
         create         = optional(bool, true)
         association_id = optional(string)
         cidr_block     = optional(string)
         ipam_pool_id   = optional(string)
         netmask_length = optional(number)
-      })), {})
-    }))
-    ipv6 = optional(object({
-      amazon_assigned = optional(bool, false)
-      cidr_block      = optional(string)
-      ipam_pool_id    = optional(string)
-      netmask_length  = optional(number)
-    }))
+      }))
+      ipv6 = optional(object({
+        create          = optional(bool, true)
+        association_id  = optional(string)
+        amazon_assigned = optional(bool, false)
+        cidr_block      = optional(string)
+        ipam_pool_id    = optional(string)
+        netmask_length  = optional(number)
+      }))
+    })), {})
   })
 }
 
@@ -130,10 +134,11 @@ variable "subnets" {
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
       cidr_index         = optional(number)   # pinning slot for netmask stability [R1-C2]
-      secondary_cidr_key = optional(string)   # stable key in addressing.ipv4.secondary
+      secondary_cidr_key = optional(string)   # stable IPv4 entry in addressing.secondary
     }))
     ipv6 = optional(object({
-      auto_assign    = optional(bool, false) # also calculates a VPC-derived /64 when no other source is set
+      secondary_cidr_key = optional(string) # semantically required; selected IPv6 entry in addressing.secondary
+      auto_assign    = optional(bool, false) # also calculates a parent-derived /64 when no other source is set
       cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)      # 64 for subnet IPAM
@@ -391,12 +396,14 @@ created by the module.
 - Unpinned groups: may shift if a group that sorts before them is added/removed.
 - AZ addition: only the newly selected reserved slot is materialized per group.
 
-**IPv6 allocation:** VPC creation supports Amazon-provided `/56` or IPv6 IPAM
-with exactly one of an explicit CIDR or netmask; injected VPC mode discovers an
-associated block. A subnet accepts explicit AZ-keyed `/64`s, IPv6 IPAM with `/64`, or
-VPC-derived `/64`s when `auto_assign=true`. The derived path uses six AZ slots per
-group and `ipv6.cidr_index` pins an absolute group slot exactly as IPv4 pinning
-does. `native_only=true` omits IPv4 and still requires a real IPv6 source.
+**IPv6 allocation:** `addressing.secondary` supports N caller-keyed IPv6
+associations. Each entry selects Amazon-provided `/56`, IPv6 IPAM/static addressing
+(`/44` through `/60` in `/4` increments), or an injected association. Every IPv6
+subnet names its parent with `secondary_cidr_key` and accepts explicit AZ-keyed
+`/64`s, subnet IPAM `/64`s, or deterministic `/64`s when `auto_assign=true`.
+Six-AZ reservations, pinning, and unpinned packing are independent per parent, so
+the same `cidr_index` can be reused under different associations. `native_only=true`
+omits IPv4 and still requires a real selected IPv6 source.
 
 **Production recommendation:** use explicit `cidrs_by_az` for the strongest immutable
 allocation contract, `cidr_index` for stable calculated six-AZ reservations, and
@@ -419,7 +426,7 @@ must treat any different warning as new debt.
 Tier 1 names, value types, and existing collection keys do not change without a
 major release. Minor releases may add outputs or additive map keys.
 
-- VPC/AZ: `vpc_id`, `vpc_arn`, `vpc_cidr_block`, `vpc_ipv6_cidr_block`, `azs`.
+- VPC/AZ: `vpc_id`, `vpc_arn`, `vpc_cidr_block`, `vpc_ipv6_cidr_blocks`, `secondary_ipv4_cidr_association_ids`, `secondary_ipv6_cidr_association_ids`, deprecated singular `vpc_ipv6_cidr_block`, `azs`.
 - Subnet IDs: `subnet_ids_by_group`, `subnet_ids_by_group_by_az`,
   `subnet_ids_by_semantic_role`, `subnet_ids_by_semantic_role_by_az`.
 - Subnet CIDRs/ARNs: `subnet_cidrs_by_group`,
@@ -591,10 +598,11 @@ This is a deliberate pre-release contract correction: inferring ownership from
 
 #### ADR-R1-3 — One deterministic IPv6 engine
 
-**Decision:** derive automatic subnet `/64`s from the VPC block with the same
-six-AZ stride and caller pinning model as IPv4. Explicit `/64` and subnet IPAM stay
-first-class alternatives. `auto_assign` enables address assignment and selects the
-derived path only when neither explicit CIDRs nor IPAM is configured.
+**Decision:** derive automatic subnet `/64`s independently from each selected
+secondary IPv6 parent with the same six-AZ stride and caller pinning model as IPv4.
+Explicit `/64` and subnet IPAM stay first-class alternatives. `auto_assign` enables
+address assignment and selects the derived path only when neither explicit CIDRs
+nor IPAM is configured.
 
 #### ADR-R1-4 — Resolved routing is authoritative
 
@@ -607,10 +615,11 @@ egress routing, not an addressing-only feature.
 
 #### ADR-R2-1 — Secondary CIDR identity and dependency
 
-**Decision:** `addressing.ipv4.secondary` is a stable-keyed map. Each entry
-selects exactly one static/IPAM source in create mode or one association ID in
-inject mode. Subnets reference the association by `secondary_cidr_key` and wait
-for created associations, closing #146/#142 without targeted applies.
+**Decision:** `addressing.secondary` is a stable-keyed map whose entries are a
+closed union containing exactly one `ipv4` or `ipv6` sub-object. The family object
+selects create or inject mode. Subnets reference the matching family entry by
+`secondary_cidr_key` and wait for created associations, closing #146/#142 without
+targeted applies.
 
 #### ADR-R2-2 — D6 is in scope
 
@@ -714,12 +723,11 @@ resources.
 These shapes are naming/compatibility commitments, not accepted no-op inputs in
 5.0: `nat_gateways = map(object({ az_keys = set(string), ... }))` for caller-keyed
 NAT domains; `availability_zones.ids` as the exclusive ID-based alternative to
-`names/count`; `subnets[*].az_keys` for sparse placement; and
-`addressing.ipv6.associations = map(object(...))` selected by
-`subnets[*].ipv6.association_key`. The existing singular NAT and IPv6 handles become
-compatibility adapters rather than parallel primary APIs. v5.0's IPv6 guarantee is
-complete only within one selected VPC association; multi-association/BYOIPv6 and
-network-border-group ownership remain deferred.
+`names/count`; and `subnets[*].az_keys` for sparse placement. The singular NAT
+handle remains a future compatibility adapter. Plural IPv6 associations and
+per-subnet parent selection are implemented; `vpc_ipv6_cidr_block` is only a
+deprecated first-sorted-key adapter. BYOIPv6 and network-border-group ownership
+remain deferred.
 
 The additive reservations from #176/#178 use these exact defaults and omission
 semantics: `core_network_options.dns_support = optional(bool, false)`,
