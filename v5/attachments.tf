@@ -203,3 +203,24 @@ resource "aws_networkmanager_attachment_accepter" "this" {
   attachment_id   = each.value.attachment_id
   attachment_type = "VPC"
 }
+
+# Routes must wait for the effective attachment and, when managed, its accepter.
+# Consuming injected IDs here preserves dependency edges from upstream modules
+# even though aws_route only receives the Core Network ARN.
+resource "terraform_data" "core_network_readiness" {
+  for_each = local.core_network_group != null && local.any_core_network_routes ? { vpc = true } : {}
+
+  input = {
+    attachment_id = local.core_network_attachment_id
+    accepter_id = (
+      var.subnets[local.core_network_group].core_network_options.accept_attachment
+      ? local.core_network_accepter_id
+      : null
+    )
+  }
+
+  depends_on = [
+    aws_networkmanager_vpc_attachment.this,
+    aws_networkmanager_attachment_accepter.this,
+  ]
+}

@@ -36,6 +36,14 @@ resource "terraform_data" "ipv6_pool" {
   input = "ipam-pool-computed"
 }
 
+resource "terraform_data" "cwan_attachment_id" {
+  input = "attachment-computed"
+}
+
+resource "terraform_data" "cwan_accepter_id" {
+  input = "accepter-computed"
+}
+
 module "vpc" {
   source = "../../.."
 
@@ -68,6 +76,22 @@ module "vpc" {
         netmask_length = 64
         auto_assign    = true
       }
+      routing = { core_network = ["10.200.0.0/16"] }
+    }
+
+    cwan = {
+      role = "core_network"
+      ipv4 = { cidrs_by_az = { "us-east-1a" = "10.0.2.0/28" } }
+      core_network_options = {
+        id                 = "cnet-0123456789abcdef0"
+        arn                = "arn:aws:networkmanager::123456789012:core-network/cnet-0123456789abcdef0"
+        create             = false
+        attachment_id      = terraform_data.cwan_attachment_id.output
+        require_acceptance = true
+        accept_attachment  = true
+        create_accepter    = false
+        accepter_id        = terraform_data.cwan_accepter_id.output
+      }
     }
   }
 
@@ -96,5 +120,7 @@ output "composition_shape" {
     created_igws         = length(module.vpc.resources.internet_gateway)
     created_route_tables = length(module.vpc.resources.route_tables)
     lattice_associations = length(module.vpc.resources.vpc_lattice_associations)
+    cwan_routes          = length(module.vpc.resources.routes.cwan)
+    cwan_readiness_keys  = keys(module.vpc.resources.core_network_readiness)
   }
 }

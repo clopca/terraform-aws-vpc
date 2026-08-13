@@ -564,6 +564,7 @@ output "resources" {
     transit_gateway_attachments         = aws_ec2_transit_gateway_vpc_attachment.this
     core_network_attachments            = aws_networkmanager_vpc_attachment.this
     core_network_accepters              = aws_networkmanager_attachment_accepter.this
+    core_network_readiness              = terraform_data.core_network_readiness
     injected_attachment_ids = {
       transit_gateway = local.transit_gateway_attachment_id
       core_network    = local.core_network_attachment_id

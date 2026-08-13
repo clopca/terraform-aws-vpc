@@ -1,6 +1,18 @@
 mock_provider "aws" {
   override_during = plan
 
+  mock_data "aws_partition" {
+    defaults = { partition = "aws" }
+  }
+
+  mock_data "aws_region" {
+    defaults = { region = "us-east-1" }
+  }
+
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "123456789012" }
+  }
+
   mock_data "aws_vpc" {
     defaults = {
       id         = "vpc-upstream"
@@ -34,13 +46,15 @@ run "computed_ids_keep_collection_keys_plan_known" {
 
   assert {
     condition = (
-      output.composition_shape.subnet_groups == ["ipam", "public"] &&
-      output.composition_shape.route_table_groups == ["ipam", "public"] &&
+      output.composition_shape.subnet_groups == ["cwan", "ipam", "public"] &&
+      output.composition_shape.route_table_groups == ["cwan", "ipam", "public"] &&
       output.composition_shape.flow_log_keys == ["audit"] &&
       output.composition_shape.created_vpcs == 0 &&
       output.composition_shape.created_igws == 0 &&
-      output.composition_shape.created_route_tables == 1 &&
-      output.composition_shape.lattice_associations == 1
+      output.composition_shape.created_route_tables == 2 &&
+      output.composition_shape.lattice_associations == 1 &&
+      output.composition_shape.cwan_routes == 1 &&
+      output.composition_shape.cwan_readiness_keys == ["vpc"]
     )
     error_message = "Computed IDs must remain values; all resource keys and ownership decisions must come from explicit configuration."
   }

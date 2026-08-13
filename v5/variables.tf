@@ -591,6 +591,15 @@ variable "subnets" {
     error_message = "Within ipv4, netmask_length is required when ipam_pool_id is set."
   }
 
+  validation {
+    condition = alltrue([
+      for key, subnet in var.subnets : subnet.core_network_options == null || (
+        !subnet.core_network_options.accept_attachment || subnet.core_network_options.require_acceptance
+      )
+    ])
+    error_message = "core_network_options.accept_attachment=true requires require_acceptance=true. Accepter settings are ignored when accept_attachment=false."
+  }
+
   # Netmask range validation [R2-M1]
   validation {
     condition = alltrue([

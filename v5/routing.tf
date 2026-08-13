@@ -112,10 +112,7 @@ resource "aws_route" "cwan" {
   destination_prefix_list_id = startswith(each.value.destination, "pl-") ? each.value.destination : null
   core_network_arn           = each.value.core_network_arn
 
-  depends_on = [
-    aws_networkmanager_vpc_attachment.this,
-    aws_networkmanager_attachment_accepter.this,
-  ]
+  depends_on = [terraform_data.core_network_readiness]
 }
 
 resource "aws_route" "cwan_ipv6" {
@@ -126,8 +123,5 @@ resource "aws_route" "cwan_ipv6" {
   destination_prefix_list_id  = startswith(each.value.destination, "pl-") ? each.value.destination : null
   core_network_arn            = each.value.core_network_arn
 
-  depends_on = [
-    aws_networkmanager_vpc_attachment.this,
-    aws_networkmanager_attachment_accepter.this,
-  ]
+  depends_on = [terraform_data.core_network_readiness]
 }

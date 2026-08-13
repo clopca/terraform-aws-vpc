@@ -137,3 +137,29 @@ run "inject_attachment_inject_accepter" {
     error_message = "Fully injected Cloud WAN ownership must create neither resource and return both effective IDs."
   }
 }
+
+run "reject_accept_attachment_without_required_acceptance" {
+  command = plan
+  variables {
+    vpc                = { name = "cwan-invalid-acceptance" }
+    addressing         = { ipv4 = { cidr_block = "10.98.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      cwan = {
+        role = "core_network"
+        ipv4 = { cidrs_by_az = { us-east-1a = "10.98.0.0/28" } }
+        core_network_options = {
+          id                 = "cnet-0123456789abcdef0"
+          create             = false
+          attachment_id      = "attachment-documentation"
+          require_acceptance = false
+          accept_attachment  = true
+          create_accepter    = false
+          accepter_id        = "accepter-documentation"
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.subnets]
+}
