@@ -48,6 +48,23 @@ output "route_tables" {
   value       = module.vpc.route_table_ids_by_group_by_az
 }
 
+output "gateway_endpoints" {
+  description = "Gateway endpoint IDs and route-table association count."
+  value = {
+    ids               = module.vpc.gateway_endpoint_ids
+    association_count = length(module.vpc.gateway_endpoint_route_table_association_ids)
+  }
+}
+
+output "network_acl_controls" {
+  description = "Tier-specific Network ACL IDs, rules, and subnet associations."
+  value = {
+    ids               = module.vpc.network_acl_ids_by_group
+    rule_count        = length(module.vpc.network_acl_rule_ids)
+    association_count = length(module.vpc.network_acl_association_ids)
+  }
+}
+
 output "eigw_id" {
   description = "ID of the egress-only Internet Gateway."
   value       = module.vpc.egress_only_igw_id

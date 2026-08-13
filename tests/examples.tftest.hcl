@@ -177,6 +177,11 @@ run "enterprise_example" {
       output.nat_gateway_evidence.managed_eip_count == 0 &&
       output.nat_gateway_evidence.nat_route_count == 3 &&
       length(output.flow_log_ids) == 1 &&
+      toset(keys(output.gateway_endpoints.ids)) == toset(["dynamodb", "s3"]) &&
+      output.gateway_endpoints.association_count == 18 &&
+      toset(keys(output.network_acl_controls.ids)) == toset(["application", "data", "endpoints", "public"]) &&
+      output.network_acl_controls.rule_count == 22 &&
+      output.network_acl_controls.association_count == 12 &&
       alltrue([for cidr in values(output.subnet_ipv6_cidrs.public) : cidr != null && cidr != ""]) &&
       alltrue([for cidr in values(output.subnet_ipv6_cidrs.application) : cidr != null && cidr != ""])
     )
