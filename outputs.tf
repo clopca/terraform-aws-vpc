@@ -27,7 +27,7 @@ output "private_subnet_attributes_by_az" {
   ```
   private_subnet_attributes_by_az = {
     "private/us-east-1a" = {
-      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"
+      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"
       "assign_ipv6_address_on_creation" = false
       ...
       <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference>
@@ -47,7 +47,7 @@ output "public_subnet_attributes_by_az" {
   ```
   public_subnet_attributes_by_az = {
     "us-east-1a" = {
-      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"
+      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"
       "assign_ipv6_address_on_creation" = false
       ...
       <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference>
@@ -67,7 +67,7 @@ output "tgw_subnet_attributes_by_az" {
   ```
   tgw_subnet_attributes_by_az = {
     "us-east-1a" = {
-      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"
+      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"
       "assign_ipv6_address_on_creation" = false
       ...
       <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference>
@@ -87,7 +87,7 @@ output "core_network_subnet_attributes_by_az" {
   ```
   core_network_subnet_attributes_by_az = {
     "us-east-1a" = {
-      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"
+      "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"
       "assign_ipv6_address_on_creation" = false
       ...
       <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference>
@@ -114,14 +114,14 @@ output "rt_attributes_by_type_by_az" {
   rt_attributes_by_type_by_az = {
     "private" = {
       "us-east-1a" = {
-        "id" = "rtb-0e77040c0598df003"
+        "id" = "rtb-0123456789abcdef0"
         "tags" = tolist([
           {
             "key" = "Name"
             "value" = "private-us-east-1a"
           },
         ])
-        "vpc_id" = "vpc-033e054f49409592a"
+        "vpc_id" = "vpc-0123456789abcdef0"
         ...
         <all attributes of route: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table#attributes-reference>
       }
@@ -140,13 +140,13 @@ output "nat_gateway_attributes_by_az" {
   ```
   nat_gateway_attributes_by_az = {
     "us-east-1a" = {
-      "allocation_id" = "eipalloc-0e8b20303eea88b13"
+      "allocation_id" = "eipalloc-0123456789abcdef0"
       "connectivity_type" = "public"
-      "id" = "nat-0fde39f9550f4abb5"
-      "network_interface_id" = "eni-0d422727088bf9a86"
+      "id" = "nat-0123456789abcdef0"
+      "network_interface_id" = "eni-0123456789abcdef0"
       "private_ip" = "10.0.3.40"
       "public_ip" = <>
-      "subnet_id" = "subnet-0f11c92e439c8ab4a"
+      "subnet_id" = "subnet-4123456789abcdef0"
       "tags" = tomap({
         "Name" = "nat-my-public-us-east-1a"
       })
@@ -169,10 +169,10 @@ output "natgw_id_per_az" {
   ```
   natgw_id_per_az = {
     "us-east-1a" = {
-      "id" = "nat-0fde39f9550f4abb5"
+      "id" = "nat-0123456789abcdef0"
     }
     "us-east-1b" = {
-      "id" = "nat-0fde39f9550f4abb5"
+      "id" = "nat-0123456789abcdef0"
      }
   }
   ```

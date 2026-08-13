@@ -26,7 +26,7 @@ For each `awscc_ec2_route_table` type, run the following 3 commands, replacing t
 
 1. Show state values: `terraform state show 'module.vpc.awscc_ec2_route_table.private["private/us-east-1a"]'`
 1. Remove from state: `terraform state rm 'module.vpc.awscc_ec2_route_table.private["private/us-east-1a"]'`
-1. Import as `aws` resource: `terraform import 'module.vpc.aws_route_table.private["private/us-east-1a"]' rtb-0b9b71f291529d9fe`
+1. Import as `aws` resource: `terraform import 'module.vpc.aws_route_table.private["private/us-east-1a"]' rtb-0123456789abcdef0`
 
 For command 3 you need to use the ID outputted from command 1 and you need to change `awscc_ec2_route_table` to `aws_route_table`.
 
@@ -39,13 +39,13 @@ For each `awscc_ec2_subnet_route_table_association` type, run the following 3 co
 ```
 terraform state show 'module.vpc.awscc_ec2_subnet_route_table_association.private["private/us-east-1a"]'
 resource "awscc_ec2_subnet_route_table_association" "private" {
-    id             = "rtbassoc-0c65299161472413c"
-    route_table_id = "rtb-0b9b71f291529d9fe"
-    subnet_id      = "subnet-0e1c7e5f9d727fdc1"
+    id             = "rtbassoc-0123456789abcdef0"
+    route_table_id = "rtb-0123456789abcdef0"
+    subnet_id      = "subnet-0123456789abcdef0"
 }
 ```
 2. Remove from state: `terraform state rm 'module.vpc.awscc_ec2_subnet_route_table_association.private["private/us-east-1a"]'`
 
-3. Import as `aws` resource: `terraform import 'module.vpc.aws_route_table_association.private["private/us-east-1a"]' subnet-0e1c7e5f9d727fdc1/rtb-0b9b71f291529d9fe`
+3. Import as `aws` resource: `terraform import 'module.vpc.aws_route_table_association.private["private/us-east-1a"]' subnet-0123456789abcdef0/rtb-0123456789abcdef0`
 
 For command 3 you need to use the IDs outputted (format is `subnet_id`/`route_table_id`) from command 1 and you need to change `awscc_ec2_route_table` to `aws_route_table`.

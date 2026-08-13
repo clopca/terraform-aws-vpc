@@ -178,12 +178,12 @@ az_count = 3
 subnets = {
   public = {
     cidrs      = ["10.0.0.0/24", "10.0.1.0/24", "10.0.4.0/24"]
-    ipv6_cidrs = ["2a05:d01c:bc3:b200::/64", "2a05:d01c:bc3:b201::/64", "2a05:d01c:bc3:b204::/64"]
+    ipv6_cidrs = ["2001:db8:bc3:b200::/64", "2001:db8:bc3:b201::/64", "2001:db8:bc3:b204::/64"]
   }
 
   private = {
     cidrs      = ["10.0.2.0/24", "10.0.3.0/24", "10.0.5.0/24"]
-    ipv6_cidrs = ["2a05:d01c:bc3:b202::/64", "2a05:d01c:bc3:b203::/64", "2a05:d01c:bc3:b205::/64"]
+    ipv6_cidrs = ["2001:db8:bc3:b202::/64", "2001:db8:bc3:b203::/64", "2001:db8:bc3:b205::/64"]
   }
 }
 ```
@@ -218,9 +218,9 @@ Extracting subnet\_ids to a list (using `terraform console` for example output):
 ```terraform
 > [ for _, value in module.vpc.private_subnet_attributes_by_az: value.id]
 [
-  "subnet-04a86315c4839b519",
-  "subnet-02a7249c8652a7136",
-  "subnet-09af79b5329b3681f",
+  "subnet-0123456789abcdef0",
+  "subnet-1123456789abcdef0",
+  "subnet-2123456789abcdef0",
 ]
 ```
 
@@ -240,7 +240,7 @@ Terraform Plan:
 ```shell
 # aws_route53recoveryreadiness_cell.cell_per_az["us-east-1a"] will be created
 + resource "aws_route53recoveryreadiness_cell" "cell_per_az" {
-    + cell_name               = "us-east-1a-failover-cell-for-subnet-subnet-070696086c5864da1"
+    + cell_name               = "us-east-1a-failover-cell-for-subnet-subnet-3123456789abcdef0"
     ...
   }
 
@@ -409,16 +409,16 @@ Please see our [developer documentation](https://github.com/aws-ia/terraform-aws
 |------|-------------|
 | <a name="output_azs"></a> [azs](#output\_azs) | List of AZs where subnets are created. |
 | <a name="output_core_network_attachment"></a> [core\_network\_attachment](#output\_core\_network\_attachment) | AWS Cloud WAN's core network attachment. Full output of aws\_networkmanager\_vpc\_attachment. |
-| <a name="output_core_network_subnet_attributes_by_az"></a> [core\_network\_subnet\_attributes\_by\_az](#output\_core\_network\_subnet\_attributes\_by\_az) | Map of all core\_network subnets containing their attributes.<br/><br/>Example:<pre>core_network_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
+| <a name="output_core_network_subnet_attributes_by_az"></a> [core\_network\_subnet\_attributes\_by\_az](#output\_core\_network\_subnet\_attributes\_by\_az) | Map of all core\_network subnets containing their attributes.<br/><br/>Example:<pre>core_network_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
 | <a name="output_egress_only_internet_gateway"></a> [egress\_only\_internet\_gateway](#output\_egress\_only\_internet\_gateway) | Egress-only Internet gateway attributes. Full output of aws\_egress\_only\_internet\_gateway. |
 | <a name="output_flow_log_attributes"></a> [flow\_log\_attributes](#output\_flow\_log\_attributes) | Flow Log information. |
 | <a name="output_internet_gateway"></a> [internet\_gateway](#output\_internet\_gateway) | Internet gateway attributes. Full output of aws\_internet\_gateway. |
-| <a name="output_nat_gateway_attributes_by_az"></a> [nat\_gateway\_attributes\_by\_az](#output\_nat\_gateway\_attributes\_by\_az) | Map of nat gateway resource attributes by AZ.<br/><br/>Example:<pre>nat_gateway_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "allocation_id" = "eipalloc-0e8b20303eea88b13"<br/>    "connectivity_type" = "public"<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>    "network_interface_id" = "eni-0d422727088bf9a86"<br/>    "private_ip" = "10.0.3.40"<br/>    "public_ip" = <><br/>    "subnet_id" = "subnet-0f11c92e439c8ab4a"<br/>    "tags" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>    "tags_all" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>  }<br/>  "us-east-1b" = { ... }<br/>}</pre> |
-| <a name="output_natgw_id_per_az"></a> [natgw\_id\_per\_az](#output\_natgw\_id\_per\_az) | Map of nat gateway IDs for each resource. Will be duplicate ids if your var.subnets.public.nat\_gateway\_configuration = "single\_az".<br/><br/>Example:<pre>natgw_id_per_az = {<br/>  "us-east-1a" = {<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>  }<br/>  "us-east-1b" = {<br/>    "id" = "nat-0fde39f9550f4abb5"<br/>   }<br/>}</pre> |
-| <a name="output_private_subnet_attributes_by_az"></a> [private\_subnet\_attributes\_by\_az](#output\_private\_subnet\_attributes\_by\_az) | Map of all private subnets containing their attributes.<br/><br/>Example:<pre>private_subnet_attributes_by_az = {<br/>  "private/us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
-| <a name="output_public_subnet_attributes_by_az"></a> [public\_subnet\_attributes\_by\_az](#output\_public\_subnet\_attributes\_by\_az) | Map of all public subnets containing their attributes.<br/><br/>Example:<pre>public_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
-| <a name="output_rt_attributes_by_type_by_az"></a> [rt\_attributes\_by\_type\_by\_az](#output\_rt\_attributes\_by\_type\_by\_az) | Map of route tables by type => az => route table attributes. Example usage: module.vpc.rt\_attributes\_by\_type\_by\_az.private.id<br/><br/>Example:<pre>rt_attributes_by_type_by_az = {<br/>  "private" = {<br/>    "us-east-1a" = {<br/>      "id" = "rtb-0e77040c0598df003"<br/>      "tags" = tolist([<br/>        {<br/>          "key" = "Name"<br/>          "value" = "private-us-east-1a"<br/>        },<br/>      ])<br/>      "vpc_id" = "vpc-033e054f49409592a"<br/>      ...<br/>      <all attributes of route: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table#attributes-reference><br/>    }<br/>    "us-east-1b" = { ... }<br/>  "public" = { ... }</pre> |
-| <a name="output_tgw_subnet_attributes_by_az"></a> [tgw\_subnet\_attributes\_by\_az](#output\_tgw\_subnet\_attributes\_by\_az) | Map of all tgw subnets containing their attributes.<br/><br/>Example:<pre>tgw_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-04a86315c4839b519"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
+| <a name="output_nat_gateway_attributes_by_az"></a> [nat\_gateway\_attributes\_by\_az](#output\_nat\_gateway\_attributes\_by\_az) | Map of nat gateway resource attributes by AZ.<br/><br/>Example:<pre>nat_gateway_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "allocation_id" = "eipalloc-0123456789abcdef0"<br/>    "connectivity_type" = "public"<br/>    "id" = "nat-0123456789abcdef0"<br/>    "network_interface_id" = "eni-0123456789abcdef0"<br/>    "private_ip" = "10.0.3.40"<br/>    "public_ip" = <><br/>    "subnet_id" = "subnet-4123456789abcdef0"<br/>    "tags" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>    "tags_all" = tomap({<br/>      "Name" = "nat-my-public-us-east-1a"<br/>    })<br/>  }<br/>  "us-east-1b" = { ... }<br/>}</pre> |
+| <a name="output_natgw_id_per_az"></a> [natgw\_id\_per\_az](#output\_natgw\_id\_per\_az) | Map of nat gateway IDs for each resource. Will be duplicate ids if your var.subnets.public.nat\_gateway\_configuration = "single\_az".<br/><br/>Example:<pre>natgw_id_per_az = {<br/>  "us-east-1a" = {<br/>    "id" = "nat-0123456789abcdef0"<br/>  }<br/>  "us-east-1b" = {<br/>    "id" = "nat-0123456789abcdef0"<br/>   }<br/>}</pre> |
+| <a name="output_private_subnet_attributes_by_az"></a> [private\_subnet\_attributes\_by\_az](#output\_private\_subnet\_attributes\_by\_az) | Map of all private subnets containing their attributes.<br/><br/>Example:<pre>private_subnet_attributes_by_az = {<br/>  "private/us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
+| <a name="output_public_subnet_attributes_by_az"></a> [public\_subnet\_attributes\_by\_az](#output\_public\_subnet\_attributes\_by\_az) | Map of all public subnets containing their attributes.<br/><br/>Example:<pre>public_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
+| <a name="output_rt_attributes_by_type_by_az"></a> [rt\_attributes\_by\_type\_by\_az](#output\_rt\_attributes\_by\_type\_by\_az) | Map of route tables by type => az => route table attributes. Example usage: module.vpc.rt\_attributes\_by\_type\_by\_az.private.id<br/><br/>Example:<pre>rt_attributes_by_type_by_az = {<br/>  "private" = {<br/>    "us-east-1a" = {<br/>      "id" = "rtb-0123456789abcdef0"<br/>      "tags" = tolist([<br/>        {<br/>          "key" = "Name"<br/>          "value" = "private-us-east-1a"<br/>        },<br/>      ])<br/>      "vpc_id" = "vpc-0123456789abcdef0"<br/>      ...<br/>      <all attributes of route: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table#attributes-reference><br/>    }<br/>    "us-east-1b" = { ... }<br/>  "public" = { ... }</pre> |
+| <a name="output_tgw_subnet_attributes_by_az"></a> [tgw\_subnet\_attributes\_by\_az](#output\_tgw\_subnet\_attributes\_by\_az) | Map of all tgw subnets containing their attributes.<br/><br/>Example:<pre>tgw_subnet_attributes_by_az = {<br/>  "us-east-1a" = {<br/>    "arn" = "arn:aws:ec2:us-east-1:<>:subnet/subnet-0123456789abcdef0"<br/>    "assign_ipv6_address_on_creation" = false<br/>    ...<br/>    <all attributes of subnet: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#attributes-reference><br/>  }<br/>  "us-east-1b" = {...)<br/>}</pre> |
 | <a name="output_transit_gateway_attachment_id"></a> [transit\_gateway\_attachment\_id](#output\_transit\_gateway\_attachment\_id) | Transit gateway attachment id. |
 | <a name="output_vpc_attributes"></a> [vpc\_attributes](#output\_vpc\_attributes) | VPC resource attributes. Full output of aws\_vpc. |
 | <a name="output_vpc_lattice_service_network_association"></a> [vpc\_lattice\_service\_network\_association](#output\_vpc\_lattice\_service\_network\_association) | VPC Lattice Service Network VPC association. Full output of aws\_vpclattice\_service\_network\_vpc\_association |

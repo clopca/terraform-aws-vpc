@@ -37,7 +37,7 @@ mock_provider "aws" {
       id              = "subnet-existing-mock"
       arn             = "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-existing-mock"
       cidr_block      = "10.0.0.0/24"
-      ipv6_cidr_block = "2600:1f18:4200::/64"
+      ipv6_cidr_block = "2001:db8:4200::/64"
     }
   }
 
@@ -46,7 +46,7 @@ mock_provider "aws" {
       id              = "vpc-mock"
       arn             = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
       cidr_block      = "10.0.0.0/16"
-      ipv6_cidr_block = "2600:1f18:4200::/56"
+      ipv6_cidr_block = "2001:db8:4200::/56"
     }
   }
 
@@ -75,7 +75,7 @@ run "inject_all_remaining_boundaries" {
         create       = false
         existing_ids = { us-east-1a = "subnet-01111111111111111" }
         ipv4         = { cidrs_by_az = { "us-east-1a" = "10.0.0.0/24" } }
-        ipv6         = { cidrs_by_az = { "us-east-1a" = "2600:1f18:4200::/64" } }
+        ipv6         = { cidrs_by_az = { "us-east-1a" = "2001:db8:4200::/64" } }
         routing      = { egress_only_igw = true }
       }
       tgw = {

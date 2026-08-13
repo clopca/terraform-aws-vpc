@@ -5,7 +5,7 @@ mock_provider "aws" {
       id              = "vpc-mock"
       arn             = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
       cidr_block      = "10.0.0.0/16"
-      ipv6_cidr_block = "2600:1f18:4200::/56"
+      ipv6_cidr_block = "2001:db8:4200::/56"
     }
   }
 
@@ -65,10 +65,10 @@ run "generated_dual_stack_dns64_eigw" {
 
   assert {
     condition = (
-      aws_subnet.main["public/us-east-1a"].ipv6_cidr_block == "2600:1f18:4200::/64" &&
-      aws_subnet.main["public/us-east-1b"].ipv6_cidr_block == "2600:1f18:4200:1::/64" &&
-      aws_subnet.main["app/us-east-1a"].ipv6_cidr_block == "2600:1f18:4200:c::/64" &&
-      aws_subnet.main["app/us-east-1b"].ipv6_cidr_block == "2600:1f18:4200:d::/64" &&
+      aws_subnet.main["public/us-east-1a"].ipv6_cidr_block == "2001:db8:4200::/64" &&
+      aws_subnet.main["public/us-east-1b"].ipv6_cidr_block == "2001:db8:4200:1::/64" &&
+      aws_subnet.main["app/us-east-1a"].ipv6_cidr_block == "2001:db8:4200:c::/64" &&
+      aws_subnet.main["app/us-east-1b"].ipv6_cidr_block == "2001:db8:4200:d::/64" &&
       alltrue([for subnet in values(aws_subnet.main) : subnet.assign_ipv6_address_on_creation])
     )
     error_message = "auto_assign must plan deterministic, pinned /64s and enable address assignment."

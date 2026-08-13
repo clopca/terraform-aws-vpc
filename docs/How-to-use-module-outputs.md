@@ -24,14 +24,14 @@ terraform console
 > module.vpc.nat_gateway_attributes_by_az
 {
   "us-east-2a" = {
-    "allocation_id" = "eipalloc-0ae0e24ffe193f2a1"
-    "association_id" = "eipassoc-0d714a2e4a1f43c46"
+    "allocation_id" = "eipalloc-00000000000000001"
+    "association_id" = "eipassoc-00000000000000001"
     "connectivity_type" = "public"
-    "id" = "nat-076e272ecaff6fce0"
-    "network_interface_id" = "eni-07d0d8f11fc3380b5"
+    "id" = "nat-00000000000000001"
+    "network_interface_id" = "eni-00000000000000001"
     "private_ip" = "10.0.2.19"
     "public_ip" = "<>"
-    "subnet_id" = "subnet-005519f1eb2ca5e9d"
+    "subnet_id" = "subnet-00000000000000001"
     "tags" = tomap({
       "Name" = "nat-my-public-us-east-2a"
       "subnet_type" = "public"
@@ -42,14 +42,14 @@ terraform console
     })
   }
   "us-east-2b" = {
-    "allocation_id" = "eipalloc-0a0e69ff06847b9cc"
-    "association_id" = "eipassoc-00ae0cc78566f5ad9"
+    "allocation_id" = "eipalloc-00000000000000002"
+    "association_id" = "eipassoc-00000000000000002"
     "connectivity_type" = "public"
-    "id" = "nat-063181ad924968f92"
-    "network_interface_id" = "eni-04bc3f3eb3ac6ce77"
+    "id" = "nat-00000000000000002"
+    "network_interface_id" = "eni-00000000000000002"
     "private_ip" = "10.0.3.102"
     "public_ip" = "<>"
-    "subnet_id" = "subnet-04c0b573d8937853d"
+    "subnet_id" = "subnet-00000000000000002"
     "tags" = tomap({
       "Name" = "nat-my-public-us-east-2b"
       "subnet_type" = "public"
@@ -66,9 +66,9 @@ You can see that the vpc is in 2 AZs and since `nat_gateway_configuration = "all
 
 ```hcl
 > module.vpc.nat_gateway_attributes_by_az.us-east-2a.id
-"nat-076e272ecaff6fce0"
+"nat-00000000000000001"
 > module.vpc.nat_gateway_attributes_by_az.us-east-2a.public_ip
-"3.21.81.83"
+"192.0.2.83"
 ```
 
 Since it is a map you can also use expressions to grab values from each nat gateway and even construct them into another useful map:
@@ -77,11 +77,11 @@ Since it is a map you can also use expressions to grab values from each nat gate
 > { for az, attrs in module.vpc.nat_gateway_attributes_by_az: az => { id : attrs.id, private_ip : attrs.private_ip } }
 {
   "us-east-2a" = {
-    "id" = "nat-076e272ecaff6fce0"
+    "id" = "nat-00000000000000001"
     "private_ip" = "10.0.2.19"
   }
   "us-east-2b" = {
-    "id" = "nat-063181ad924968f92"
+    "id" = "nat-00000000000000002"
     "private_ip" = "10.0.3.102"
   }
 }
