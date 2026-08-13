@@ -67,7 +67,16 @@ resource "aws_vpc_endpoint" "interface" {
   private_dns_enabled = true
   subnet_ids          = module.vpc.subnet_ids_by_group["endpoints"]
   security_group_ids  = [aws_security_group.interface_endpoints.id]
-  policy              = jsonencode({ Version = "2012-10-17", Statement = [] })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DeclaredServiceActions"
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = sort(tolist(each.value.actions))
+      Resource  = "*"
+    }]
+  })
 }
 
 resource "aws_route53profiles_resource_association" "interface_endpoints" {
@@ -86,8 +95,6 @@ resource "aws_route53profiles_association" "vpcs" {
   resource_id = each.value
 }
 ```
-
-The abbreviated policy line above is only a layout placeholder; [`main.tf`](./main.tf) generates each real policy from the typed `actions` set and never emits an empty statement.
 
 ## Compatibility with classic private hosted zones
 

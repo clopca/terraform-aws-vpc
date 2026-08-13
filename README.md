@@ -134,6 +134,7 @@ module "vpc" {
 | [`private_nat`](examples/private\_nat) | Private NAT for overlapping address space, a secondary translation CIDR, and TGW routing without IGW/EIPs. | Workload CIDRs overlap a remote TGW domain. | Requires an existing TGW ID. Private NAT Gateways are billable. |
 | [`inspection_egress`](examples/inspection\_egress) | Centralized TGW inspection, appliance mode, AZ-local firewall/NAT routing, prefix-list return routes, and Network Firewall composition inputs. | You are building centralized inspected Internet egress. | Requires a TGW ID and prefix list. Creates three NAT Gateways and a TGW attachment; Network Firewall is opt-in. |
 | [`migration-from-v4`](examples/migration-from-v4) | State-oriented major-version migration skeleton with stable names, compatibility outputs, declarative handoff, and zero-destroy checks. | You are upgrading an existing deployment. | Never apply unchanged; rehearse against copied real state and follow the upgrade guide. |
+| [`centralized_endpoints_dns`](examples/centralized\_endpoints\_dns) | Two-AZ hub and spokes with centralized interface endpoints, Route 53 Profiles, hybrid Resolver, private zones, RAM sharing, and explicit TGW return routing. | You need centralized PrivateLink DNS and bidirectional hybrid name resolution without Internet egress. | Creates a TGW, three attachments, ten endpoint ENIs, four Resolver ENIs, Route 53 resources, and RAM shares. |
 
 Examples with external dependencies validate identifier shape, but only real IDs,
 ARNs, pools, and account ownership make them deployable. Review each example README
@@ -209,7 +210,7 @@ and null/empty collection conventions.
 ## Testing and contributing
 
 The native Terraform suite covers positive plans, negative validation contracts,
-migration state moves, and all eleven examples. Mock-provider tests require
+migration state moves, and all twelve examples. Mock-provider tests require
 Terraform `>= 1.7`.
 
 ```shell

@@ -41,4 +41,4 @@ The module exposes exactly 13 top-level inputs. Start in the guide named in the 
 
 ## Examples
 
-The root [example catalog](../README.md#examples) compares all 11 configurations by purpose, selection criteria, prerequisites, and cost. Each example README contains a differential configuration excerpt, validation commands, evidence outputs, and a scenario-specific caveat.
+The root [example catalog](../README.md#examples) compares all 12 configurations by purpose, selection criteria, prerequisites, and cost. Each example README contains a differential configuration excerpt, validation commands, evidence outputs, and a scenario-specific caveat. For centralized PrivateLink naming, hybrid Resolver endpoints, and TGW-connected spokes without Internet egress, start with [`centralized_endpoints_dns`](../examples/centralized_endpoints_dns).

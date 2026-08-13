@@ -23,6 +23,44 @@ fi
 grep -Fq 'dynamodb:GetItem' "$repo_root/examples/basic/main.tf"
 grep -Fq 'arn:aws:dynamodb:us-east-1:123456789012:table/application-data' "$repo_root/examples/basic/main.tf"
 
+example12="$repo_root/examples/centralized_endpoints_dns"
+for required in main.tf variables.tf outputs.tf versions.tf README.md; do
+  [[ -f "$example12/$required" ]] || fail "centralized_endpoints_dns missing $required"
+done
+grep -Fq 'private_dns_enabled = true' "$example12/main.tf"
+grep -Fq 'resource "aws_route53profiles_profile" "endpoints"' "$example12/main.tf"
+grep -Fq 'resource "aws_route53profiles_resource_association" "interface_endpoints"' "$example12/main.tf"
+grep -Fq 'resource "aws_route53profiles_association" "vpcs"' "$example12/main.tf"
+grep -Fq 'resource "aws_route53_resolver_rule_association" "spokes"' "$example12/main.tf"
+grep -Fq 'resource "aws_ram_resource_association" "resolver_rules"' "$example12/main.tf"
+grep -Fq 'resource_arn = each.value.arn' "$example12/main.tf"
+grep -Fq 'role = "private"' "$example12/main.tf"
+grep -Fq 'role = "transit_gateway"' "$example12/main.tf"
+grep -Fq 'Route 53 Profiles' "$example12/README.md"
+grep -Fq 'whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/centralized-access-to-vpc-private-endpoints.html' "$example12/README.md"
+grep -Fq 'Amazon ECR' "$example12/README.md"
+grep -Fq 'S3 gateway endpoints remain local to each spoke' "$example12/README.md"
+grep -Fq 'execute-api' "$example12/README.md"
+if grep -nE '0\.0\.0\.0/0|type[[:space:]]*=[[:space:]]*any|private_dns_enabled[[:space:]]*=[[:space:]]*false|role[[:space:]]*=[[:space:]]*"isolated"' \
+  "$example12/main.tf" "$example12/variables.tf" "$example12/README.md"; then
+  fail "centralized_endpoints_dns weakened security, typing, Profiles DNS, or transit-capable subnet roles"
+fi
+
+python3 - "$example12/main.tf" <<'PY'
+from pathlib import Path
+import sys
+
+main = Path(sys.argv[1]).read_text()
+assert main.count('transit_gateway_attachments = {') >= 3
+assert main.count('default_route_table_association = false') == 2
+assert main.count('default_route_table_propagation = false') == 2
+assert main.count('resource "aws_vpc_security_group_ingress_rule"') == 2
+assert main.count('resource "aws_vpc_security_group_egress_rule"') == 1
+assert 'for_each = var.interface_endpoints' in main
+assert 'dns-hub = local.consumer_cidrs' in main
+assert 'subnet_ids_by_group_by_az["resolver"]' in main
+PY
+
 # Landing page structure and ordering.
 grep -Fxq '# AWS VPC Terraform module' "$repo_root/.header.md"
 grep -Fxq '# AWS VPC Terraform module' "$repo_root/README.md"
@@ -46,7 +84,7 @@ readme = (root / "README.md").read_text()
 examples = [
     "basic", "enterprise", "hub", "nat_byoip", "ipam", "dual_stack",
     "existing_vpc", "secure_isolated", "private_nat", "inspection_egress",
-    "migration-from-v4",
+    "migration-from-v4", "centralized_endpoints_dns",
 ]
 
 for text, name in [(header, ".header.md"), (readme, "README.md")]:
@@ -54,7 +92,7 @@ for text, name in [(header, ".header.md"), (readme, "README.md")]:
     section = text.split("## Examples", 1)[1].split("\n## ", 1)[0]
     links = re.findall(r"\[`([^`]+)`\]\(examples/(?:\\_)?([^)]*)\)", section)
     linked_names = [label for label, _ in links]
-    assert linked_names == examples, f"{name}: expected the 11-row example table, got {linked_names}"
+    assert linked_names == examples, f"{name}: expected the 12-row example table, got {linked_names}"
     assert "| Example | What it demonstrates | Choose it when | External prerequisites and cost |" in section
 
 variables = re.findall(r'^variable "([^"]+)"', (root / "variables.tf").read_text(), re.M)
@@ -176,7 +214,8 @@ for spec in \
   'ipam:ipam.tfvars' \
   'nat_byoip:nat-byoip.tfvars' \
   'inspection_egress:inspection.tfvars' \
-  'private_nat:private-nat.tfvars'; do
+  'private_nat:private-nat.tfvars' \
+  'centralized_endpoints_dns:centralized-endpoints-dns.tfvars'; do
   example="${spec%%:*}"
   var_file="${spec#*:}"
   guide="$repo_root/examples/$example/README.md"
