@@ -164,7 +164,7 @@ resource "terraform_data" "subnet_existing_ids_validation" {
   lifecycle {
     precondition {
       condition     = toset(keys(each.value.existing_ids)) == toset(local.azs)
-      error_message = "Injected subnet group '${each.key}' must provide existing_ids keyed exactly by the configured AZs."
+      error_message = "Injected subnet group '${each.key}' existing_ids keys must exactly match configured AZs [${join(", ", local.azs)}]; received [${join(", ", sort(keys(each.value.existing_ids)))}]."
     }
   }
 }

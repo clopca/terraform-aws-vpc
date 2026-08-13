@@ -11,12 +11,26 @@ boundaries, native Flow Logs, and tiered outputs.
 
 ## Usage
 
-Use explicit AZ names and CIDRs for production. The following creates two public
-and two private subnets and one public NAT Gateway in `us-east-1a`:
+Use explicit AZ names and CIDRs for production. This pre-release source is directly
+consumable from an external project; after v5 is published, replace it with the
+Terraform Registry source `aws-ia/vpc/aws` and pin the released major version.
 
 ```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.29"
+    }
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "vpc" {
-  source = "./v5"
+  source = "git::https://github.com/clopca/terraform-aws-vpc.git//v5?ref=explore/v5-typed-contract"
 
   vpc = {
     name = "application-vpc"
@@ -32,8 +46,9 @@ module "vpc" {
 
   subnets = {
     public = {
-      role = "public"
-      ipv4 = { cidrs_by_az = { "us-east-1a" = "10.20.0.0/24", "us-east-1b" = "10.20.1.0/24" } }
+      role           = "public"
+      ipv4           = { cidrs_by_az = { "us-east-1a" = "10.20.0.0/24", "us-east-1b" = "10.20.1.0/24" } }
+      public_options = { map_public_ip = true }
     }
 
     app = {
@@ -98,6 +113,15 @@ and EIGW routing creates `::/0`.
 With `availability_zones.count`, the module sorts discovered eligible AZ names and
 selects exactly the first N. This mode remains development-only because future AZ
 launches can change that sorted prefix; production uses explicit `names`.
+
+## Reserved additive extension points
+
+The v5 object boundaries intentionally reserve compatible 5.x growth inside
+`subnets[*]`, `core_network_options`, and `nat_gateway.eip`. Planned additions are
+`subnets[*].dns_on_launch` (A/AAAA resource-name records and hostname type), Cloud
+WAN DNS/SG-referencing/routing-policy options, and public-IPAM EIP allocation.
+These fields are documented reservations only and are not accepted or applied in
+5.0; adding optional attributes inside those existing objects is an additive change.
 
 ## NAT Gateway availability modes
 

@@ -265,6 +265,19 @@ variable "subnets" {
 }
 ```
 
+### 3.2.1 Reserved additive extension points
+
+The pre-freeze contract reserves optional growth inside existing nested objects,
+not new parallel top-level APIs:
+
+- `subnets[*].dns_on_launch`: A/AAAA resource-name records and private hostname type;
+- `subnets[*].core_network_options`: DNS support, security-group referencing, and
+  routing policy label;
+- `nat_gateway.eip`: public IPAM pool allocation alongside create/BYOIP/existing.
+
+These are documented reservations, not accepted no-op inputs in 5.0. Adding typed
+optional attributes inside these existing objects is the compatible 5.x path.
+
 ### 3.3 NAT Gateway (typed, zonal or VPC-level, create-or-inject)
 
 ```hcl
@@ -460,6 +473,16 @@ does. `native_only=true` omits IPv4 and still requires a real IPv6 source.
 **Production recommendation:** use explicit `cidrs_by_az` for the strongest immutable
 allocation contract, `cidr_index` for stable calculated six-AZ reservations, and
 bare `netmask`/`auto_assign` only where shifts after group mutations are acceptable.
+
+### 3.5.1 Tier 2 injected-VPC warning disposition
+
+The deprecated `vpc_attributes` alias intentionally remains the complete v4/provider
+object through v5. Projecting it would remove attributes and break the migration
+contract. AWS provider 6.59 emits `ipv6_association_id` deprecation warnings when an
+injected `data.aws_vpc` object is evaluated; this known warning is deferred to the
+v6 removal of Tier 2. Tier 1 consumers use scalar outputs and are not coupled to that
+shape, but Terraform still evaluates root outputs. CI records this exact warning and
+must treat any different warning as new debt.
 
 ### 3.6 Outputs — 3 Tiers
 

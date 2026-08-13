@@ -456,7 +456,7 @@ variable "subnets" {
         v.existing_ids != null && alltrue([for id in values(v.existing_ids) : length(trimspace(id)) > 0])
       )
     ])
-    error_message = "Subnet create mode requires existing_ids=null; inject mode requires create=false and non-empty existing_ids keyed by AZ."
+    error_message = "Invalid subnet create/inject groups: ${join(", ", [for key, cfg in var.subnets : key if !(cfg.create ? cfg.existing_ids == null : cfg.existing_ids != null && alltrue([for id in values(cfg.existing_ids) : length(trimspace(id)) > 0]))])}. Create mode requires existing_ids=null; inject mode requires non-empty IDs keyed by AZ."
   }
 
   validation {
@@ -476,7 +476,7 @@ variable "subnets" {
       for k, v in var.subnets :
       contains(["public", "private", "isolated", "transit_gateway", "core_network"], v.role)
     ])
-    error_message = "Each subnet role must be: public, private, isolated, transit_gateway, or core_network."
+    error_message = "Invalid subnet roles: ${join(", ", [for key, cfg in var.subnets : "${key}=${cfg.role}" if !contains(["public", "private", "isolated", "transit_gateway", "core_network"], cfg.role)])}. Allowed roles: public, private, isolated, transit_gateway, core_network."
   }
 
   validation {
@@ -586,7 +586,7 @@ variable "subnets" {
         )
       )
     ])
-    error_message = "ipv4.netmask must be between 16 and 28 for AWS subnets."
+    error_message = "Invalid ipv4.netmask values (allowed 16..28): ${join(", ", [for key, cfg in var.subnets : "${key}=${cfg.ipv4.netmask}" if cfg.ipv4 != null && cfg.ipv4.netmask != null && (cfg.ipv4.netmask < 16 || cfg.ipv4.netmask > 28)])}."
   }
 
   # cidr_index must be a non-negative integer when provided [R1-C2]
@@ -610,7 +610,7 @@ variable "subnets" {
       for k, v in var.subnets : k
       if v.ipv4 != null && v.ipv4.netmask != null && v.ipv4.cidr_index != null
     ])
-    error_message = "Pinned subnet groups using the same ipv4.netmask must have unique ipv4.cidr_index values."
+    error_message = "Pinned ipv4.cidr_index values must be unique per netmask. Configured pins: ${join(", ", [for key, cfg in var.subnets : "${key}=/${cfg.ipv4.netmask}#${cfg.ipv4.cidr_index}" if cfg.ipv4 != null && cfg.ipv4.netmask != null && cfg.ipv4.cidr_index != null])}."
   }
 
   validation {
