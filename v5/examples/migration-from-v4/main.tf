@@ -112,13 +112,15 @@ module "vpc" {
 #
 # Copy this example into the caller root and uncomment all three `removed`
 # blocks plus the log-group `import` block. When the v4 VPC has IPv6, also
-# uncomment the association import and capture `v4_ipv6_association_id`, plus
-# `v4_ipv6_ipam_pool_id` and `v4_ipv6_netmask_length` when present, from
-# `terraform state show module.vpc.aws_vpc.main[0]`. Build `local.v4_ipv6_import_id`
-# exactly as documented in the upgrade guide. These blocks remain comments here
-# because Terraform forbids import blocks when this example is loaded as a child
-# module by native plan tests. `removed.from` module segments must not contain
-# instance keys.
+# uncomment the association import and capture `v4_ipv6_association_id` plus the
+# observed `v4_ipv6_cidr_block`; for IPAM also capture `v4_ipv6_ipam_pool_id`
+# and `v4_ipv6_netmask_length` when present from
+# `terraform state show module.vpc.aws_vpc.main[0]`. A v4 pool-only allocation
+# must be represented in v5 by its observed CIDR and pool ID. Build
+# `local.v4_ipv6_import_id` exactly as documented in the upgrade guide. These
+# blocks remain comments here because Terraform forbids import blocks when this
+# example is loaded as a child module by native plan tests. `removed.from`
+# module segments must not contain instance keys.
 #
 # removed {
 #   from = module.vpc.module.flow_logs.module.cloudwatch_log_group.aws_cloudwatch_log_group.main

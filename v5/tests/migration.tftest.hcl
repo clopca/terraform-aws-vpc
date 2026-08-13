@@ -13,10 +13,20 @@ mock_provider "aws" {
 
   mock_resource "aws_vpc" {
     defaults = {
+      id                        = "vpc-mock"
+      arn                       = "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-mock"
+      cidr_block                = "10.42.0.0/16"
       default_security_group_id = "sg-default"
       default_network_acl_id    = "acl-default"
       default_route_table_id    = "rtb-default"
       main_route_table_id       = "rtb-default"
+    }
+  }
+
+  mock_resource "aws_vpc_ipv6_cidr_block_association" {
+    defaults = {
+      id              = "vpc-cidr-assoc-0123456789abcdef0"
+      ipv6_cidr_block = "2001:db8:4200::/56"
     }
   }
 }
@@ -155,5 +165,34 @@ run "plan_full_migration_example" {
       log_group_has_name = false
     }
     error_message = "The migration example must reproduce all v4 Name tags exactly, including the Flow Log Name and absent log-group Name."
+  }
+}
+
+run "plan_ipv6_ipam_pool_default_handoff" {
+  command = plan
+
+  variables {
+    vpc = { name = "ipv6-pool-default-handoff" }
+    addressing = {
+      primary = { cidr_block = "10.42.0.0/16" }
+      secondary = {
+        v4-ipv6 = {
+          ipv6 = {
+            ipam_pool_id = "ipam-pool-0123456789abcdef0"
+            cidr_block   = "2001:db8:4200::/56"
+          }
+        }
+      }
+    }
+    availability_zones = { names = ["us-east-1a"] }
+  }
+
+  assert {
+    condition = (
+      aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"].ipv6_ipam_pool_id == "ipam-pool-0123456789abcdef0" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"].ipv6_cidr_block == "2001:db8:4200::/56" &&
+      aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"].ipv6_netmask_length == null
+    )
+    error_message = "A v4 pool-default IPv6 allocation must hand off through its observed CIDR and pool without inventing a netmask."
   }
 }

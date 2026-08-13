@@ -58,11 +58,20 @@
 
    Copy the log group's `name` to `flow_logs.default.cloudwatch_options.name` and to the declarative import ID. Copy the role's `name_prefix` (not its generated `name`) to `flow_logs.default.role_name_prefix`. Also retain the generated role `name` and managed-policy `arn` for the post-verification cleanup. The v4 defaults use `${var.name}-cw-access-role-` and `${var.name}-cw-access-policy-` prefixes; cleanup requires the complete generated values captured from state. Both log-group and role naming attributes are ForceNew when configured, so exact identity is required for a zero-replacement cutover.
 
-   If v4 assigned IPv6, also capture `ipv6_association_id`, `ipv6_ipam_pool_id`, and `ipv6_netmask_length` from `module.vpc.aws_vpc.main[0]`. v4 stores this association inside the VPC resource state, while v5 owns it as a standalone keyed resource; Terraform cannot express that ownership transfer with a `moved` block. Preserve the pool and netmask exactly when present: the standalone importer cannot reconstruct those ForceNew fields from EC2 after import.
+   If v4 assigned IPv6, also capture `ipv6_association_id`, `ipv6_cidr_block`,
+   `ipv6_ipam_pool_id`, and `ipv6_netmask_length` from
+   `module.vpc.aws_vpc.main[0]`. v4 stores this association inside the VPC
+   resource state, while v5 owns it as a standalone keyed resource; Terraform
+   cannot express that ownership transfer with a `moved` block. Preserve every
+   observed value exactly. In particular, v4/provider 6.59 permits an IPAM pool
+   without an explicit netmask when the pool defines `allocation_default_netmask`;
+   v5 represents that case with the observed `ipv6_cidr_block` plus
+   `ipv6_ipam_pool_id`, not with a pool-only configuration.
 
    ```shell
    terraform state show 'module.vpc.aws_vpc.main[0]'
-   # Record ipv6_association_id and, for IPAM, ipv6_ipam_pool_id/netmask_length.
+   # Record ipv6_association_id/ipv6_cidr_block and, for IPAM,
+   # ipv6_ipam_pool_id plus ipv6_netmask_length when present.
    ```
 
 ### C. Translate configuration and state
@@ -75,7 +84,7 @@
    terraform init
    ```
 
-8. Add three non-destructive `removed` blocks for the old log group, managed policy, and attachment, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. If v4 assigned IPv6, add the second declarative import shown below for the standalone v5 association. These are root-module blocks; do not place them inside the VPC module. Replace both variable values with the physical identities captured in step 4:
+8. Add three non-destructive `removed` blocks for the old log group, managed policy, and attachment, plus one declarative `import` block for the v5 log-group address alongside the caller's module block. If v4 assigned IPv6, add the second declarative import shown below for the standalone v5 association. These are root-module blocks; do not place them inside the VPC module. Replace the Flow Logs value in every migration; for IPv6 replace the association ID and observed CIDR, plus the pool ID for IPAM and the netmask only when it was present in v4 state:
 
    ```hcl
    variable "v4_flow_log_group_name" {
@@ -86,6 +95,12 @@
    variable "v4_ipv6_association_id" {
      type    = string
      default = "vpc-cidr-assoc-replace-with-v4-association-id"
+   }
+
+   variable "v4_ipv6_cidr_block" {
+     type     = string
+     default  = null
+     nullable = true
    }
 
    variable "v4_ipv6_ipam_pool_id" {
@@ -151,6 +166,25 @@
    | Amazon-provided | `association_id` |
    | IPAM with explicit CIDR | `association_id,ipv6_ipam_pool_id` |
    | IPAM with netmask | `association_id,ipv6_ipam_pool_id,ipv6_netmask_length` |
+
+   Configure `addressing.secondary["v4-ipv6"].ipv6` from the same captured
+   values. These are module-argument fragments, not standalone roots:
+
+   ```text
+   # Amazon-provided
+   { amazon_assigned = true }
+
+   # IPAM with explicit CIDR, including a v4 pool-default allocation
+   { ipam_pool_id = var.v4_ipv6_ipam_pool_id, cidr_block = var.v4_ipv6_cidr_block }
+
+   # IPAM with an explicit netmask in v4 state
+   { ipam_pool_id = var.v4_ipv6_ipam_pool_id, netmask_length = var.v4_ipv6_netmask_length }
+   ```
+
+   For the pool-default case, the v5 configuration uses the second form and the
+   importer uses the two-component `association_id,pool_id` form. Do not copy the
+   v4 pool-only input into v5: it is intentionally rejected because v5 requires
+   the observed allocation identity or an explicit netmask.
 
    A one-component ID is valid only for Amazon-provided IPv6. Using it for IPAM drops ForceNew pool/netmask state and produces a replacement plan.
 
