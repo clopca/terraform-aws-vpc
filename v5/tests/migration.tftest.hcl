@@ -79,6 +79,46 @@ run "validate_root_migration_handoff_syntax" {
   module {
     source = "./tests/fixtures/migration-root-handoff"
   }
+
+  assert {
+    condition     = output.v4_ipv6_import_id == "vpc-cidr-assoc-0123456789abcdef0"
+    error_message = "Amazon-provided IPv6 imports must use the association ID alone."
+  }
+}
+
+run "validate_ipv6_ipam_cidr_import_id" {
+  command = plan
+
+  module {
+    source = "./tests/fixtures/migration-root-handoff"
+  }
+
+  variables {
+    v4_ipv6_ipam_pool_id = "ipam-pool-0123456789abcdef0"
+  }
+
+  assert {
+    condition     = output.v4_ipv6_import_id == "vpc-cidr-assoc-0123456789abcdef0,ipam-pool-0123456789abcdef0"
+    error_message = "IPv6 IPAM imports with an explicit CIDR must preserve association and pool IDs."
+  }
+}
+
+run "validate_ipv6_ipam_netmask_import_id" {
+  command = plan
+
+  module {
+    source = "./tests/fixtures/migration-root-handoff"
+  }
+
+  variables {
+    v4_ipv6_ipam_pool_id   = "ipam-pool-0123456789abcdef0"
+    v4_ipv6_netmask_length = 56
+  }
+
+  assert {
+    condition     = output.v4_ipv6_import_id == "vpc-cidr-assoc-0123456789abcdef0,ipam-pool-0123456789abcdef0,56"
+    error_message = "IPv6 IPAM netmask imports must preserve association ID, pool ID, and ForceNew netmask length."
+  }
 }
 
 run "plan_full_migration_example" {

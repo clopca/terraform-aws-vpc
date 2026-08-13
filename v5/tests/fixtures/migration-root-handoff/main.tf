@@ -27,3 +27,30 @@ removed {
     destroy = false
   }
 }
+
+variable "v4_ipv6_association_id" {
+  type    = string
+  default = "vpc-cidr-assoc-0123456789abcdef0"
+}
+
+variable "v4_ipv6_ipam_pool_id" {
+  type    = string
+  default = null
+}
+
+variable "v4_ipv6_netmask_length" {
+  type    = number
+  default = null
+}
+
+locals {
+  v4_ipv6_import_id = join(",", compact([
+    var.v4_ipv6_association_id,
+    var.v4_ipv6_ipam_pool_id,
+    var.v4_ipv6_netmask_length == null ? null : tostring(var.v4_ipv6_netmask_length),
+  ]))
+}
+
+output "v4_ipv6_import_id" {
+  value = local.v4_ipv6_import_id
+}

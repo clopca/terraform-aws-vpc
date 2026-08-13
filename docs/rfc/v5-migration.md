@@ -58,11 +58,11 @@
 
    Copy the log group's `name` to `flow_logs.default.cloudwatch_options.name` and to the declarative import ID. Copy the role's `name_prefix` (not its generated `name`) to `flow_logs.default.role_name_prefix`. Also retain the generated role `name` and managed-policy `arn` for the post-verification cleanup. The v4 defaults use `${var.name}-cw-access-role-` and `${var.name}-cw-access-policy-` prefixes; cleanup requires the complete generated values captured from state. Both log-group and role naming attributes are ForceNew when configured, so exact identity is required for a zero-replacement cutover.
 
-   If v4 assigned IPv6, also capture `ipv6_association_id` from `module.vpc.aws_vpc.main[0]`. v4 stores this association inside the VPC resource state, while v5 owns it as a standalone keyed resource; Terraform cannot express that ownership transfer with a `moved` block.
+   If v4 assigned IPv6, also capture `ipv6_association_id`, `ipv6_ipam_pool_id`, and `ipv6_netmask_length` from `module.vpc.aws_vpc.main[0]`. v4 stores this association inside the VPC resource state, while v5 owns it as a standalone keyed resource; Terraform cannot express that ownership transfer with a `moved` block. Preserve the pool and netmask exactly when present: the standalone importer cannot reconstruct those ForceNew fields from EC2 after import.
 
    ```shell
    terraform state show 'module.vpc.aws_vpc.main[0]'
-   # Record ipv6_association_id, for example vpc-cidr-assoc-0123456789abcdef0.
+   # Record ipv6_association_id and, for IPAM, ipv6_ipam_pool_id/netmask_length.
    ```
 
 ### C. Translate configuration and state
@@ -86,6 +86,26 @@
    variable "v4_ipv6_association_id" {
      type    = string
      default = "vpc-cidr-assoc-replace-with-v4-association-id"
+   }
+
+   variable "v4_ipv6_ipam_pool_id" {
+     type     = string
+     default  = null
+     nullable = true
+   }
+
+   variable "v4_ipv6_netmask_length" {
+     type     = number
+     default  = null
+     nullable = true
+   }
+
+   locals {
+     v4_ipv6_import_id = join(",", compact([
+       var.v4_ipv6_association_id,
+       var.v4_ipv6_ipam_pool_id,
+       var.v4_ipv6_netmask_length == null ? null : tostring(var.v4_ipv6_netmask_length),
+     ]))
    }
 
    removed {
@@ -120,9 +140,19 @@
    # Include only when the v4 VPC has IPv6.
    import {
      to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
-     id = var.v4_ipv6_association_id
+     id = local.v4_ipv6_import_id
    }
    ```
+
+   Set the optional values to reproduce the provider's exact importer form:
+
+   | v4 IPv6 source | Import ID |
+   |---|---|
+   | Amazon-provided | `association_id` |
+   | IPAM with explicit CIDR | `association_id,ipv6_ipam_pool_id` |
+   | IPAM with netmask | `association_id,ipv6_ipam_pool_id,ipv6_netmask_length` |
+
+   A one-component ID is valid only for Amazon-provided IPv6. Using it for IPAM drops ForceNew pool/netmask state and produces a replacement plan.
 
    `removed.from` addresses modules, not module instances: Terraform Core rejects `[0]` keys on `module.flow_logs` and `module.cloudwatch_log_group`. Omitting those two module instance keys matches all instances selected by the configuration; the indexed addresses remain valid for `terraform state show` and the IAM-role `moved` block.
 

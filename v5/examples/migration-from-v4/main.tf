@@ -112,8 +112,10 @@ module "vpc" {
 #
 # Copy this example into the caller root and uncomment all three `removed`
 # blocks plus the log-group `import` block. When the v4 VPC has IPv6, also
-# uncomment the association import and set `v4_ipv6_association_id` from
-# `terraform state show module.vpc.aws_vpc.main[0]`. They remain comments here
+# uncomment the association import and capture `v4_ipv6_association_id`, plus
+# `v4_ipv6_ipam_pool_id` and `v4_ipv6_netmask_length` when present, from
+# `terraform state show module.vpc.aws_vpc.main[0]`. Build `local.v4_ipv6_import_id`
+# exactly as documented in the upgrade guide. These blocks remain comments here
 # because Terraform forbids import blocks when this example is loaded as a child
 # module by native plan tests. `removed.from` module segments must not contain
 # instance keys.
@@ -153,5 +155,5 @@ module "vpc" {
 # # Reject the migration plan if aws_vpc.main shows any IPv6 argument update.
 # import {
 #   to = module.vpc.aws_vpc_ipv6_cidr_block_association.secondary["v4-ipv6"]
-#   id = var.v4_ipv6_association_id
+#   id = local.v4_ipv6_import_id
 # }
