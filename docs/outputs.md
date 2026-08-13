@@ -1,6 +1,6 @@
-# How to use v5 module outputs
+# Output contracts
 
-v5 groups outputs into three tiers so consumers can choose between a stable public contract, temporary v4 compatibility, and an unstable escape hatch. New integrations should start with Tier 1.
+The module groups outputs into three tiers so consumers can choose between a stable public contract, temporary v4 compatibility, and an unstable escape hatch. New integrations should start with Tier 1.
 
 ## Choose the lowest tier that solves the integration
 

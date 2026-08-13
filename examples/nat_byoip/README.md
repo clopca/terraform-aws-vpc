@@ -8,7 +8,7 @@ This example compares four independent VPC deployments that exercise module-crea
 - `eip.mode = "byoip_pool"` allocates module-owned Elastic IPs from a caller-supplied BYOIP pool.
 - `eip.mode = "existing"` injects caller-owned allocation IDs keyed by Availability Zone.
 - `mode = "regional"` creates a Regional NAT Gateway and does not require a public subnet group.
-- Regional mode rejects `eip.mode = "create"`; the example uses existing allocation IDs for that topology.
+- Regional `eip.mode = "create"` delegates IP and active-AZ management to AWS; the example uses existing allocation IDs to demonstrate manual addressing.
 
 ## Relevant configuration
 

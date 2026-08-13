@@ -6,8 +6,8 @@
 # has applied the upgrade. Terraform moved blocks do not support wildcards.
 #
 # 63 active moved blocks cover the union of all demonstrated features; they are
-# not a fixed quota for every deployment. The representative migration fixture
-# used 26 applicable moves and omitted 37 whose source resources were absent.
+# not a fixed quota for every deployment. A documented two-AZ state retained 26
+# applicable moves and omitted 37 whose source resources were absent.
 # Start from `terraform state list`, keep only blocks with an existing source,
 # and repeat the private-group blocks for every actual v4 private group.
 #

@@ -543,10 +543,10 @@ output "flow_log_attributes" {
   value       = try(aws_flow_log.this["default"], one(values(aws_flow_log.this)), null)
 }
 
-# Pre-publication aliases from the Phase 1 prototype. They are not v4 outputs,
-# but remain during v5 so early prototype consumers can migrate without churn.
+# Deprecated compatibility aliases that remain during v5 so existing consumers can
+# migrate without address churn.
 output "subnet_ids_by_role" {
-  description = "DEPRECATED: prototype alias keyed by group name. Use subnet_ids_by_group. Removed in v6."
+  description = "DEPRECATED: compatibility alias keyed by group name. Use subnet_ids_by_group. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => [
       for az in local.azs : local.subnet_ids["${name}/${az}"]
@@ -555,7 +555,7 @@ output "subnet_ids_by_role" {
 }
 
 output "subnet_ids_by_role_by_az" {
-  description = "DEPRECATED: prototype alias keyed by group name. Use subnet_ids_by_group_by_az. Removed in v6."
+  description = "DEPRECATED: compatibility alias keyed by group name. Use subnet_ids_by_group_by_az. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => {
       for az in local.azs : az => local.subnet_ids["${name}/${az}"]
@@ -564,7 +564,7 @@ output "subnet_ids_by_role_by_az" {
 }
 
 output "subnet_cidrs_by_role_by_az" {
-  description = "DEPRECATED: prototype alias keyed by group name. Use subnet_cidrs_by_group_by_az. Removed in v6."
+  description = "DEPRECATED: compatibility alias keyed by group name. Use subnet_cidrs_by_group_by_az. Removed in v6."
   value = {
     for name in sort(keys(var.subnets)) : name => {
       for az in local.azs : az => local.subnet_ipv4_cidrs["${name}/${az}"]
