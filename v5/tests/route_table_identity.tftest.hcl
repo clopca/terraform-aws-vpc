@@ -13,6 +13,30 @@ mock_provider "aws" {
     defaults = { account_id = "123456789012" }
   }
 
+  mock_data "aws_route_table" {
+    defaults = {
+      id             = "rtb-clean"
+      route_table_id = "rtb-clean"
+      routes = [{
+        carrier_gateway_id         = null
+        cidr_block                 = "10.96.0.0/16"
+        core_network_arn           = null
+        destination_prefix_list_id = null
+        egress_only_gateway_id     = null
+        gateway_id                 = "local"
+        instance_id                = null
+        ipv6_cidr_block            = null
+        local_gateway_id           = null
+        nat_gateway_id             = null
+        network_interface_id       = null
+        odb_network_arn            = null
+        transit_gateway_id         = null
+        vpc_endpoint_id            = null
+        vpc_peering_connection_id  = null
+      }]
+    }
+  }
+
   mock_resource "aws_vpc" {
     defaults = {
       id              = "vpc-mock"
@@ -304,4 +328,98 @@ run "reject_isolated_sharing_generic_prefix_list_route" {
   }
 
   expect_failures = [terraform_data.route_table_routing_compatibility_validation]
+}
+
+run "inspect_clean_injected_isolated_route_table" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-inspected-clean" }
+    addressing         = { primary = { cidr_block = "10.105.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role               = "isolated"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.105.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "isolated"
+        route_table_id     = "rtb-clean"
+      }
+    }
+  }
+
+  assert {
+    condition     = data.aws_route_table.isolated_injected["isolated/rtb-clean"].route_table_id == "rtb-clean"
+    error_message = "A plan-known isolated injected route table must be inspected before association."
+  }
+}
+
+run "reject_routed_injected_isolated_route_table" {
+  command = plan
+
+  override_data {
+    target = data.aws_route_table.isolated_injected["isolated/rtb-routed"]
+    values = {
+      route_table_id = "rtb-routed"
+      routes = [{
+        carrier_gateway_id         = null
+        cidr_block                 = "0.0.0.0/0"
+        core_network_arn           = null
+        destination_prefix_list_id = null
+        egress_only_gateway_id     = null
+        gateway_id                 = null
+        instance_id                = null
+        ipv6_cidr_block            = null
+        local_gateway_id           = null
+        nat_gateway_id             = null
+        network_interface_id       = null
+        odb_network_arn            = null
+        transit_gateway_id         = "tgw-0123456789abcdef0"
+        vpc_endpoint_id            = null
+        vpc_peering_connection_id  = null
+      }]
+    }
+  }
+
+  variables {
+    vpc                = { name = "isolated-inspected-routed" }
+    addressing         = { primary = { cidr_block = "10.106.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role               = "isolated"
+        ipv4               = { cidrs_by_az = { us-east-1a = "10.106.0.0/24" } }
+        manage_route_table = false
+        route_table_key    = "isolated"
+        route_table_id     = "rtb-routed"
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.isolated_injected_route_table_validation]
+}
+
+run "allow_explicit_uninspected_isolated_route_table" {
+  command = plan
+
+  variables {
+    vpc                = { name = "isolated-uninspected-opt-in" }
+    addressing         = { primary = { cidr_block = "10.107.0.0/16" } }
+    availability_zones = { names = ["us-east-1a"] }
+    subnets = {
+      data = {
+        role                                     = "isolated"
+        ipv4                                     = { cidrs_by_az = { us-east-1a = "10.107.0.0/24" } }
+        manage_route_table                       = false
+        route_table_key                          = "isolated"
+        route_table_id                           = "rtb-uninspected"
+        isolated_accepts_uninspected_route_table = true
+      }
+    }
+  }
+
+  assert {
+    condition     = length(data.aws_route_table.isolated_injected) == 0
+    error_message = "The explicit dangerous opt-in must skip route-table inspection while preserving the injected association."
+  }
 }

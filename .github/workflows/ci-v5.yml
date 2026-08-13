@@ -63,6 +63,10 @@ jobs:
         working-directory: v5
         run: terraform validate -no-color
 
+      - name: Verify fail-closed negative plans
+        working-directory: v5
+        run: ./scripts/test-negative-plans.sh
+
       - name: Validate examples
         shell: bash
         run: |

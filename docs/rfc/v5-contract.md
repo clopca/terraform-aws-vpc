@@ -292,6 +292,14 @@ Gateway endpoint routes target AWS services privately and do not create general
 network egress. This aligns the role with AWS/community `intra` semantics without
 weakening its public-connectivity boundary.
 
+Injected route tables extend that boundary to pre-existing state. For an isolated
+group, the module reads a plan-known physical ID with `data.aws_route_table` and
+accepts only local and gateway-endpoint routes. A computed ID cannot form a stable
+inspection instance during planning and therefore fails closed. The sole bypass is
+`isolated_accepts_uninspected_route_table = true`; this dangerous opt-in is valid
+only for an isolated group with `manage_route_table = false` and transfers
+responsibility for all unmanaged routes to the caller.
+
 ### 3.3.7 Cloud WAN accepter ownership is independent
 
 The accepter collection uses the constant key `"vpc"` whenever the three plan-known

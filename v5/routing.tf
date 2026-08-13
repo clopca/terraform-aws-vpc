@@ -29,6 +29,8 @@ resource "aws_route_table_association" "main" {
 
   subnet_id      = local.subnet_ids[each.key]
   route_table_id = local.route_table_id_by_subnet[each.key]
+
+  depends_on = [terraform_data.isolated_injected_route_table_validation]
 }
 
 # ─── Internet Gateway Routes ──────────────────────────────────────────────

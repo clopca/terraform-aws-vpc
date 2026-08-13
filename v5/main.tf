@@ -39,6 +39,12 @@ data "aws_subnet" "existing" {
   id = each.value.existing_id
 }
 
+data "aws_route_table" "isolated_injected" {
+  for_each = local.isolated_injected_route_tables_to_inspect
+
+  route_table_id = each.value
+}
+
 # Scalar account identity for constructed Cloud WAN/VPC ARNs. The attachment
 # never consumes the full existing-VPC data object, avoiding unknown propagation.
 data "aws_caller_identity" "current" {
@@ -431,6 +437,17 @@ resource "terraform_data" "injected_route_table_identity_validation" {
     precondition {
       condition     = length(distinct(values(local.injected_route_table_ids_by_key))) == length(local.injected_route_table_ids_by_key)
       error_message = "One injected route_table_id cannot use multiple route_table_key values; reuse the same physical identity key across groups."
+    }
+  }
+}
+
+resource "terraform_data" "isolated_injected_route_table_validation" {
+  input = local.unsafe_isolated_injected_route_table_routes
+
+  lifecycle {
+    precondition {
+      condition     = length(local.unsafe_isolated_injected_route_table_routes) == 0
+      error_message = "Injected route tables used by isolated subnet groups may contain only local and gateway-endpoint routes. Unsafe physical identities: ${join(", ", sort(keys(local.unsafe_isolated_injected_route_table_routes)))}. Remove the routes or set isolated_accepts_uninspected_route_table=true to accept responsibility explicitly."
     }
   }
 }

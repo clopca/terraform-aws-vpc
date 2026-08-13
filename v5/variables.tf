@@ -430,9 +430,14 @@ variable "subnets" {
     and gateway-endpoint association address and requires root-module `moved` blocks.
     Groups sharing one physical table must use the same key and ID. The module
     associates every subnet while materializing each route and gateway-endpoint
-    association only once per physical key. A shared injected table cannot provide
-    per-AZ NAT targets, so `nat_gateway.mode = "all_azs"` is rejected when any
-    referencing group requests NAT/NAT64.
+    association only once per physical key. For role = "isolated", an injected
+    route table is inspected before association and may contain only local or
+    gateway-endpoint routes. Its route_table_id must therefore be known during
+    planning. The dangerous isolated_accepts_uninspected_route_table opt-in skips
+    inspection for computed IDs and transfers responsibility for every existing
+    route to the caller. A shared injected table cannot provide per-AZ NAT targets,
+    so `nat_gateway.mode = "all_azs"` is rejected when any referencing group
+    requests NAT/NAT64.
 
     `name_format` controls the complete subnet Name tag with `{vpc}`, `{group}`,
     and `{az}` placeholders. `{group}` resolves `name_prefix` or the map key.
@@ -477,13 +482,14 @@ variable "subnets" {
     }))
 
     # ── Naming, Tags, and Route Table Injection ──
-    name_prefix             = optional(string)
-    name_format             = optional(string)
-    route_table_name_format = optional(string)
-    tags                    = optional(map(string), {})
-    manage_route_table      = optional(bool, true)
-    route_table_key         = optional(string) # stable physical identity when injecting
-    route_table_id          = optional(string) # effective ID when injecting
+    name_prefix                              = optional(string)
+    name_format                              = optional(string)
+    route_table_name_format                  = optional(string)
+    tags                                     = optional(map(string), {})
+    manage_route_table                       = optional(bool, true)
+    route_table_key                          = optional(string) # stable physical identity when injecting
+    route_table_id                           = optional(string) # effective ID when injecting
+    isolated_accepts_uninspected_route_table = optional(bool, false)
 
     # ── Optional stateless Network ACL (one per subnet group) ──
     # Rule map keys are the explicit AWS rule numbers and therefore stable state
@@ -602,6 +608,14 @@ variable "subnets" {
       )
     ])
     error_message = "manage_route_table=true requires route_table_key/route_table_id=null; inject mode requires a stable lowercase route_table_key and non-empty route_table_id."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, subnet in var.subnets :
+      !subnet.isolated_accepts_uninspected_route_table || (subnet.role == "isolated" && !subnet.manage_route_table)
+    ])
+    error_message = "isolated_accepts_uninspected_route_table may be true only for role='isolated' with manage_route_table=false. It is a dangerous opt-in that skips inspection of pre-existing routes."
   }
 
   validation {
