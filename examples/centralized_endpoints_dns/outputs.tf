@@ -118,7 +118,7 @@ output "private_zone_evidence" {
   value = {
     zones                         = keys(aws_route53_zone.private)
     record_count                  = length(aws_route53_record.private)
-    initial_vpc_association_count = sum([for zone in values(aws_route53_zone.private) : length(zone.vpc)])
+    initial_vpc_association_count = length(aws_route53_zone.private)
     spoke_association_count       = length(aws_route53_zone_association.private_spokes)
   }
 }

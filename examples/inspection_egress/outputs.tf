@@ -36,8 +36,8 @@ output "route_evidence" {
     tgw_routes      = length(module.vpc.resources.routes.tgw_attachment)
     tgw_destinations = {
       for key, route in module.vpc.resources.routes.tgw_attachment : key => {
-        cidr_block     = route.destination_cidr_block
-        prefix_list_id = route.destination_prefix_list_id
+        cidr_block     = route.destination_cidr_block != "" ? route.destination_cidr_block : null
+        prefix_list_id = route.destination_prefix_list_id != "" ? route.destination_prefix_list_id : null
       }
     }
   }
