@@ -67,6 +67,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch                        = try(var.subnets.public.map_public_ip_on_launch, local.public_ipv6only ? null : true)
   assign_ipv6_address_on_creation                = local.public_ipv6only || local.public_dualstack ? true : null
   enable_resource_name_dns_aaaa_record_on_launch = local.public_ipv6only || local.public_dualstack ? true : false
+  enable_dns64                                   = try(var.subnets.public.enable_dns64, false)
 
   tags = merge(
     { Name = "${local.subnet_names["public"]}-${each.key}" },
@@ -247,6 +248,7 @@ resource "aws_subnet" "private" {
   map_public_ip_on_launch                        = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? null : false
   assign_ipv6_address_on_creation                = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? true : try(var.subnets[split("/", each.key)[0]].assign_ipv6_address_on_creation, false)
   enable_resource_name_dns_aaaa_record_on_launch = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? true : try(var.subnets[split("/", each.key)[0]].enable_resource_name_dns_aaaa_record_on_launch, false)
+  enable_dns64                                   = try(var.subnets[split("/", each.key)[0]].enable_dns64, false)
 
   tags = merge(
     { Name = "${local.subnet_names[split("/", each.key)[0]]}-${split("/", each.key)[1]}" },
@@ -285,6 +287,18 @@ resource "aws_route" "private_to_nat" {
 
   route_table_id         = aws_route_table.private[each.key].id
   destination_cidr_block = "0.0.0.0/0"
+  # try to get nat for AZ, else use singular nat
+  nat_gateway_id = local.nat_per_az[split("/", each.key)[1]].id
+}
+
+# Route: NAT64 (64:ff9b::/96) from private subnets with DNS64 enabled to the NAT gateway.
+# Required so IPv6-only (or dual-stack) workloads can reach IPv4-only destinations through
+# the synthetic IPv6 addresses returned by the Amazon-provided DNS64 resolver.
+resource "aws_route" "private_nat64_to_nat" {
+  for_each = toset(try(local.private_subnet_names_nat64_routed, []))
+
+  route_table_id              = aws_route_table.private[each.key].id
+  destination_ipv6_cidr_block = "64:ff9b::/96"
   # try to get nat for AZ, else use singular nat
   nat_gateway_id = local.nat_per_az[split("/", each.key)[1]].id
 }
