@@ -25,6 +25,7 @@ All notable changes to this module are documented in this file. The format follo
 - Moved NAT configuration to a VPC-wide contract and made subnet groups opt into NAT routing independently.
 - Made isolated subnet roles fail closed for Internet, NAT, TGW, Cloud WAN, and generic routes; injected isolated route tables require an explicit caller-responsibility opt-in.
 - Split outputs into stable Tier 1 handles, deprecated Tier 2 v4 compatibility aliases, and unstable Tier 3 provider-shaped collections.
+- Set `calculated_subnet_az_capacity` to a default of 3 reserved AZ slots per calculated subnet group, matching the most common regional layout; regions with more AZs can raise it up to 6. The value is fixed at creation time: changing it on an existing VPC renumbers calculated subnets.
 
 ### Deprecated
 

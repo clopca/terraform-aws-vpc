@@ -86,7 +86,7 @@ Each subnet group selects exactly one IPv4 mode:
 | Calculated | `netmask`, optionally `cidr_index` | Deterministic; pin groups that must not move. |
 | IPAM | `ipam_pool_id` and `netmask_length` | CIDR may remain unknown until apply. |
 
-Calculated allocation reserves six AZ slots per group. A pinned `cidr_index` is an absolute group slot and does not move when other groups or AZs are added. Unpinned groups pack largest-first and then alphabetically, so adding or removing an earlier group can move later unpinned ranges.
+Calculated allocation reserves three AZ slots per group by default (`calculated_subnet_az_capacity`, raisable to six). A pinned `cidr_index` is an absolute group slot and does not move when other groups or AZs are added. Unpinned groups pack largest-first and then alphabetically, so adding or removing an earlier group can move later unpinned ranges.
 
 `ipv4.secondary_cidr_key` selects the parent secondary IPv4 association. Omitting it selects the primary VPC CIDR.
 

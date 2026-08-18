@@ -489,7 +489,7 @@ run "reject_calculated_cidr_pin_beyond_parent_capacity" {
     addressing         = { primary = { cidr_block = "10.120.0.0/24" } }
     availability_zones = { names = ["us-east-1a"] }
     subnets = {
-      app = { role = "private", ipv4 = { netmask = 28, cidr_index = 3 } }
+      app = { role = "private", ipv4 = { netmask = 28, cidr_index = 6 } }
     }
   }
 

@@ -85,9 +85,10 @@ locals {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs_by_az != null
   }
   # ─── Deterministic IPv4 CIDR calculation by selected parent ──────────
-  # Calculated groups reserve the caller-selected AZ capacity. Six remains the
-  # module default; constrained wrappers can reserve fewer fixed slots when
-  # their supported maximum is lower.
+  # Calculated groups reserve the caller-selected AZ capacity. Three is the
+  # module default (the most common regional layout); deployments in regions
+  # with more AZs can raise it, and established VPCs must keep their original
+  # value to avoid renumbering.
   cidr_az_stride = var.calculated_subnet_az_capacity
 
   ipv4_parent_key_by_group = {

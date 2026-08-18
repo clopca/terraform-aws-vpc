@@ -328,13 +328,15 @@ variable "availability_zones" {
 
 variable "calculated_subnet_az_capacity" {
   description = <<-EOT
-    Number of AZ slots reserved per calculated subnet group. The default six
-    preserves the v5 stability contract. A constrained wrapper may choose a
-    lower fixed capacity when it explicitly supports fewer AZs; the value must
-    still cover every configured AZ.
+    Number of AZ slots reserved per calculated subnet group. The default of
+    three matches the most common regional layout (three AZs). Deployments in
+    regions with more AZs may raise it up to six; the value must always cover
+    every configured AZ. Changing it on an existing VPC renumbers calculated
+    subnets, so established deployments must keep the value they were created
+    with.
   EOT
   type        = number
-  default     = 6
+  default     = 3
 
   validation {
     condition = (
@@ -417,7 +419,8 @@ variable "transit_gateway_attachments" {
 #
 # NETMASK STABILITY:
 #   When using `ipv4.netmask`, CIDRs are calculated deterministically:
-#   - Every group reserves six AZ slots, so appending AZs does not move CIDRs
+#   - Every group reserves `calculated_subnet_az_capacity` AZ slots (default 3,
+#     raisable to 6), so appending AZs within that capacity does not move CIDRs
 #   - Pinned groups use absolute `cidr_index` slots and never move
 #   - Unpinned groups pack largest-first, then alphabetically; adding/removing a
 #     group affects unpinned groups that sort after it
@@ -489,8 +492,9 @@ variable "subnets" {
       cidrs_by_az    = optional(map(string))
       ipam_pool_id   = optional(string)
       netmask_length = optional(number)
-      # Absolute CIDR group slot for pinning. Each slot reserves six
-      # AZ-sized CIDRs at this netmask. Pinned ranges never move when groups or AZs
+      # Absolute CIDR group slot for pinning. Each slot reserves
+      # `calculated_subnet_az_capacity` AZ-sized CIDRs (default 3) at this netmask.
+      # Pinned ranges never move when groups or AZs
       # are added/removed; overlapping pins across netmasks are rejected.
       cidr_index         = optional(number)
       secondary_cidr_key = optional(string)

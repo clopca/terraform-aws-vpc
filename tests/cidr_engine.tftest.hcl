@@ -24,9 +24,10 @@ run "unpinned_before_group_add" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
       gamma = { role = "private", ipv4 = { netmask = 24 } }
@@ -58,9 +59,10 @@ run "unpinned_after_group_add" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
       beta  = { role = "private", ipv4 = { netmask = 24 } }
@@ -89,9 +91,10 @@ run "unpinned_after_group_remove" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
       gamma = { role = "private", ipv4 = { netmask = 24 } }
@@ -118,9 +121,10 @@ run "pinned_before_group_add" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
       gamma = { role = "private", ipv4 = { netmask = 24, cidr_index = 5 } }
@@ -147,9 +151,10 @@ run "pinned_after_group_add" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
       beta  = { role = "private", ipv4 = { netmask = 24 } }
@@ -178,9 +183,10 @@ run "pinned_after_group_remove" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24, cidr_index = 0 } }
       gamma = { role = "private", ipv4 = { netmask = 24, cidr_index = 5 } }
@@ -207,9 +213,10 @@ run "add_availability_zone" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b", "us-east-1c"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b", "us-east-1c"] }
     subnets = {
       alpha = { role = "private", ipv4 = { netmask = 24 } }
       gamma = { role = "private", ipv4 = { netmask = 24 } }
@@ -334,9 +341,10 @@ run "mixed_netmasks_pack_without_overlap" {
   command = plan
 
   variables {
-    vpc                = { name = "cidr-test" }
-    addressing         = { primary = { cidr_block = "10.0.0.0/16" } }
-    availability_zones = { names = ["us-east-1a", "us-east-1b"] }
+    calculated_subnet_az_capacity = 6
+    vpc                           = { name = "cidr-test" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/16" } }
+    availability_zones            = { names = ["us-east-1a", "us-east-1b"] }
     subnets = {
       application = { role = "private", ipv4 = { netmask = 22 } }
       public      = { role = "public", ipv4 = { netmask = 24 } }
@@ -404,10 +412,9 @@ run "constrained_three_az_capacity_fits_three_pinned_28_groups_in_a_24" {
   command = plan
 
   variables {
-    vpc                           = { name = "inspection-24" }
-    addressing                    = { primary = { cidr_block = "10.0.0.0/24" } }
-    availability_zones            = { names = ["eu-south-2a"] }
-    calculated_subnet_az_capacity = 3
+    vpc                = { name = "inspection-24" }
+    addressing         = { primary = { cidr_block = "10.0.0.0/24" } }
+    availability_zones = { names = ["eu-south-2a"] }
     subnets = {
       core_network = { role = "private", ipv4 = { netmask = 28, cidr_index = 0 } }
       firewall     = { role = "private", ipv4 = { netmask = 28, cidr_index = 1 } }
@@ -422,5 +429,74 @@ run "constrained_three_az_capacity_fits_three_pinned_28_groups_in_a_24" {
       public       = { eu-south-2a = "10.0.0.96/28" }
     }
     error_message = "A /24 must fit the three inspection /28 groups while reserving three stable AZ slots per group."
+  }
+}
+
+run "constrained_three_az_capacity_allocates_every_availability_zone" {
+  command = plan
+
+  variables {
+    vpc                = { name = "inspection-24" }
+    addressing         = { primary = { cidr_block = "10.0.0.0/24" } }
+    availability_zones = { names = ["eu-south-2a", "eu-south-2b", "eu-south-2c"] }
+    subnets = {
+      core_network = { role = "private", ipv4 = { netmask = 28, cidr_index = 0 } }
+      firewall     = { role = "private", ipv4 = { netmask = 28, cidr_index = 1 } }
+      public       = { role = "public", ipv4 = { netmask = 28, cidr_index = 2 } }
+    }
+  }
+
+  assert {
+    condition = output.subnet_cidrs_by_group_by_az == {
+      core_network = {
+        eu-south-2a = "10.0.0.0/28"
+        eu-south-2b = "10.0.0.16/28"
+        eu-south-2c = "10.0.0.32/28"
+      }
+      firewall = {
+        eu-south-2a = "10.0.0.48/28"
+        eu-south-2b = "10.0.0.64/28"
+        eu-south-2c = "10.0.0.80/28"
+      }
+      public = {
+        eu-south-2a = "10.0.0.96/28"
+        eu-south-2b = "10.0.0.112/28"
+        eu-south-2c = "10.0.0.128/28"
+      }
+    }
+    error_message = "Filling the three reserved AZ slots must allocate consecutive /28 blocks per group without exceeding the /24."
+  }
+}
+
+run "constrained_capacity_scale_up_preserves_existing_az_cidrs" {
+  command = plan
+
+  variables {
+    vpc                = { name = "inspection-24" }
+    addressing         = { primary = { cidr_block = "10.0.0.0/24" } }
+    availability_zones = { names = ["eu-south-2a", "eu-south-2b"] }
+    subnets = {
+      core_network = { role = "private", ipv4 = { netmask = 28, cidr_index = 0 } }
+      firewall     = { role = "private", ipv4 = { netmask = 28, cidr_index = 1 } }
+      public       = { role = "public", ipv4 = { netmask = 28, cidr_index = 2 } }
+    }
+  }
+
+  assert {
+    condition = (
+      output.subnet_cidrs_by_group_by_az.core_network["eu-south-2a"] == "10.0.0.0/28" &&
+      output.subnet_cidrs_by_group_by_az.firewall["eu-south-2a"] == "10.0.0.48/28" &&
+      output.subnet_cidrs_by_group_by_az.public["eu-south-2a"] == "10.0.0.96/28"
+    )
+    error_message = "Growing from one AZ to two must keep the first AZ on the same /28 blocks (scale-up without renumbering)."
+  }
+
+  assert {
+    condition = (
+      output.subnet_cidrs_by_group_by_az.core_network["eu-south-2b"] == "10.0.0.16/28" &&
+      output.subnet_cidrs_by_group_by_az.firewall["eu-south-2b"] == "10.0.0.64/28" &&
+      output.subnet_cidrs_by_group_by_az.public["eu-south-2b"] == "10.0.0.112/28"
+    )
+    error_message = "The second AZ must take the next reserved slot of each group without touching neighbouring groups."
   }
 }
