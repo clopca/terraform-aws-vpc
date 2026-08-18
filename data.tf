@@ -33,6 +33,10 @@ locals {
   # private subnets with cidrs per az if connect_to_public_natgw = true ...  "privatetwo/us-east-1a"
   private_subnet_names_nat_routed = [for subnet in local.private_per_az : subnet if contains(local.private_subnets_nat_routed, split("/", subnet)[0])]
 
+  # NAT64: private subnets with DNS64 enabled and NAT gateway connectivity get a 64:ff9b::/96 route to the NAT gateway
+  private_subnets_nat64_routed      = [for type in local.private_subnet_names : type if(try(var.subnets[type].enable_dns64 == true, false) && try(var.subnets[type].connect_to_public_natgw == true, false))]
+  private_subnet_names_nat64_routed = [for subnet in local.private_per_az : subnet if contains(local.private_subnets_nat64_routed, split("/", subnet)[0])]
+
   # support variables for transit_gateway_routes
   subnets_tgw_routed                  = keys(var.transit_gateway_routes)
   private_subnet_key_names_tgw_routed = [for subnet in local.private_per_az : subnet if contains(local.subnets_tgw_routed, split("/", subnet)[0])]

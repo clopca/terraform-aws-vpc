@@ -291,6 +291,18 @@ resource "aws_route" "private_to_nat" {
   nat_gateway_id = local.nat_per_az[split("/", each.key)[1]].id
 }
 
+# Route: NAT64 (64:ff9b::/96) from private subnets with DNS64 enabled to the NAT gateway.
+# Required so IPv6-only (or dual-stack) workloads can reach IPv4-only destinations through
+# the synthetic IPv6 addresses returned by the Amazon-provided DNS64 resolver.
+resource "aws_route" "private_nat64_to_nat" {
+  for_each = toset(try(local.private_subnet_names_nat64_routed, []))
+
+  route_table_id              = aws_route_table.private[each.key].id
+  destination_ipv6_cidr_block = "64:ff9b::/96"
+  # try to get nat for AZ, else use singular nat
+  nat_gateway_id = local.nat_per_az[split("/", each.key)[1]].id
+}
+
 # Route: from the private subnet to the Egress-only IGW (if configured)
 resource "aws_route" "private_to_egress_only" {
   for_each = toset(try(local.private_subnet_names_egress_routed, []))

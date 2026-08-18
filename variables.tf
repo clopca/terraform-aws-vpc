@@ -133,7 +133,7 @@ variable "subnets" {
   - `connect_to_public_natgw` = (Optional|bool) Determines if routes to NAT Gateways should be created. Must also set `var.subnets.public.nat_gateway_configuration` in public subnets.
   - `ipv6_native`             = (Optional|bool) Indicates whether to create an IPv6-ony subnet. Either `var.assign_ipv6_cidr` or `var.ipv6_cidrs` should be defined to allocate an IPv6 CIDR block.
   - `connect_to_eigw`         = (Optional|bool) Determines if routes to the Egress-only Internet gateway should be created. Must also set `var.vpc_egress_only_internet_gateway`.
-  - `enable_dns64`            = (Optional|bool) Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. Useful for IPv6-only (`ipv6_native`) subnets. Defaults to `false`.
+  - `enable_dns64`            = (Optional|bool) Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. Useful for IPv6-only (`ipv6_native`) subnets. If also setting `connect_to_public_natgw = true`, a NAT64 route (`64:ff9b::/96`) to the NAT gateway is created so that traffic to those synthetic addresses is translated. Defaults to `false`.
 
   **public subnet type options:**
   - All shared keys above
