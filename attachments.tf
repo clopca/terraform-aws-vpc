@@ -229,9 +229,14 @@ resource "aws_networkmanager_vpc_attachment" "this" {
     for az in local.azs : local.subnet_arns["${each.value.group}/${az}"]
   ]
 
+  routing_policy_label = each.value.options.routing_policy_label
+
   options {
     appliance_mode_support = each.value.options.appliance_mode
     ipv6_support           = each.value.ipv6
+    # null defers to the AWS service defaults so existing attachments see no diff
+    dns_support                        = each.value.options.dns_support
+    security_group_referencing_support = each.value.options.security_group_referencing
   }
 
   tags = merge(var.tags, each.value.tags, {

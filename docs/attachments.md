@@ -71,6 +71,8 @@ subnets = {
 
 Create mode owns the Network Manager VPC attachment; inject mode uses `create = false` plus `attachment_id`. `core_network` and `core_network_ipv6` route lists on other subnet groups target the effective attachment.
 
+Optional attachment arguments: `routing_policy_label` applies a routing policy label for traffic routing decisions, and `dns_support` / `security_group_referencing` map to the attachment options block. All three default to `null`, deferring to the AWS service defaults so existing attachments see no diff.
+
 ## Cloud WAN acceptance ownership
 
 Acceptance is an explicit lifecycle boundary:

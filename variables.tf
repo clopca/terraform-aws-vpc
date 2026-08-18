@@ -612,6 +612,10 @@ variable "subnets" {
       accept_attachment  = optional(bool, false)
       create_accepter    = optional(bool, true)
       accepter_id        = optional(string)
+      # null defers to the AWS service defaults so existing attachments see no diff
+      dns_support                = optional(bool)
+      security_group_referencing = optional(bool)
+      routing_policy_label       = optional(string)
     }))
   }))
 
