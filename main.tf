@@ -67,6 +67,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch                        = try(var.subnets.public.map_public_ip_on_launch, local.public_ipv6only ? null : true)
   assign_ipv6_address_on_creation                = local.public_ipv6only || local.public_dualstack ? true : null
   enable_resource_name_dns_aaaa_record_on_launch = local.public_ipv6only || local.public_dualstack ? true : false
+  enable_dns64                                   = try(var.subnets.public.enable_dns64, false)
 
   tags = merge(
     { Name = "${local.subnet_names["public"]}-${each.key}" },
@@ -247,6 +248,7 @@ resource "aws_subnet" "private" {
   map_public_ip_on_launch                        = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? null : false
   assign_ipv6_address_on_creation                = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? true : try(var.subnets[split("/", each.key)[0]].assign_ipv6_address_on_creation, false)
   enable_resource_name_dns_aaaa_record_on_launch = contains(local.subnets_with_ipv6_native, split("/", each.key)[0]) ? true : try(var.subnets[split("/", each.key)[0]].enable_resource_name_dns_aaaa_record_on_launch, false)
+  enable_dns64                                   = try(var.subnets[split("/", each.key)[0]].enable_dns64, false)
 
   tags = merge(
     { Name = "${local.subnet_names[split("/", each.key)[0]]}-${split("/", each.key)[1]}" },

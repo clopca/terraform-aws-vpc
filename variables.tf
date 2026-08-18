@@ -133,6 +133,7 @@ variable "subnets" {
   - `connect_to_public_natgw` = (Optional|bool) Determines if routes to NAT Gateways should be created. Must also set `var.subnets.public.nat_gateway_configuration` in public subnets.
   - `ipv6_native`             = (Optional|bool) Indicates whether to create an IPv6-ony subnet. Either `var.assign_ipv6_cidr` or `var.ipv6_cidrs` should be defined to allocate an IPv6 CIDR block.
   - `connect_to_eigw`         = (Optional|bool) Determines if routes to the Egress-only Internet gateway should be created. Must also set `var.vpc_egress_only_internet_gateway`.
+  - `enable_dns64`            = (Optional|bool) Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. Useful for IPv6-only (`ipv6_native`) subnets. Defaults to `false`.
 
   **public subnet type options:**
   - All shared keys above
@@ -140,6 +141,7 @@ variable "subnets" {
   - `connect_to_igw`            = (Optional|bool) Determines if the default route (0.0.0.0/0 or ::/0) is created in the public subnets with destination the Internet gateway. Defaults to `true`.
   - `ipv6_native`               = (Optional|bool) Indicates whether to create an IPv6-ony subnet. Either `var.assign_ipv6_cidr` or `var.ipv6_cidrs` should be defined to allocate an IPv6 CIDR block.
   - `map_public_ip_on_launch`   = (Optional|bool) Specify true to indicate that instances launched into the subnet should be assigned a public IP address. Default to `false`.
+  - `enable_dns64`              = (Optional|bool) Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. Useful for IPv6-only (`ipv6_native`) subnets. Defaults to `false`.
 
   **transit_gateway subnet type options:**
   - All shared keys above
@@ -201,7 +203,7 @@ EOF
 
   # All var.subnets.public valid keys
   validation {
-    error_message = "Invalid key in public subnets. Valid options include: \"cidrs\", \"netmask\", \"name_prefix\", \"connect_to_igw\", \"nat_gateway_configuration\", \"ipv6_native\", \"assign_ipv6_cidr\", \"ipv6_cidrs\", \"tags\"."
+    error_message = "Invalid key in public subnets. Valid options include: \"cidrs\", \"netmask\", \"name_prefix\", \"connect_to_igw\", \"nat_gateway_configuration\", \"ipv6_native\", \"assign_ipv6_cidr\", \"ipv6_cidrs\", \"map_public_ip_on_launch\", \"enable_dns64\", \"tags\"."
     condition = length(setsubtract(keys(try(var.subnets.public, {})), [
       "cidrs",
       "netmask",
@@ -212,6 +214,7 @@ EOF
       "assign_ipv6_cidr",
       "ipv6_cidrs",
       "map_public_ip_on_launch",
+      "enable_dns64",
       "tags"
     ])) == 0
   }
