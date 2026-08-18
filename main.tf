@@ -337,6 +337,11 @@ resource "terraform_data" "cidr_pinning_validation" {
 
   lifecycle {
     precondition {
+      condition     = var.calculated_subnet_az_capacity >= length(local.azs)
+      error_message = "calculated_subnet_az_capacity must be greater than or equal to the number of configured Availability Zones."
+    }
+
+    precondition {
       condition     = length(local.pinned_group_overlap_pairs) == 0
       error_message = "Pinned subnet CIDR ranges overlap across netmasks (${join(", ", local.pinned_group_overlap_pairs)}). Choose non-overlapping ipv4.cidr_index values or use explicit CIDRs."
     }

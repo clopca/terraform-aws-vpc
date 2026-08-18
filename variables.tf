@@ -326,6 +326,26 @@ variable "availability_zones" {
   }
 }
 
+variable "calculated_subnet_az_capacity" {
+  description = <<-EOT
+    Number of AZ slots reserved per calculated subnet group. The default six
+    preserves the v5 stability contract. A constrained wrapper may choose a
+    lower fixed capacity when it explicitly supports fewer AZs; the value must
+    still cover every configured AZ.
+  EOT
+  type        = number
+  default     = 6
+
+  validation {
+    condition = (
+      var.calculated_subnet_az_capacity >= 1 &&
+      var.calculated_subnet_az_capacity <= 6 &&
+      floor(var.calculated_subnet_az_capacity) == var.calculated_subnet_az_capacity
+    )
+    error_message = "calculated_subnet_az_capacity must be an integer between 1 and 6."
+  }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TRANSIT GATEWAY ATTACHMENTS — plural, caller-keyed create-or-inject
 # ─────────────────────────────────────────────────────────────────────────────

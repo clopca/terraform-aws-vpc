@@ -85,10 +85,10 @@ locals {
     for k, v in var.subnets : k => v if v.ipv4 != null && v.ipv4.cidrs_by_az != null
   }
   # ─── Deterministic IPv4 CIDR calculation by selected parent ──────────
-  # Calculated groups reserve six AZ slots. Primary and each caller-keyed
-  # secondary association form independent allocation domains, so selectors
-  # affect the actual parent rather than acting as dependency-only metadata.
-  cidr_az_stride = 6
+  # Calculated groups reserve the caller-selected AZ capacity. Six remains the
+  # module default; constrained wrappers can reserve fewer fixed slots when
+  # their supported maximum is lower.
+  cidr_az_stride = var.calculated_subnet_az_capacity
 
   ipv4_parent_key_by_group = {
     for name, cfg in local.subnets_with_netmask :

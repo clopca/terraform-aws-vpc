@@ -399,3 +399,28 @@ run "reject_explicit_ipv4_outside_primary_parent" {
 
   expect_failures = [terraform_data.subnet_secondary_cidr_validation["app/us-east-1a"]]
 }
+
+run "constrained_three_az_capacity_fits_three_pinned_28_groups_in_a_24" {
+  command = plan
+
+  variables {
+    vpc                           = { name = "inspection-24" }
+    addressing                    = { primary = { cidr_block = "10.0.0.0/24" } }
+    availability_zones            = { names = ["eu-south-2a"] }
+    calculated_subnet_az_capacity = 3
+    subnets = {
+      core_network = { role = "private", ipv4 = { netmask = 28, cidr_index = 0 } }
+      firewall     = { role = "private", ipv4 = { netmask = 28, cidr_index = 1 } }
+      public       = { role = "public", ipv4 = { netmask = 28, cidr_index = 2 } }
+    }
+  }
+
+  assert {
+    condition = output.subnet_cidrs_by_group_by_az == {
+      core_network = { eu-south-2a = "10.0.0.0/28" }
+      firewall     = { eu-south-2a = "10.0.0.48/28" }
+      public       = { eu-south-2a = "10.0.0.96/28" }
+    }
+    error_message = "A /24 must fit the three inspection /28 groups while reserving three stable AZ slots per group."
+  }
+}
