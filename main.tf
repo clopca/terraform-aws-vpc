@@ -521,9 +521,14 @@ resource "aws_networkmanager_vpc_attachment" "cwan" {
   subnet_arns     = values(aws_subnet.cwan)[*].arn
   vpc_arn         = local.vpc_arn
 
+  routing_policy_label = try(var.subnets.core_network.routing_policy_label, null)
+
   options {
     ipv6_support           = local.cwan_dualstack ? true : false
     appliance_mode_support = try(var.subnets.core_network.appliance_mode_support, false)
+    # null defers to the AWS default (currently true for both) so existing attachments see no diff
+    dns_support                        = try(var.subnets.core_network.dns_support, null)
+    security_group_referencing_support = try(var.subnets.core_network.security_group_referencing_support, null)
   }
 
   tags = merge(

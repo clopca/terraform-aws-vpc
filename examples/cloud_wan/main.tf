@@ -26,10 +26,14 @@ module "nvirginia_vpc" {
       assign_ipv6_cidr = true
     }
     core_network = {
-      netmask                = 28
-      assign_ipv6_cidr       = true
-      appliance_mode_support = true
-      require_acceptance     = false
+      netmask          = 28
+      assign_ipv6_cidr = true
+
+      routing_policy_label               = "vpcAttachment"
+      appliance_mode_support             = true
+      dns_support                        = true
+      security_group_referencing_support = false
+      require_acceptance                 = false
 
       tags = {
         env = "prod"
@@ -64,9 +68,14 @@ module "ireland_vpc" {
       assign_ipv6_cidr = true
     }
     core_network = {
-      netmask            = 28
-      assign_ipv6_cidr   = true
-      require_acceptance = false
+      netmask          = 28
+      assign_ipv6_cidr = true
+
+      routing_policy_label               = "vpcAttachment"
+      appliance_mode_support             = true
+      dns_support                        = true
+      security_group_referencing_support = false
+      require_acceptance                 = false
 
       tags = {
         env = "nonprod"
